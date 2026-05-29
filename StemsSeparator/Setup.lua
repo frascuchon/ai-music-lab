@@ -6,14 +6,35 @@
 
 -- ── CHECK REAIMGUI ────────────────────────────────────────────────
 if not reaper.ImGui_GetVersion then
-  reaper.MB(
-    "Este script requiere la extensión ReaImGui.\n\n" ..
-    "Instálala con ReaPack:\n" ..
-    "  1. Extensions > ReaPack > Browse packages\n" ..
-    "  2. Busca 'ReaImGui' (de cfillion)\n" ..
-    "  3. Clic derecho > Install > Apply\n" ..
-    "  4. Reinicia REAPER.",
-    "Setup — ReaImGui no encontrado", 0)
+  local _info   = debug.getinfo(1, "S")
+  local _dir    = _info.source:match("@?(.*[/\\])") or ""
+  local _helper = _dir .. "setup_helpers.py"
+  local _tmpdir = os.getenv("TMPDIR") or "/tmp/"
+  local _pf     = _tmpdir .. "stemsep_reaimgui_install.txt"
+
+  if reaper.APIExists("ReaPack_BrowsePackages") then
+    reaper.ReaPack_BrowsePackages("ReaImGui")
+    reaper.MB(
+      "ReaImGui no está instalado.\n\n" ..
+      "Hemos abierto ReaPack filtrado por 'ReaImGui'.\n\n" ..
+      "  1. Selecciona 'ReaImGui' de cfillion\n" ..
+      "  2. Clic derecho → Install latest version\n" ..
+      "  3. Apply\n" ..
+      "  4. Reinicia REAPER y vuelve a abrir el script.",
+      "Setup — Instalar ReaImGui", 0)
+  else
+    reaper.MB("ReaImGui no encontrado. Descargando desde GitHub, espera unos segundos...",
+      "Setup — ReaImGui", 0)
+    os.execute(string.format('python3 "%s" install-reaimgui --progress "%s"', _helper, _pf))
+    local _msg = "Revisa ~/Library/Application Support/REAPER/UserPlugins/"
+    local _f = io.open(_pf, "r")
+    if _f then
+      local _raw = _f:read("*a"); _f:close()
+      _msg = _raw:match("|[^|]*|(.+)$") or _msg
+    end
+    reaper.MB(_msg .. "\n\nReinicia REAPER para activar ReaImGui.",
+      "Setup — ReaImGui", 0)
+  end
   return
 end
 

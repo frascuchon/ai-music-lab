@@ -29,7 +29,9 @@ Subcommands:
 """
 
 import argparse
+import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -198,6 +200,63 @@ def cmd_check(args) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: install-reaimgui  (macOS only, direct download from GitHub)
+# ---------------------------------------------------------------------------
+
+def cmd_install_reaimgui(args) -> None:
+    pf = Path(args.progress) if args.progress else None
+    write(pf, "running", 0.1, "Consultando última versión de ReaImGui en GitHub...")
+
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/repos/cfillion/reaimgui/releases/latest",
+            headers={"User-Agent": "StemsSeparator/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            release = json.loads(resp.read())
+    except Exception as e:
+        write(pf, "error", 0, f"Error consultando GitHub: {e}")
+        return
+
+    # Map Python platform.machine() → asset arch string used by cfillion
+    machine = platform.machine()  # "arm64" or "x86_64"
+    arch_aliases = {"arm64": ["aarch64", "arm64"], "x86_64": ["x86_64"]}
+    candidates = arch_aliases.get(machine, [machine])
+
+    assets = release.get("assets", [])
+
+    def pick_asset(names: list[str]) -> str | None:
+        for name_frag in names:
+            for a in assets:
+                n = a["name"]
+                if "macos" in n and name_frag in n and n.endswith(".dylib"):
+                    return a["browser_download_url"]
+        return None
+
+    asset_url = pick_asset(candidates) or pick_asset(["universal", "macos"])
+    if not asset_url:
+        write(pf, "error", 0,
+              "No se encontró dylib macOS en la release. "
+              "Instala ReaImGui manualmente desde github.com/cfillion/reaimgui/releases")
+        return
+
+    filename = asset_url.split("/")[-1]
+    dest_dir = Path.home() / "Library" / "Application Support" / "REAPER" / "UserPlugins"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / filename
+
+    write(pf, "running", 0.5, f"Descargando {filename}...")
+    try:
+        urllib.request.urlretrieve(asset_url, dest)
+    except Exception as e:
+        write(pf, "error", 0, f"Error descargando: {e}")
+        return
+
+    write(pf, "done", 1.0,
+          f"ReaImGui instalado ({filename}) — reinicia REAPER para activarlo")
+
+
+# ---------------------------------------------------------------------------
 # Subcommand: install-uv
 # ---------------------------------------------------------------------------
 
@@ -350,6 +409,9 @@ def main() -> None:
     p_chk = sub.add_parser("check")
     p_chk.add_argument("--progress", default="")
 
+    p_ri = sub.add_parser("install-reaimgui")
+    p_ri.add_argument("--progress", default="")
+
     p_uv = sub.add_parser("install-uv")
     p_uv.add_argument("--progress", default="")
 
@@ -374,6 +436,7 @@ def main() -> None:
     args = p.parse_args()
     {
         "check":               cmd_check,
+        "install-reaimgui":    cmd_install_reaimgui,
         "install-uv":          cmd_install_uv,
         "sync-deps":           cmd_sync_deps,
         "install-demucs":      cmd_install_demucs,
