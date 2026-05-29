@@ -651,9 +651,10 @@ local function loop()
       reaper.ImGui_PopFont(ctx)
     end
 
+  reaper.ImGui_End(ctx)
+
   end -- if visible
 
-  reaper.ImGui_End(ctx)
   reaper.ImGui_PopStyleVar(ctx,   N_VAR)
   reaper.ImGui_PopStyleColor(ctx, N_COL)
   reaper.ImGui_PopFont(ctx)
