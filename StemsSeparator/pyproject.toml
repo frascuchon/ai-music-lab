@@ -1,0 +1,19 @@
+[project]
+name = "stems-separator-modal"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    # Modal CLI — the only local dependency. Everything else (torch, sam-audio,
+    # etc.) runs inside Modal's cloud container image, not on the local machine.
+    "modal>=0.73",
+    # modal 1.x uses api_pb2.EnvironmentRole.ValueType (protobuf 5+ type alias)
+    # at module import time, so we pin >=5 even though modal only says !=4.24.0
+    "protobuf>=5",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = false
