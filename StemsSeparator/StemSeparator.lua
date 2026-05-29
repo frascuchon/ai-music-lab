@@ -56,6 +56,44 @@ if not PYTHON then
   PYTHON = "python3"
 end
 
+-- ── SETUP CHECK (asíncrono, solo al inicio) ───────────────────
+local SETUP_CHECK_F = TMPDIR .. "stemsep_setup_check.txt"
+local SETUP_HELPER  = SCRIPT_DIR .. "setup_helpers.py"
+local setup_missing = {}
+local setup_checked = false
+
+local function launch_setup_check()
+  local f = io.open(SETUP_CHECK_F, "w")
+  if f then f:write("running|0.00|..."); f:close() end
+  local cmd = string.format('%s %s check --progress %s >> %s 2>&1 &',
+    q(PYTHON), q(SETUP_HELPER), q(SETUP_CHECK_F),
+    q(TMPDIR .. "stemsep_setup.log"))
+  os.execute(cmd)
+end
+
+local function poll_setup_check()
+  if setup_checked then return end
+  local f = io.open(SETUP_CHECK_F, "r")
+  if not f then return end
+  local raw = f:read("*a"); f:close()
+  if raw:match("^done|") == nil then return end
+  setup_checked = true
+  local LABELS = {
+    python         = "Python REAPER",
+    uv             = "uv",
+    demucs         = "demucs",
+    ["modal-cli"]  = "Modal CLI",
+    ["modal-auth"] = "Modal sin auth",
+    ["hf-secret"]  = "HF secret faltante",
+  }
+  for line in (raw .. "\n"):gmatch("([^\n]*)\n") do
+    local name, status = line:match("^CHECK|([^|]+)|([^|]+)|")
+    if name and status == "missing" then
+      table.insert(setup_missing, LABELS[name] or name)
+    end
+  end
+end
+
 -- ── CONSTANTES ─────────────────────────────────────────────────
 local DM_MODELS = { "htdemucs", "htdemucs_ft", "htdemucs_6s", "mdx_extra" }
 local DM_LABELS = {
@@ -527,6 +565,16 @@ local function loop()
 
   if visible then
 
+    -- SETUP BANNER (se rellena en segundo plano; desaparece si todo está OK)
+    poll_setup_check()
+    if setup_checked and #setup_missing > 0 then
+      reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), C_YELLOW)
+      reaper.ImGui_TextWrapped(ctx, '⚠  Config. incompleta: ' .. table.concat(setup_missing, ' · '))
+      reaper.ImGui_PopStyleColor(ctx)
+      reaper.ImGui_TextDisabled(ctx, 'Carga Setup.lua en Actions > Load ReaScript para configurar.')
+      reaper.ImGui_Spacing(ctx)
+    end
+
     -- HEADER ──────────────────────────────────────────────────────
     reaper.ImGui_PushFont(ctx, font_h1, 18)
     reaper.ImGui_Text(ctx, 'Stem Separator')
@@ -668,4 +716,5 @@ end
 add_log("Stem Separator listo.")
 add_log("Demucs: " .. PYTHON)
 add_log("SAM: " .. SAM_DIR)
+launch_setup_check()
 reaper.defer(loop)
