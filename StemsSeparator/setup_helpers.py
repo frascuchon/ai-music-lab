@@ -33,7 +33,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+import urllib.request
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
@@ -196,6 +198,44 @@ def cmd_check(args) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: install-uv
+# ---------------------------------------------------------------------------
+
+def cmd_install_uv(args) -> None:
+    pf = Path(args.progress) if args.progress else None
+    write(pf, "running", 0.1, "Descargando instalador de uv...")
+    try:
+        with urllib.request.urlopen("https://astral.sh/uv/install.sh", timeout=30) as resp:
+            install_bytes = resp.read()
+    except Exception as e:
+        write(pf, "error", 0, f"Error descargando instalador: {e}")
+        return
+    with tempfile.NamedTemporaryFile(suffix=".sh", delete=False, mode="wb") as f:
+        f.write(install_bytes)
+        tmp = Path(f.name)
+    try:
+        write(pf, "running", 0.4, "Ejecutando instalador de uv...")
+        _stream(pf, ["sh", str(tmp)], done_msg="uv instalado — reinicia REAPER o abre un nuevo terminal")
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: sync-deps
+# ---------------------------------------------------------------------------
+
+def cmd_sync_deps(args) -> None:
+    pf = Path(args.progress) if args.progress else None
+    uv = _find_uv()
+    if uv is None:
+        write(pf, "error", 0, "uv no encontrado — instálalo primero")
+        return
+    write(pf, "running", 0.05, "Instalando dependencias del proyecto (modal, protobuf)...")
+    _stream(pf, [str(uv), "sync", "--project", str(SCRIPT_DIR)],
+            done_msg="Dependencias instaladas — modal y protobuf listos")
+
+
+# ---------------------------------------------------------------------------
 # Subcommand: install-demucs
 # ---------------------------------------------------------------------------
 
@@ -310,6 +350,12 @@ def main() -> None:
     p_chk = sub.add_parser("check")
     p_chk.add_argument("--progress", default="")
 
+    p_uv = sub.add_parser("install-uv")
+    p_uv.add_argument("--progress", default="")
+
+    p_syn = sub.add_parser("sync-deps")
+    p_syn.add_argument("--progress", default="")
+
     p_dem = sub.add_parser("install-demucs")
     p_dem.add_argument("--python", default="")
     p_dem.add_argument("--progress", default="")
@@ -328,6 +374,8 @@ def main() -> None:
     args = p.parse_args()
     {
         "check":               cmd_check,
+        "install-uv":          cmd_install_uv,
+        "sync-deps":           cmd_sync_deps,
         "install-demucs":      cmd_install_demucs,
         "modal-login":         cmd_modal_login,
         "modal-secret-create": cmd_modal_secret_create,

@@ -50,6 +50,8 @@ local function q(s) return '"' .. s:gsub('"', '\\"') .. '"' end
 
 local PF = {
   check    = TMPDIR .. "stemsep_setup_check.txt",
+  uv       = TMPDIR .. "stemsep_setup_uv.txt",
+  sync     = TMPDIR .. "stemsep_setup_sync.txt",
   demucs   = TMPDIR .. "stemsep_setup_demucs.txt",
   login    = TMPDIR .. "stemsep_setup_login.txt",
   hfsecret = TMPDIR .. "stemsep_setup_hfsecret.txt",
@@ -104,6 +106,8 @@ end
 
 local ST = {
   check_state   = "idle",
+  uv_state      = "idle", uv_msg      = "",
+  sync_state    = "idle", sync_msg    = "",
   demucs_state  = "idle", demucs_msg  = "",
   login_state   = "idle", login_msg   = "",
   hf_state      = "idle", hf_msg      = "",
@@ -213,6 +217,8 @@ local function loop()
 
     -- Poll all async operations
     poll_check()
+    poll_simple("uv_state",     "uv_msg",     "uv")
+    poll_simple("sync_state",   "sync_msg",   "sync")
     poll_simple("demucs_state", "demucs_msg", "demucs")
     poll_simple("login_state",  "login_msg",  "login")
     poll_simple("hf_state",     "hf_msg",     "hfsecret")
@@ -226,6 +232,7 @@ local function loop()
     local function mark_done(key)
       if ST[key] == "done" then ST[key] = "idle"; pending_recheck = true end
     end
+    mark_done("uv_state"); mark_done("sync_state")
     mark_done("demucs_state"); mark_done("login_state"); mark_done("hf_state")
 
     -- ── TÍTULO + BOTÓN RECHECK ──────────────────────────────────
@@ -256,14 +263,42 @@ local function loop()
 
       -- Inline actions for fixable items
       if not checking then
-        -- uv missing: show install hint
+        -- uv missing: install button
         if c.name == "uv" and c.status == "missing" then
           reaper.ImGui_SameLine(ctx)
-          if reaper.ImGui_Button(ctx, 'Docs##uvdocs', 44, 0) then
-            os.execute('open "https://docs.astral.sh/uv/getting-started/installation/" &')
+          reaper.ImGui_BeginDisabled(ctx, ST.uv_state == "running")
+          if reaper.ImGui_Button(ctx, 'Instalar uv##uvinstall', 88, 0) then
+            ST.uv_state = "running"; ST.uv_msg = ""
+            launch("uv", "install-uv")
           end
-          reaper.ImGui_SameLine(ctx, 0, 6)
-          reaper.ImGui_TextDisabled(ctx, 'curl -LsSf https://astral.sh/uv/install.sh | sh')
+          reaper.ImGui_EndDisabled(ctx)
+          if ST.uv_state == "running" then
+            reaper.ImGui_SameLine(ctx)
+            reaper.ImGui_TextColored(ctx, C_YELLOW, ST.uv_msg ~= "" and ST.uv_msg:sub(1,45) or "Instalando...")
+          elseif ST.uv_state == "error" then
+            reaper.ImGui_SameLine(ctx)
+            reaper.ImGui_TextColored(ctx, C_RED, "Error — " .. ST.uv_msg:sub(1,40))
+          end
+
+        -- modal-cli missing (uv ok): sync project deps
+        elseif c.name == "modal-cli" and c.status == "missing" then
+          local uv_ok = CHECKS[CHECK_IDX["uv"]] and CHECKS[CHECK_IDX["uv"]].status == "ok"
+          if uv_ok then
+            reaper.ImGui_SameLine(ctx)
+            reaper.ImGui_BeginDisabled(ctx, ST.sync_state == "running")
+            if reaper.ImGui_Button(ctx, 'Instalar deps##syncdeps', 102, 0) then
+              ST.sync_state = "running"; ST.sync_msg = ""
+              launch("sync", "sync-deps")
+            end
+            reaper.ImGui_EndDisabled(ctx)
+            if ST.sync_state == "running" then
+              reaper.ImGui_SameLine(ctx)
+              reaper.ImGui_TextColored(ctx, C_YELLOW, ST.sync_msg ~= "" and ST.sync_msg:sub(1,40) or "Instalando...")
+            elseif ST.sync_state == "error" then
+              reaper.ImGui_SameLine(ctx)
+              reaper.ImGui_TextColored(ctx, C_RED, "Error")
+            end
+          end
 
         -- demucs missing: install button
         elseif c.name == "demucs" and c.status == "missing" then
