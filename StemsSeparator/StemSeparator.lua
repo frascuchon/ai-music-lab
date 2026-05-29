@@ -79,44 +79,6 @@ if not PYTHON then
   PYTHON = "python3"
 end
 
--- ── SETUP CHECK (asíncrono, solo al inicio) ───────────────────
-local SETUP_CHECK_F = TMPDIR .. "stemsep_setup_check.txt"
-local SETUP_HELPER  = SCRIPT_DIR .. "setup_helpers.py"
-local setup_missing = {}
-local setup_checked = false
-
-local function launch_setup_check()
-  local f = io.open(SETUP_CHECK_F, "w")
-  if f then f:write("running|0.00|..."); f:close() end
-  local cmd = string.format('%s %s check --progress %s >> %s 2>&1 &',
-    q(PYTHON), q(SETUP_HELPER), q(SETUP_CHECK_F),
-    q(TMPDIR .. "stemsep_setup.log"))
-  os.execute(cmd)
-end
-
-local function poll_setup_check()
-  if setup_checked then return end
-  local f = io.open(SETUP_CHECK_F, "r")
-  if not f then return end
-  local raw = f:read("*a"); f:close()
-  if raw:match("^done|") == nil then return end
-  setup_checked = true
-  local LABELS = {
-    python         = "Python REAPER",
-    uv             = "uv",
-    demucs         = "demucs",
-    ["modal-cli"]  = "Modal CLI",
-    ["modal-auth"] = "Modal sin auth",
-    ["hf-secret"]  = "HF secret faltante",
-  }
-  for line in (raw .. "\n"):gmatch("([^\n]*)\n") do
-    local name, status = line:match("^CHECK|([^|]+)|([^|]+)|")
-    if name and status == "missing" then
-      table.insert(setup_missing, LABELS[name] or name)
-    end
-  end
-end
-
 -- ── CONSTANTES ─────────────────────────────────────────────────
 local DM_MODELS = { "htdemucs", "htdemucs_ft", "htdemucs_6s", "mdx_extra" }
 local DM_LABELS = {
@@ -172,6 +134,44 @@ end
 
 local function q(s)  -- shell quoting
   return '"' .. s:gsub('"', '\\"') .. '"'
+end
+
+-- ── SETUP CHECK (asíncrono, solo al inicio) ───────────────────
+local SETUP_CHECK_F = TMPDIR .. "stemsep_setup_check.txt"
+local SETUP_HELPER  = SCRIPT_DIR .. "setup_helpers.py"
+local setup_missing = {}
+local setup_checked = false
+
+local function launch_setup_check()
+  local f = io.open(SETUP_CHECK_F, "w")
+  if f then f:write("running|0.00|..."); f:close() end
+  local cmd = string.format('%s %s check --progress %s >> %s 2>&1 &',
+    q(PYTHON), q(SETUP_HELPER), q(SETUP_CHECK_F),
+    q(TMPDIR .. "stemsep_setup.log"))
+  os.execute(cmd)
+end
+
+local function poll_setup_check()
+  if setup_checked then return end
+  local f = io.open(SETUP_CHECK_F, "r")
+  if not f then return end
+  local raw = f:read("*a"); f:close()
+  if raw:match("^done|") == nil then return end
+  setup_checked = true
+  local LABELS = {
+    python         = "Python REAPER",
+    uv             = "uv",
+    demucs         = "demucs",
+    ["modal-cli"]  = "Modal CLI",
+    ["modal-auth"] = "Modal sin auth",
+    ["hf-secret"]  = "HF secret faltante",
+  }
+  for line in (raw .. "\n"):gmatch("([^\n]*)\n") do
+    local name, status = line:match("^CHECK|([^|]+)|([^|]+)|")
+    if name and status == "missing" then
+      table.insert(setup_missing, LABELS[name] or name)
+    end
+  end
 end
 
 -- ── LECTURA DE PROGRESO ────────────────────────────────────────
