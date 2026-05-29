@@ -520,7 +520,7 @@ local function loop()
   reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_WindowRounding(), 6.0)
   local N_VAR = 3
 
-  reaper.ImGui_PushFont(ctx, font_ui)
+  reaper.ImGui_PushFont(ctx, font_ui, 14)
   reaper.ImGui_SetNextWindowSize(ctx, 540, 720, reaper.ImGui_Cond_FirstUseEver())
 
   local visible, open = reaper.ImGui_Begin(ctx, 'Stem Separator##ss', true)
@@ -528,7 +528,7 @@ local function loop()
   if visible then
 
     -- HEADER ──────────────────────────────────────────────────────
-    reaper.ImGui_PushFont(ctx, font_h1)
+    reaper.ImGui_PushFont(ctx, font_h1, 18)
     reaper.ImGui_Text(ctx, 'Stem Separator')
     reaper.ImGui_PopFont(ctx)
     reaper.ImGui_SameLine(ctx, 0, 10)
@@ -626,7 +626,7 @@ local function loop()
         S.log = {}
       end
 
-      reaper.ImGui_PushFont(ctx, font_mono)
+      reaper.ImGui_PushFont(ctx, font_mono, 13)
       reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), 0x111116FF)
       local _, avail_h = reaper.ImGui_GetContentRegionAvail(ctx)
       local log_h = math.max(60, avail_h - 4)
