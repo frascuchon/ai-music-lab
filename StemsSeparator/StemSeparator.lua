@@ -337,8 +337,7 @@ end
 -- ── IMGUI: CONTEXTO Y FUENTES ──────────────────────────────────
 local ctx       = reaper.ImGui_CreateContext('Stem Separator')
 local font_ui   = reaper.ImGui_CreateFont('sans-serif', 14)
-local font_h1   = reaper.ImGui_CreateFont('sans-serif', 18,
-                    reaper.ImGui_FontFlags_Bold())
+local font_h1   = reaper.ImGui_CreateFont('sans-serif', 18)
 local font_mono = reaper.ImGui_CreateFont('monospace', 13)
 reaper.ImGui_Attach(ctx, font_ui)
 reaper.ImGui_Attach(ctx, font_h1)
@@ -403,7 +402,7 @@ end
 
 -- ── TAB SAM AUDIO ──────────────────────────────────────────────
 local function draw_sam_tab()
-  local tbl_flags = reaper.ImGui_TableFlags_None()
+  local tbl_flags = 0
   if reaper.ImGui_BeginTable(ctx, '##samtbl', 2, tbl_flags, 0, 0) then
     reaper.ImGui_TableSetupColumn(ctx, '##lbl',
       reaper.ImGui_TableColumnFlags_WidthFixed(), 90)
@@ -632,7 +631,7 @@ local function loop()
       local _, avail_h = reaper.ImGui_GetContentRegionAvail(ctx)
       local log_h = math.max(60, avail_h - 4)
       reaper.ImGui_BeginChild(ctx, '##logscroll', 0, log_h,
-        reaper.ImGui_ChildFlags_Border())
+        reaper.ImGui_ChildFlags_Borders())
       reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), 0, 2)
       for i = 1, #S.log do
         local ln = S.log[i]
