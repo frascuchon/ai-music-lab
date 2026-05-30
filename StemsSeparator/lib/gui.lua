@@ -39,19 +39,21 @@ M.ctx = ctx
 
 -- ── DRAWING HELPERS ───────────────────────────────────────────────
 
--- Filled rounded rectangle (gfx.roundrect is outline-only).
+-- Filled rounded rectangle using horizontal strips (one rect per corner row).
+-- Avoids gfx.circle which overlaps with the fill rects, causing double alpha
+-- blending and visible corner artifacts when using semi-transparent colors.
 local function filled_roundrect(x, y, w, h, r)
   r = math.min(r, math.floor(math.min(w, h) / 2))
   if r <= 0 then gfx.rect(x, y, w, h, 1); return end
-  -- Center horizontal + vertical bands
-  gfx.rect(x + r, y,     w - 2*r, h,     1)
-  gfx.rect(x,     y + r, r,       h-2*r, 1)
-  gfx.rect(x+w-r, y + r, r,       h-2*r, 1)
-  -- Four corners (antialias=0 to avoid bleed-through onto background)
-  gfx.circle(x + r,     y + r,     r, 1, 0)
-  gfx.circle(x + w - r, y + r,     r, 1, 0)
-  gfx.circle(x + r,     y + h - r, r, 1, 0)
-  gfx.circle(x + w - r, y + h - r, r, 1, 0)
+  -- Corner rows: each strip widens as we move away from the corner tip
+  for i = 0, r - 1 do
+    local dx   = math.floor(math.sqrt(r * r - (r - i) * (r - i)) + 0.5)
+    local left = r - dx
+    gfx.rect(x + left, y + i,         w - 2 * left, 1, 1)
+    gfx.rect(x + left, y + h - 1 - i, w - 2 * left, 1, 1)
+  end
+  -- Middle section: full width
+  gfx.rect(x, y + r, w, h - 2 * r, 1)
 end
 
 -- ── INTERNAL HELPERS ──────────────────────────────────────────────
@@ -405,7 +407,10 @@ function M.checkbox(label, value)
     gfx.drawstr(disp)
   end
 
-  local new_val = clicked and (not value) or value
+  -- NOTE: don't use `clicked and (not value) or value` — that pattern breaks
+  -- when `not value` is false (i.e. value=true), returning true instead of false.
+  local new_val = value
+  if clicked then new_val = not value end
   advance(x, y, w, h)
   return clicked, new_val
 end
