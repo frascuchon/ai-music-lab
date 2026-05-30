@@ -37,6 +37,23 @@ local ctx = {
 }
 M.ctx = ctx
 
+-- ── DRAWING HELPERS ───────────────────────────────────────────────
+
+-- Filled rounded rectangle (gfx.roundrect is outline-only).
+local function filled_roundrect(x, y, w, h, r)
+  r = math.min(r, math.floor(math.min(w, h) / 2))
+  if r <= 0 then gfx.rect(x, y, w, h, 1); return end
+  -- Center horizontal + vertical bands
+  gfx.rect(x + r, y,     w - 2*r, h,     1)
+  gfx.rect(x,     y + r, r,       h-2*r, 1)
+  gfx.rect(x+w-r, y + r, r,       h-2*r, 1)
+  -- Four corners
+  gfx.circle(x + r,     y + r,     r, 1, 1)
+  gfx.circle(x + w - r, y + r,     r, 1, 1)
+  gfx.circle(x + r,     y + h - r, r, 1, 1)
+  gfx.circle(x + w - r, y + h - r, r, 1, 1)
+end
+
 -- ── INTERNAL HELPERS ──────────────────────────────────────────────
 
 local function cur_font()
@@ -331,7 +348,7 @@ function M.button(label, w, h, opts)
       local ac = t.C.ACCENT
       gfx.set(ac[1], ac[2], ac[3], ba * a)
     end
-    gfx.roundrect(x, gy, w, h, t.ROUND, 1)
+    filled_roundrect(x, gy, w, h, t.ROUND)
 
     -- Label
     gfx.setfont(cur_font())
