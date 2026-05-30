@@ -555,7 +555,6 @@ local function loop()
     end
 
     g.push_font(t.F.MONO)
-    local _, avail_h = gfx.w, gfx.h
     local log_h = math.max(60, gfx.h - gui.ctx.y - t.PAD_Y - 10)
     widgets.scroll_region("##logscroll", 0, log_h, function()
       for i = 1, #S.log do

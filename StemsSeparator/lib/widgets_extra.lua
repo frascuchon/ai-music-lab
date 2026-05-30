@@ -7,6 +7,11 @@ local theme = require("theme")
 local M = {}
 local ctx = gui.ctx
 
+-- just_clicked: true on the frame a mouse button goes from 0→1
+local function just_clicked()
+  return ctx.mb == 1 and ctx.mb_prev == 0
+end
+
 -- ── TAB BAR ───────────────────────────────────────────────────────
 
 -- Returns new active index (1-indexed). Draws all tabs at current cursor Y.
