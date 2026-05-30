@@ -12,6 +12,9 @@ local function just_clicked()
   return ctx.mb == 1 and ctx.mb_prev == 0
 end
 
+-- Strip ImGui-style ##id suffix from display labels ("Label##id" → "Label")
+local function strip_id(s) return s:match("^(.-)##") or s end
+
 -- ── TAB BAR ───────────────────────────────────────────────────────
 
 -- Returns new active index (1-indexed). Draws all tabs at current cursor Y.
@@ -186,6 +189,12 @@ function M.combo(id, idx, items)
       cur_idx = idx, sel_key = sel_key,
     }
     ctx.popup_just_opened = true
+  end
+
+  -- Re-register deferred draw every frame while popup is open for this combo.
+  -- ctx.deferred is reset each frame_begin, so without this the popup only
+  -- renders on the first frame and ctx.popup stays set blocking other widgets.
+  if ctx.popup and ctx.popup.id == id then
     local p_ref = ctx.popup
     table.insert(ctx.deferred, function() M._draw_combo_popup(p_ref) end)
   end

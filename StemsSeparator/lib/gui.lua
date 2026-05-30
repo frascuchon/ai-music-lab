@@ -47,11 +47,11 @@ local function filled_roundrect(x, y, w, h, r)
   gfx.rect(x + r, y,     w - 2*r, h,     1)
   gfx.rect(x,     y + r, r,       h-2*r, 1)
   gfx.rect(x+w-r, y + r, r,       h-2*r, 1)
-  -- Four corners
-  gfx.circle(x + r,     y + r,     r, 1, 1)
-  gfx.circle(x + w - r, y + r,     r, 1, 1)
-  gfx.circle(x + r,     y + h - r, r, 1, 1)
-  gfx.circle(x + w - r, y + h - r, r, 1, 1)
+  -- Four corners (antialias=0 to avoid bleed-through onto background)
+  gfx.circle(x + r,     y + r,     r, 1, 0)
+  gfx.circle(x + w - r, y + r,     r, 1, 0)
+  gfx.circle(x + r,     y + h - r, r, 1, 0)
+  gfx.circle(x + w - r, y + h - r, r, 1, 0)
 end
 
 -- ── INTERNAL HELPERS ──────────────────────────────────────────────
@@ -372,8 +372,9 @@ function M.checkbox(label, value)
   local h = t.ITEM_H
   local box_s = 14
   local x, y = ctx.x, ctx.y
+  local disp = label:match("^(.-)##") or label   -- strip ##id suffix
   gfx.setfont(cur_font())
-  local lw = gfx.measurestr(label)
+  local lw = gfx.measurestr(disp)
   local w = box_s + 6 + lw
 
   local a = af()
@@ -396,12 +397,12 @@ function M.checkbox(label, value)
       gfx.line(bx+5, by+box_s-3, bx+box_s-2,   by+2,        1)
     end
 
-    local _, th = gfx.measurestr(label)
+    local _, th = gfx.measurestr(disp)
     local fc = t.C.FG
     gfx.set(fc[1], fc[2], fc[3], a)
     gfx.x = x + box_s + 6
     gfx.y = gy + math.floor((h - th) / 2)
-    gfx.drawstr(label)
+    gfx.drawstr(disp)
   end
 
   local new_val = clicked and (not value) or value
