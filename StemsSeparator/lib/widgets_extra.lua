@@ -394,9 +394,14 @@ function M.scroll_region(id, w, h, draw_fn)
   local s = ctx.state[id]
 
   -- Wheel scroll
+  -- gfx.mouse_wheel gives ±120 per step (Windows) or fine deltas (macOS trackpad).
+  -- Normalise: treat anything > 60 magnitude as discrete step of 20px.
   if ctx.mw ~= 0 and ctx.mx >= x and ctx.mx < x+w
   and ctx.my >= y and ctx.my < y+h then
-    s.scroll_y = s.scroll_y - ctx.mw * 4
+    local delta = math.abs(ctx.mw) > 60
+      and (ctx.mw > 0 and -20 or 20)
+      or  -ctx.mw * 0.25
+    s.scroll_y = s.scroll_y + delta
   end
   if s.scroll_to_bottom then
     s.scroll_y = math.max(0, (s.content_h or 0) - h)
