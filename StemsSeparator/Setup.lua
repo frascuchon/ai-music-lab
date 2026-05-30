@@ -1,73 +1,29 @@
 -- @description Stem Separator — Configuración y Setup
--- @version 1.0
+-- @version 2.0
 -- @author IAClaude
 -- @about Wizard de primera vez: detecta el entorno, guía el login en Modal,
 --        crea el secret de Hugging Face y descarga el modelo SAM Audio.
+--        UI nativa gfx (sin dependencias externas).
 
--- ── CHECK REAIMGUI ────────────────────────────────────────────────
-if not reaper.ImGui_GetVersion then
-  local _info   = debug.getinfo(1, "S")
-  local _dir    = _info.source:match("@?(.*[/\\])") or ""
-  local _helper = _dir .. "setup_helpers.py"
-  local _tmpdir = os.getenv("TMPDIR") or "/tmp/"
-  local _pf     = _tmpdir .. "stemsep_reaimgui_install.txt"
+-- ── RUTAS + LIB ──────────────────────────────────────────────────
+local _info      = debug.getinfo(1, "S")
+local SCRIPT_DIR = _info.source:match("@?(.*[/\\])") or ""
 
-  if reaper.APIExists("ReaPack_BrowsePackages") then
-    reaper.ReaPack_BrowsePackages("ReaImGui")
-    reaper.MB(
-      "ReaImGui no está instalado.\n\n" ..
-      "Hemos abierto ReaPack filtrado por 'ReaImGui'.\n\n" ..
-      "  1. Selecciona 'ReaImGui' de cfillion\n" ..
-      "  2. Clic derecho → Install latest version\n" ..
-      "  3. Apply\n" ..
-      "  4. Reinicia REAPER y vuelve a abrir el script.",
-      "Setup — Instalar ReaImGui", 0)
-  else
-    reaper.MB("ReaImGui no encontrado. Descargando desde GitHub, espera unos segundos...",
-      "Setup — ReaImGui", 0)
-    os.execute(string.format('python3 "%s" install-reaimgui --progress "%s"', _helper, _pf))
-    local _msg = "Revisa ~/Library/Application Support/REAPER/UserPlugins/"
-    local _f = io.open(_pf, "r")
-    if _f then
-      local _raw = _f:read("*a"); _f:close()
-      _msg = _raw:match("|[^|]*|(.+)$") or _msg
-    end
-    reaper.MB(_msg .. "\n\nReinicia REAPER para activar ReaImGui.",
-      "Setup — ReaImGui", 0)
-  end
-  return
-end
+package.path = SCRIPT_DIR .. "lib/?.lua;" .. package.path
 
--- ── RUTAS ────────────────────────────────────────────────────────
-local info       = debug.getinfo(1, "S")
-local SCRIPT_DIR = info.source:match("@?(.*[/\\])") or ""
-local TMPDIR     = os.getenv("TMPDIR") or "/tmp/"
+local common  = require("common")
+local theme   = require("theme")
+local gui     = require("gui")
+local widgets = require("widgets_extra")
+
+local TMPDIR     = common.TMPDIR
 local HELPER     = SCRIPT_DIR .. "setup_helpers.py"
 local REAPER_INI = reaper.GetResourcePath() .. "/reaper.ini"
 
--- ── PYTHON DETECTION ─────────────────────────────────────────────
-local function detect_python()
-  local f = io.open(REAPER_INI, "r")
-  if not f then return "python3" end
-  local libpath
-  for line in f:lines() do
-    local k, v = line:match("^(pythonlibpath64)=(.*)$")
-    if not k then k, v = line:match("^(pythonlibpath32)=(.*)$") end
-    if k and v ~= "" then libpath = v; break end
-  end
-  f:close()
-  if not libpath then return "python3" end
-  local parent = libpath:match("^(.+)/lib[^/]*$") or libpath
-  local exe    = parent .. "/bin/python3"
-  local tf = io.open(exe, "r")
-  if tf then tf:close(); return exe end
-  return "python3"
-end
-
-local PYTHON = detect_python()
+local PYTHON = common.detect_reaper_python()
 
 -- ── HELPERS ──────────────────────────────────────────────────────
-local function q(s) return '"' .. s:gsub('"', '\\"') .. '"' end
+local function q(s) return common.q(s) end
 
 local PF = {
   check    = TMPDIR .. "stemsep_setup_check.txt",
@@ -79,42 +35,25 @@ local PF = {
   prewarm  = TMPDIR .. "stemsep_setup_prewarm.txt",
 }
 
-local function read_pf(path)
-  local f = io.open(path, "r")
-  if not f then return nil end
-  local raw = f:read("*a"); f:close()
-  if raw == "" then return nil end
-  local r = { extra = {} }
-  local first = true
-  for line in (raw .. "\n"):gmatch("([^\n]*)\n") do
-    if line ~= "" then
-      if first then
-        r.state, r.pct, r.msg = line:match("^([^|]+)|([^|]+)|(.+)$")
-        r.pct = tonumber(r.pct) or 0
-        first = false
-      else
-        table.insert(r.extra, line)
-      end
-    end
-  end
-  return r
-end
-
 local function launch(key, subcmd_args)
-  local pf = PF[key]
+  local pf  = PF[key]
+  local log = TMPDIR .. "stemsep_setup.log"
   local f = io.open(pf, "w")
   if f then f:write("running|0.00|Iniciando..."); f:close() end
-  local log = TMPDIR .. "stemsep_setup.log"
-  local cmd = string.format('%s %s %s --progress %s >> %s 2>&1 &',
+  local cmd = string.format('%s %s %s --progress %s >>%s 2>&1 &',
     q(PYTHON), q(HELPER), subcmd_args, q(pf), q(log))
   os.execute(cmd)
+end
+
+local function read_pf(path)
+  return common.read_progress_file(path)
 end
 
 -- ── ESTADO ───────────────────────────────────────────────────────
 local CHECKS = {
   { name="python",     label="Python (REAPER)" },
   { name="uv",         label="uv" },
-  { name="demucs",     label="demucs (Demucs tab)" },
+  { name="demucs",     label="demucs (tab Demucs)" },
   { name="modal-cli",  label="Modal CLI" },
   { name="modal-auth", label="Modal autenticado" },
   { name="hf-secret",  label="HF secret 'huggingface-secret'" },
@@ -179,257 +118,237 @@ end
 local function run_check()
   ST.check_state = "running"
   for _, c in ipairs(CHECKS) do c.status = "?"; c.detail = "" end
-  launch("check", "check")
+  local f = io.open(PF.check, "w")
+  if f then f:write("running|0.00|..."); f:close() end
+  local log = TMPDIR .. "stemsep_setup.log"
+  local cmd = string.format('%s %s check --progress %s >>%s 2>&1 &',
+    q(PYTHON), q(HELPER), q(PF.check), q(log))
+  os.execute(cmd)
 end
 
--- ── IMGUI ────────────────────────────────────────────────────────
-local ctx     = reaper.ImGui_CreateContext('SS Setup')
-local font_ui = reaper.ImGui_CreateFont('sans-serif', 14)
-reaper.ImGui_Attach(ctx, font_ui)
-
-local C_GREEN  = 0x40B261FF
-local C_RED    = 0xD94238FF
-local C_YELLOW = 0xF2B81AFF
-local C_GRAY   = 0x848491FF
-
+-- ── STATUS HELPERS ───────────────────────────────────────────────
 local function status_color(s)
-  if s == "ok"      then return C_GREEN
-  elseif s == "missing" then return C_RED
-  elseif s == "?"   then return C_GRAY
-  else                   return C_YELLOW end
+  if s == "ok"      then return "GREEN"
+  elseif s == "missing" then return "RED"
+  elseif s == "?"   then return "FG_DIM"
+  else                   return "YELLOW" end
 end
+
 local function status_icon(s)
-  if s == "ok"      then return "✓"
-  elseif s == "missing" then return "✗"
-  else                   return "⋯" end
+  if s == "ok"      then return "OK"
+  elseif s == "missing" then return "X"
+  else                   return "..." end
 end
+
+-- ── GFX INIT ─────────────────────────────────────────────────────
+if gfx.w > 0 then gfx.quit() end
+gfx.init("Stem Separator — Configuración", 500, 560)
+gfx.ext_retina = 1
+theme.init_fonts()
 
 local first_frame = true
-local pending_recheck = false  -- trigger re-check after an action completes
+local pending_recheck = false
 
-local function loop()
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(),         0x1A1A1CFF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBg(),          0x232327FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBgActive(),    0x2E2E35FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),          0x2E2E38FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(),   0x3C3C48FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(),    0x4A4A58FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),           0x4799FF30)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),    0x4799FF70)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),     0x4799FFAA)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(),             0xEBEBEBFF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TextDisabled(),     0x848491FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Separator(),        0x3A3A44FF)
-  local N_COL = 12
+-- ── DRAW CHECKS LIST ─────────────────────────────────────────────
+local function draw_checks()
+  local g = gui
+  local t = theme
+  local checking = ST.check_state == "running"
+  local uv_ok = CHECKS[CHECK_IDX["uv"]] and CHECKS[CHECK_IDX["uv"]].status == "ok"
 
-  reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(),  4.0)
-  reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_WindowRounding(), 6.0)
-  local N_VAR = 2
+  for _, c in ipairs(CHECKS) do
+    local icon  = checking and "..." or status_icon(c.status)
+    local color = checking and "YELLOW" or status_color(c.status)
 
-  reaper.ImGui_PushFont(ctx, font_ui, 14)
-  reaper.ImGui_SetNextWindowSize(ctx, 500, 540, reaper.ImGui_Cond_FirstUseEver())
+    g.text_colored("[" .. icon .. "]", color)
+    g.same_line(6)
+    g.text(c.label)
 
-  local visible, open = reaper.ImGui_Begin(ctx, 'Stem Separator — Configuración##setup', true)
-
-  if visible then
-
-    -- Auto-check on first frame
-    if first_frame then first_frame = false; run_check() end
-
-    -- Poll all async operations
-    poll_check()
-    poll_simple("uv_state",     "uv_msg",     "uv")
-    poll_simple("sync_state",   "sync_msg",   "sync")
-    poll_simple("demucs_state", "demucs_msg", "demucs")
-    poll_simple("login_state",  "login_msg",  "login")
-    poll_simple("hf_state",     "hf_msg",     "hfsecret")
-    poll_prewarm()
-
-    -- Re-check after an action finishes
-    if pending_recheck and ST.check_state ~= "running" then
-      pending_recheck = false
-      run_check()
+    if c.detail ~= "" then
+      g.same_line(10)
+      g.text_disabled(c.detail:sub(1, 52))
     end
-    local function mark_done(key)
-      if ST[key] == "done" then ST[key] = "idle"; pending_recheck = true end
-    end
-    mark_done("uv_state"); mark_done("sync_state")
-    mark_done("demucs_state"); mark_done("login_state"); mark_done("hf_state")
 
-    -- ── TÍTULO + BOTÓN RECHECK ──────────────────────────────────
-    reaper.ImGui_Text(ctx, 'Stem Separator — Configuración')
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_BeginDisabled(ctx, ST.check_state == "running")
-    if reaper.ImGui_Button(ctx, 'Comprobar todo de nuevo##recheck', -1, 0) then
-      run_check()
-    end
-    reaper.ImGui_EndDisabled(ctx)
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Separator(ctx)
-    reaper.ImGui_Spacing(ctx)
+    -- Inline action buttons for fixable items
+    if not checking then
+      if c.name == "uv" and c.status == "missing" then
+        g.same_line()
+        g.begin_disabled(ST.uv_state == "running")
+        if g.button("Instalar uv", 90, t.ITEM_H) then
+          ST.uv_state = "running"; ST.uv_msg = ""
+          launch("uv", "install-uv")
+        end
+        g.end_disabled()
+        if ST.uv_state == "running" then
+          g.same_line(6)
+          g.text_colored(ST.uv_msg ~= "" and ST.uv_msg:sub(1,45) or "Instalando...", "YELLOW")
+        elseif ST.uv_state == "error" then
+          g.same_line(6)
+          g.text_colored("Error", "RED")
+        end
 
-    -- ── LISTA DE CHECKS ─────────────────────────────────────────
-    local checking = ST.check_state == "running"
-    for _, c in ipairs(CHECKS) do
-      local icon  = checking and "⋯" or status_icon(c.status)
-      local color = checking and C_YELLOW or status_color(c.status)
+      elseif c.name == "modal-cli" and c.status == "missing" and uv_ok then
+        g.same_line()
+        g.begin_disabled(ST.sync_state == "running")
+        if g.button("Instalar deps", 102, t.ITEM_H) then
+          ST.sync_state = "running"; ST.sync_msg = ""
+          launch("sync", "sync-deps")
+        end
+        g.end_disabled()
+        if ST.sync_state == "running" then
+          g.same_line(6)
+          g.text_colored(ST.sync_msg ~= "" and ST.sync_msg:sub(1,40) or "Instalando...", "YELLOW")
+        elseif ST.sync_state == "error" then
+          g.same_line(6)
+          g.text_colored("Error", "RED")
+        end
 
-      reaper.ImGui_TextColored(ctx, color, icon)
-      reaper.ImGui_SameLine(ctx, 0, 6)
-      reaper.ImGui_Text(ctx, c.label)
-      if c.detail ~= "" then
-        reaper.ImGui_SameLine(ctx, 0, 10)
-        reaper.ImGui_TextDisabled(ctx, c.detail:sub(1, 52))
-      end
+      elseif c.name == "demucs" and c.status == "missing" then
+        g.same_line()
+        g.begin_disabled(ST.demucs_state == "running")
+        if g.button("Instalar", 70, t.ITEM_H) then
+          ST.demucs_state = "running"; ST.demucs_msg = ""
+          launch("demucs", "install-demucs --python " .. q(PYTHON))
+        end
+        g.end_disabled()
+        if ST.demucs_state == "running" then
+          g.same_line(6); g.text_colored("Instalando...", "YELLOW")
+        elseif ST.demucs_state == "error" then
+          g.same_line(6); g.text_colored("Error — revisa el log", "RED")
+        end
 
-      -- Inline actions for fixable items
-      if not checking then
-        -- uv missing: install button
-        if c.name == "uv" and c.status == "missing" then
-          reaper.ImGui_SameLine(ctx)
-          reaper.ImGui_BeginDisabled(ctx, ST.uv_state == "running")
-          if reaper.ImGui_Button(ctx, 'Instalar uv##uvinstall', 88, 0) then
-            ST.uv_state = "running"; ST.uv_msg = ""
-            launch("uv", "install-uv")
-          end
-          reaper.ImGui_EndDisabled(ctx)
-          if ST.uv_state == "running" then
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_TextColored(ctx, C_YELLOW, ST.uv_msg ~= "" and ST.uv_msg:sub(1,45) or "Instalando...")
-          elseif ST.uv_state == "error" then
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_TextColored(ctx, C_RED, "Error — " .. ST.uv_msg:sub(1,40))
-          end
-
-        -- modal-cli missing (uv ok): sync project deps
-        elseif c.name == "modal-cli" and c.status == "missing" then
-          local uv_ok = CHECKS[CHECK_IDX["uv"]] and CHECKS[CHECK_IDX["uv"]].status == "ok"
-          if uv_ok then
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_BeginDisabled(ctx, ST.sync_state == "running")
-            if reaper.ImGui_Button(ctx, 'Instalar deps##syncdeps', 102, 0) then
-              ST.sync_state = "running"; ST.sync_msg = ""
-              launch("sync", "sync-deps")
-            end
-            reaper.ImGui_EndDisabled(ctx)
-            if ST.sync_state == "running" then
-              reaper.ImGui_SameLine(ctx)
-              reaper.ImGui_TextColored(ctx, C_YELLOW, ST.sync_msg ~= "" and ST.sync_msg:sub(1,40) or "Instalando...")
-            elseif ST.sync_state == "error" then
-              reaper.ImGui_SameLine(ctx)
-              reaper.ImGui_TextColored(ctx, C_RED, "Error")
-            end
-          end
-
-        -- demucs missing: install button
-        elseif c.name == "demucs" and c.status == "missing" then
-          reaper.ImGui_SameLine(ctx)
-          reaper.ImGui_BeginDisabled(ctx, ST.demucs_state == "running")
-          if reaper.ImGui_Button(ctx, 'Instalar##dem', 68, 0) then
-            ST.demucs_state = "running"; ST.demucs_msg = ""
-            launch("demucs", "install-demucs --python " .. q(PYTHON))
-          end
-          reaper.ImGui_EndDisabled(ctx)
-          if ST.demucs_state == "running" then
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_TextColored(ctx, C_YELLOW, "Instalando...")
-          elseif ST.demucs_state == "error" then
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_TextColored(ctx, C_RED, "Error — revisa el log")
-          end
-
-        -- modal-auth missing: login button
-        elseif c.name == "modal-auth" and c.status == "missing" then
-          reaper.ImGui_SameLine(ctx)
-          reaper.ImGui_BeginDisabled(ctx, ST.login_state == "running")
-          if reaper.ImGui_Button(ctx, 'Login##modallogin', 48, 0) then
-            ST.login_state = "running"; ST.login_msg = ""
-            launch("login", "modal-login")
-          end
-          reaper.ImGui_EndDisabled(ctx)
-          if ST.login_state == "running" then
-            local msg = ST.login_msg ~= "" and ST.login_msg:sub(1, 45) or "Abriendo navegador..."
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_TextColored(ctx, C_YELLOW, msg)
-          elseif ST.login_state == "error" then
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_TextColored(ctx, C_RED, "Error — reintenta")
-          end
+      elseif c.name == "modal-auth" and c.status == "missing" then
+        g.same_line()
+        g.begin_disabled(ST.login_state == "running")
+        if g.button("Login", 50, t.ITEM_H) then
+          ST.login_state = "running"; ST.login_msg = ""
+          launch("login", "modal-login")
+        end
+        g.end_disabled()
+        if ST.login_state == "running" then
+          local msg = ST.login_msg ~= "" and ST.login_msg:sub(1,45) or "Abriendo navegador..."
+          g.same_line(6); g.text_colored(msg, "YELLOW")
+        elseif ST.login_state == "error" then
+          g.same_line(6); g.text_colored("Error — reintenta", "RED")
         end
       end
     end
+  end
+end
 
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Separator(ctx)
-    reaper.ImGui_Spacing(ctx)
+-- ── MAIN LOOP ────────────────────────────────────────────────────
+local function loop()
+  gui.frame_begin()
+  if gui.ctx.should_close then gfx.quit(); return end
 
-    -- ── HUGGING FACE SECRET ─────────────────────────────────────
-    reaper.ImGui_Text(ctx, 'Hugging Face — secret para SAM Audio')
-    if reaper.ImGui_Button(ctx, 'Crear token en huggingface.co/settings/tokens##hfurl', -1, 0) then
-      os.execute('open "https://huggingface.co/settings/tokens" &')
+  local g = gui
+  local t = theme
+
+  -- Auto-check on first frame
+  if first_frame then first_frame = false; run_check() end
+
+  -- Poll async operations
+  poll_check()
+  poll_simple("uv_state",     "uv_msg",     "uv")
+  poll_simple("sync_state",   "sync_msg",   "sync")
+  poll_simple("demucs_state", "demucs_msg", "demucs")
+  poll_simple("login_state",  "login_msg",  "login")
+  poll_simple("hf_state",     "hf_msg",     "hfsecret")
+  poll_prewarm()
+
+  -- Trigger recheck after an action finishes
+  local function mark_done(key)
+    if ST[key] == "done" then ST[key] = "idle"; pending_recheck = true end
+  end
+  mark_done("uv_state"); mark_done("sync_state")
+  mark_done("demucs_state"); mark_done("login_state"); mark_done("hf_state")
+  if pending_recheck and ST.check_state ~= "running" then
+    pending_recheck = false; run_check()
+  end
+
+  -- ── HEADER ─────────────────────────────────────────────────────
+  g.push_font(t.F.H1)
+  g.text("Stem Separator — Configuración")
+  g.pop_font()
+  g.spacing()
+
+  g.begin_disabled(ST.check_state == "running")
+  g.next_width(-1)
+  if g.button("Comprobar todo de nuevo") then run_check() end
+  g.end_disabled()
+  g.spacing()
+  g.separator()
+  g.spacing()
+
+  -- ── CHECKS ─────────────────────────────────────────────────────
+  draw_checks()
+
+  g.spacing()
+  g.separator()
+  g.spacing()
+
+  -- ── HUGGING FACE TOKEN ─────────────────────────────────────────
+  g.text("Hugging Face — secret para SAM Audio")
+  g.spacing()
+  if g.button("Crear token en huggingface.co/settings/tokens", -1, t.BTN_H) then
+    os.execute('open "https://huggingface.co/settings/tokens" &')
+  end
+  g.spacing()
+
+  g.row_label("Token HF:", 72)
+  local hf_changed, hf_new = widgets.input_text("##hftoken", ST.hf_token,
+    { password = true })
+  if hf_changed then ST.hf_token = hf_new end
+
+  local can_save = ST.hf_token:sub(1, 3) == "hf_" and ST.hf_state ~= "running"
+  g.begin_disabled(not can_save)
+  g.next_width(-1)
+  if g.button('Guardar como Modal secret "huggingface-secret"') then
+    ST.hf_state = "running"; ST.hf_msg = ""
+    launch("hfsecret", "modal-secret-create --token " .. q(ST.hf_token))
+    ST.hf_token = ""
+  end
+  g.end_disabled()
+
+  if ST.hf_state == "running" then
+    g.text_colored("Guardando secret en Modal...", "YELLOW")
+  elseif ST.hf_state == "done" then
+    g.text_colored("OK  " .. (ST.hf_msg ~= "" and ST.hf_msg:sub(1,60) or "Guardado"), "GREEN")
+  elseif ST.hf_state == "error" then
+    g.text_colored("Error: " .. ST.hf_msg:sub(1,60), "RED")
+  end
+
+  g.spacing()
+  g.separator()
+  g.spacing()
+
+  -- ── PRE-WARM ───────────────────────────────────────────────────
+  g.text("Pre-cargar modelo SAM Audio (opcional)")
+  g.text_disabled("~14 GB  |  primera vez 10-20 min  |  queda cacheado en Modal")
+  g.spacing()
+
+  g.begin_disabled(ST.prewarm_state == "running")
+  g.next_width(-1)
+  if g.button("Descargar facebook/sam-audio-large") then
+    ST.prewarm_state = "running"; ST.prewarm_pct = 0; ST.prewarm_msg = ""
+    launch("prewarm", "prewarm --model facebook/sam-audio-large")
+  end
+  g.end_disabled()
+
+  if ST.prewarm_state == "running" then
+    g.progress_bar(ST.prewarm_pct, nil, 14,
+      string.format('%d%%', math.floor(ST.prewarm_pct * 100)))
+    if ST.prewarm_msg ~= "" then
+      g.text_colored(ST.prewarm_msg:sub(1, 70), "YELLOW")
     end
-    reaper.ImGui_Spacing(ctx)
+  elseif ST.prewarm_state == "done" then
+    g.text_colored("OK  Descarga completada", "GREEN")
+  elseif ST.prewarm_state == "error" then
+    g.text_colored("Error: " .. ST.prewarm_msg:sub(1,60), "RED")
+  end
 
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'Token HF:')
-    reaper.ImGui_SameLine(ctx)
-    reaper.ImGui_SetNextItemWidth(ctx, -1)
-    local rv, new_tok = reaper.ImGui_InputText(ctx, '##hftoken', ST.hf_token,
-      reaper.ImGui_InputTextFlags_Password())
-    if rv then ST.hf_token = new_tok end
-
-    local can_save = ST.hf_token:sub(1, 3) == "hf_" and ST.hf_state ~= "running"
-    reaper.ImGui_BeginDisabled(ctx, not can_save)
-    if reaper.ImGui_Button(ctx, 'Guardar como Modal secret "huggingface-secret"##hfsave', -1, 0) then
-      ST.hf_state = "running"; ST.hf_msg = ""
-      launch("hfsecret", "modal-secret-create --token " .. q(ST.hf_token))
-      ST.hf_token = ""
-    end
-    reaper.ImGui_EndDisabled(ctx)
-
-    if ST.hf_state == "running" then
-      reaper.ImGui_TextColored(ctx, C_YELLOW, "Guardando secret en Modal...")
-    elseif ST.hf_state == "done" then
-      reaper.ImGui_TextColored(ctx, C_GREEN,  "✓ " .. ST.hf_msg:sub(1, 60))
-    elseif ST.hf_state == "error" then
-      reaper.ImGui_TextColored(ctx, C_RED,    "✗ " .. ST.hf_msg:sub(1, 60))
-    end
-
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Separator(ctx)
-    reaper.ImGui_Spacing(ctx)
-
-    -- ── PRE-WARM MODELO ─────────────────────────────────────────
-    reaper.ImGui_Text(ctx, 'Pre-cargar modelo SAM Audio (opcional)')
-    reaper.ImGui_TextDisabled(ctx, '~14 GB · primera vez 10-20 min · queda cacheado en Modal')
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_BeginDisabled(ctx, ST.prewarm_state == "running")
-    if reaper.ImGui_Button(ctx, 'Descargar facebook/sam-audio-large##pw', -1, 0) then
-      ST.prewarm_state = "running"; ST.prewarm_pct = 0; ST.prewarm_msg = ""
-      launch("prewarm", "prewarm --model facebook/sam-audio-large")
-    end
-    reaper.ImGui_EndDisabled(ctx)
-
-    if ST.prewarm_state == "running" then
-      reaper.ImGui_ProgressBar(ctx, ST.prewarm_pct, -1, 14,
-        string.format('%d%%', math.floor(ST.prewarm_pct * 100)))
-      if ST.prewarm_msg ~= "" then
-        reaper.ImGui_TextColored(ctx, C_YELLOW, ST.prewarm_msg:sub(1, 70))
-      end
-    elseif ST.prewarm_state == "done" then
-      reaper.ImGui_TextColored(ctx, C_GREEN, "✓ Descarga completada")
-    elseif ST.prewarm_state == "error" then
-      reaper.ImGui_TextColored(ctx, C_RED,   "✗ " .. ST.prewarm_msg:sub(1, 60))
-    end
-
-    reaper.ImGui_End(ctx)
-  end -- if visible
-
-  reaper.ImGui_PopFont(ctx)
-  reaper.ImGui_PopStyleVar(ctx, N_VAR)
-  reaper.ImGui_PopStyleColor(ctx, N_COL)
-
-  if open then reaper.defer(loop) end
+  gui.frame_end()
+  reaper.defer(loop)
 end
 
 reaper.defer(loop)

@@ -1,85 +1,35 @@
 -- @description Stem Separator - Demucs + SAM Audio
--- @version 2.0
+-- @version 3.0
 -- @author IAClaude
 -- @about Separacion de stems con Demucs (local) y SAM Audio (Modal cloud).
---        Requiere la extension ReaImGui (instalar via ReaPack).
+--        UI nativa gfx: sin dependencias externas de extensiones REAPER.
 
--- ── CHECK EXTENSIÓN ────────────────────────────────────────────
-if not reaper.ImGui_GetVersion then
-  local _info   = debug.getinfo(1, "S")
-  local _dir    = _info.source:match("@?(.*[/\\])") or ""
-  local _helper = _dir .. "setup_helpers.py"
-  local _tmpdir = os.getenv("TMPDIR") or "/tmp/"
-  local _pf     = _tmpdir .. "stemsep_reaimgui_install.txt"
+-- ── RUTAS + LIB ──────────────────────────────────────────────────
+local _info      = debug.getinfo(1, "S")
+local SCRIPT_DIR = _info.source:match("@?(.*[/\\])") or ""
 
-  if reaper.APIExists("ReaPack_BrowsePackages") then
-    -- ReaPack disponible: abre el browser ya filtrado (2 clics para instalar)
-    reaper.ReaPack_BrowsePackages("ReaImGui")
-    reaper.MB(
-      "ReaImGui no está instalado.\n\n" ..
-      "Hemos abierto ReaPack filtrado por 'ReaImGui'.\n\n" ..
-      "  1. Selecciona 'ReaImGui' de cfillion\n" ..
-      "  2. Clic derecho → Install latest version\n" ..
-      "  3. Apply\n" ..
-      "  4. Reinicia REAPER y vuelve a abrir el script.",
-      "Stem Separator — Instalar ReaImGui", 0)
-  else
-    -- Sin ReaPack: descarga directa desde GitHub (síncrono, ~5-10 s)
-    reaper.MB("ReaImGui no encontrado. Descargando desde GitHub, espera unos segundos...",
-      "Stem Separator — ReaImGui", 0)
-    os.execute(string.format('python3 "%s" install-reaimgui --progress "%s"', _helper, _pf))
-    local _msg = "Revisa ~/Library/Application Support/REAPER/UserPlugins/"
-    local _f = io.open(_pf, "r")
-    if _f then
-      local _raw = _f:read("*a"); _f:close()
-      _msg = _raw:match("|[^|]*|(.+)$") or _msg
-    end
-    reaper.MB(_msg .. "\n\nReinicia REAPER para activar ReaImGui.",
-      "Stem Separator — ReaImGui", 0)
-  end
-  return
-end
+package.path = SCRIPT_DIR .. "lib/?.lua;" .. package.path
 
--- ── RUTAS ──────────────────────────────────────────────────────
-local info       = debug.getinfo(1, "S")
-local SCRIPT_DIR = info.source:match("@?(.*[/\\])") or ""
+local common  = require("common")
+local theme   = require("theme")
+local gui     = require("gui")
+local widgets = require("widgets_extra")
 
-local HOME       = os.getenv("HOME") or ""
-local TMPDIR     = os.getenv("TMPDIR") or "/tmp/"
+local HOME       = common.HOME
+local TMPDIR     = common.TMPDIR
 local SAM_DIR    = SCRIPT_DIR
 local SAM_SCRIPT = "modal_sam_audio.py"
 local DEMUCS_PY  = SCRIPT_DIR .. "separate_demucs.py"
 local SAM_PY     = SCRIPT_DIR .. "separate_sam.py"
 local PROGRESS_F = TMPDIR .. "stemsep_progress.txt"
 local LOG_F      = TMPDIR .. "stemsep.log"
-local REAPER_INI = reaper.GetResourcePath() .. "/reaper.ini"
 
--- ── PYTHON DETECTION ───────────────────────────────────────────
-local function detect_reaper_python()
-  local f = io.open(REAPER_INI, "r")
-  if not f then return nil, "Cannot open " .. REAPER_INI end
-  local libpath
-  for line in f:lines() do
-    local key, val = line:match("^(pythonlibpath64)=(.*)$")
-    if not key then key, val = line:match("^(pythonlibpath32)=(.*)$") end
-    if key and val ~= "" then libpath = val; break end
-  end
-  f:close()
-  if not libpath then return nil, "pythonlibpath not found in reaper.ini" end
-  local parent = libpath:match("^(.*)/lib$")
-  if not parent then return nil, "Unexpected libpath format: " .. libpath end
-  local exe = parent .. "/bin/python3"
-  if not io.open(exe, "r") then return nil, "Detected python not found: " .. exe end
-  return exe, nil
+local PYTHON, PYTHON_ERR = common.detect_reaper_python()
+if PYTHON_ERR then
+  reaper.ShowConsoleMsg("Stem Separator - WARNING: " .. PYTHON_ERR .. "\n")
 end
 
-local PYTHON, PYTHON_ERR = detect_reaper_python()
-if not PYTHON then
-  reaper.ShowConsoleMsg("Stem Separator - ERROR: " .. PYTHON_ERR .. "\n")
-  PYTHON = "python3"
-end
-
--- ── CONSTANTES ─────────────────────────────────────────────────
+-- ── CONSTANTES ───────────────────────────────────────────────────
 local DM_MODELS = { "htdemucs", "htdemucs_ft", "htdemucs_6s", "mdx_extra" }
 local DM_LABELS = {
   "htdemucs  (4 stems)",
@@ -88,13 +38,13 @@ local DM_LABELS = {
   "mdx_extra  (4 stems, MDX-Net)",
 }
 local STEM_KEYS  = { "vocals", "drums", "bass", "other", "guitar", "piano" }
-local STEM_NAMES = { vocals="Vocales", drums="Bateria", bass="Bajo",
+local STEM_NAMES = { vocals="Vocales", drums="Batería", bass="Bajo",
                      other="Otros", guitar="Guitarra*", piano="Piano*" }
 local SAM_MODELS = { "facebook/sam-audio-large", "facebook/sam-audio-base" }
 local SAM_GPUS   = { "A100", "A10G", "T4" }
 local ODE_METHODS= { "midpoint", "euler", "rk4" }
 
--- ── ESTADO ─────────────────────────────────────────────────────
+-- ── ESTADO ───────────────────────────────────────────────────────
 local S = {
   tab            = 1,
   src            = "",
@@ -125,18 +75,16 @@ local S = {
   log_scroll_to_bottom = false,
 }
 
--- ── HELPERS CORE ───────────────────────────────────────────────
+-- ── HELPERS CORE ─────────────────────────────────────────────────
 local function add_log(s)
   table.insert(S.log, tostring(s):sub(1, 200))
   if #S.log > 200 then table.remove(S.log, 1) end
   S.log_scroll_to_bottom = true
 end
 
-local function q(s)  -- shell quoting
-  return '"' .. s:gsub('"', '\\"') .. '"'
-end
+local function q(s) return common.q(s) end
 
--- ── SETUP CHECK (asíncrono, solo al inicio) ───────────────────
+-- ── SETUP CHECK (asíncrono al inicio) ────────────────────────────
 local SETUP_CHECK_F = TMPDIR .. "stemsep_setup_check.txt"
 local SETUP_HELPER  = SCRIPT_DIR .. "setup_helpers.py"
 local setup_missing = {}
@@ -145,7 +93,7 @@ local setup_checked = false
 local function launch_setup_check()
   local f = io.open(SETUP_CHECK_F, "w")
   if f then f:write("running|0.00|..."); f:close() end
-  local cmd = string.format('%s %s check --progress %s >> %s 2>&1 &',
+  local cmd = string.format('%s %s check --progress %s >>%s 2>&1 &',
     q(PYTHON), q(SETUP_HELPER), q(SETUP_CHECK_F),
     q(TMPDIR .. "stemsep_setup.log"))
   os.execute(cmd)
@@ -153,10 +101,8 @@ end
 
 local function poll_setup_check()
   if setup_checked then return end
-  local f = io.open(SETUP_CHECK_F, "r")
-  if not f then return end
-  local raw = f:read("*a"); f:close()
-  if raw:match("^done|") == nil then return end
+  local r = common.read_progress_file(SETUP_CHECK_F)
+  if not r or r.state ~= "done" then return end
   setup_checked = true
   local LABELS = {
     python         = "Python REAPER",
@@ -166,7 +112,7 @@ local function poll_setup_check()
     ["modal-auth"] = "Modal sin auth",
     ["hf-secret"]  = "HF secret faltante",
   }
-  for line in (raw .. "\n"):gmatch("([^\n]*)\n") do
+  for _, line in ipairs(r.extra) do
     local name, status = line:match("^CHECK|([^|]+)|([^|]+)|")
     if name and status == "missing" then
       table.insert(setup_missing, LABELS[name] or name)
@@ -174,49 +120,38 @@ local function poll_setup_check()
   end
 end
 
--- ── LECTURA DE PROGRESO ────────────────────────────────────────
+-- ── PROGRESO ─────────────────────────────────────────────────────
 local function read_progress()
-  local f = io.open(PROGRESS_F, "r")
-  if not f then return end
-  local content = f:read("*a"); f:close()
-  if content == "" then return end
+  local r = common.read_progress_file(PROGRESS_F)
+  if not r then return end
 
-  local lines = {}
-  for line in (content .. "\n"):gmatch("([^\n]*)\n") do
-    if line ~= "" then table.insert(lines, line) end
-  end
-  if #lines == 0 then return end
-
-  local state_s, pct_s, msg = lines[1]:match("^([^|]+)|([^|]+)|(.+)$")
-  if not state_s then return end
-
-  local pct = tonumber(pct_s) or S.progress
+  local pct = r.pct or S.progress
   S.progress = pct
-  if msg ~= S.status then
-    S.status = msg
-    add_log(msg)
+  if r.msg ~= S.status then
+    S.status = r.msg
+    add_log(r.msg)
   end
 
-  if state_s == "done" and not S.done then
+  if r.state == "done" and not S.done then
     S.running   = false
     S.done      = true
     S.out_files = {}
-    for i = 2, #lines do
-      local p = lines[i]:match("^%s*(.-)%s*$")
+    for _, line in ipairs(r.extra) do
+      local p = line:match("^%s*(.-)%s*$")
       if p ~= "" then table.insert(S.out_files, p) end
     end
     if #S.out_files > 0 then
       add_log("Archivos listos: " .. #S.out_files)
       import_stems()
     end
-  elseif state_s == "error" and not S.done then
+  elseif r.state == "error" and not S.done then
     S.running = false
     S.done    = true
-    add_log("ERROR: " .. (msg or "?"))
+    add_log("ERROR: " .. (r.msg or "?"))
   end
 end
 
--- ── INTEGRACIÓN CON REAPER ─────────────────────────────────────
+-- ── INTEGRACIÓN REAPER ───────────────────────────────────────────
 local function grab_from_reaper()
   local tcnt = reaper.CountSelectedTracks(0)
   if tcnt > 0 then
@@ -263,7 +198,7 @@ end
 function import_stems()
   if #S.out_files == 0 then return end
   reaper.Undo_BeginBlock()
-  local cursor  = reaper.GetCursorPosition()
+  local cursor   = reaper.GetCursorPosition()
   local imported = 0
 
   local folder_name = S.src_track_name
@@ -321,10 +256,10 @@ function import_stems()
   if imported == 0 then reaper.DeleteTrack(folder_tr) end
   reaper.UpdateArrange()
   reaper.Undo_EndBlock("Stem Separator: import stems to folder", -1)
-  add_log("Importados " .. imported .. " stems en carpeta '" .. folder_name .. "'")
+  add_log("Importados " .. imported .. " stems en '" .. folder_name .. "'")
 end
 
--- ── LANZAR PROCESOS ────────────────────────────────────────────
+-- ── LANZAR PROCESOS ──────────────────────────────────────────────
 local function clear_run(label)
   local f = io.open(PROGRESS_F, "w")
   if f then f:write("running|0.00|" .. label); f:close() end
@@ -353,7 +288,7 @@ local function launch_demucs()
   clear_run("Iniciando Demucs (" .. model .. ")...")
   add_log("Modelo: " .. model .. " | Stems: " .. table.concat(stems, ", "))
   local cmd = string.format(
-    '%s %s --input %s --model %s --stems %s --outdir %s --python %s --progress %s >> %s 2>&1 &',
+    '%s %s --input %s --model %s --stems %s --outdir %s --python %s --progress %s >>%s 2>&1 &',
     q(PYTHON), q(DEMUCS_PY),
     q(S.src), q(model), table.concat(stems, ","),
     q(S.outdir), q(PYTHON), q(PROGRESS_F), q(LOG_F))
@@ -384,7 +319,7 @@ local function launch_sam()
   local cmd = string.format(
     '%s %s --sam-dir %s --input %s --prompt %s --model %s --gpu %s' ..
     ' --steps %d --ode-method %s --chunk %.1f --overlap %.1f' ..
-    ' --confidence %.2f --candidates %d --outdir %s --progress %s >> %s 2>&1 &',
+    ' --confidence %.2f --candidates %d --outdir %s --progress %s >>%s 2>&1 &',
     q(PYTHON), q(SAM_PY), q(SAM_DIR),
     q(S.src), q(S.sam_prompt),
     q(SAM_MODELS[S.sam_midx]), q(SAM_GPUS[S.sam_gidx]),
@@ -395,349 +330,255 @@ local function launch_sam()
   os.execute(cmd)
 end
 
--- ── IMGUI: CONTEXTO Y FUENTES ──────────────────────────────────
-local ctx       = reaper.ImGui_CreateContext('Stem Separator')
-local font_ui   = reaper.ImGui_CreateFont('sans-serif', 14)
-local font_h1   = reaper.ImGui_CreateFont('sans-serif', 18)
-local font_mono = reaper.ImGui_CreateFont('monospace', 13)
-reaper.ImGui_Attach(ctx, font_ui)
-reaper.ImGui_Attach(ctx, font_h1)
-reaper.ImGui_Attach(ctx, font_mono)
-
--- ── COLORES (RGBA 0xRRGGBBAA) ──────────────────────────────────
-local C_GREEN  = 0x40B261FF
-local C_RED    = 0xD94238FF
-local C_YELLOW = 0xF2B81AFF
-local C_FG2    = 0x848491FF
-local C_LOG    = 0xB4B4BEFF
-
--- ── COMBO WRAPPER (estado 1-indexed → ImGui 0-indexed) ─────────
-local function combo1(label, idx, tbl)
-  local items = table.concat(tbl, "\0") .. "\0"
-  local rv, new0 = reaper.ImGui_Combo(ctx, label, idx - 1, items)
-  if rv then return new0 + 1 end
-  return idx
-end
-
--- ── TAB DEMUCS ─────────────────────────────────────────────────
+-- ── TAB DEMUCS ───────────────────────────────────────────────────
 local function draw_demucs_tab()
-  reaper.ImGui_AlignTextToFramePadding(ctx)
-  reaper.ImGui_Text(ctx, 'Modelo:')
-  reaper.ImGui_SameLine(ctx)
-  reaper.ImGui_SetNextItemWidth(ctx, -1)
-  S.dm_idx = combo1('##dm_model', S.dm_idx, DM_LABELS)
+  local g = gui
+  local t = theme
 
-  reaper.ImGui_Spacing(ctx)
-  reaper.ImGui_Text(ctx, 'Stems:')
-  reaper.ImGui_Spacing(ctx)
+  g.row_label("Modelo:", 68)
+  g.next_width(-1)
+  S.dm_idx = widgets.combo("##dm_model", S.dm_idx, DM_LABELS)
+  g.spacing()
 
-  local is6s = DM_MODELS[S.dm_idx] == 'htdemucs_6s'
+  g.text("Stems:")
+  g.spacing()
 
-  for i, k in ipairs({'vocals', 'drums', 'bass', 'other'}) do
-    if i > 1 then reaper.ImGui_SameLine(ctx, 0, 22) end
-    local rv, nv = reaper.ImGui_Checkbox(ctx, STEM_NAMES[k] .. '##' .. k, S.dm_stems[k])
-    if rv then S.dm_stems[k] = nv end
+  local is6s = DM_MODELS[S.dm_idx] == "htdemucs_6s"
+  local row1 = { "vocals", "drums", "bass", "other" }
+  for i, k in ipairs(row1) do
+    local cl, nv = g.checkbox(STEM_NAMES[k] .. "##" .. k, S.dm_stems[k])
+    if cl then S.dm_stems[k] = nv end
+    if i < #row1 then g.same_line(22) end
   end
 
-  reaper.ImGui_BeginDisabled(ctx, not is6s)
-  local rv, nv = reaper.ImGui_Checkbox(ctx, STEM_NAMES.guitar .. '##guitar', S.dm_stems.guitar)
-  if rv then S.dm_stems.guitar = nv end
-  reaper.ImGui_SameLine(ctx, 0, 22)
-  rv, nv = reaper.ImGui_Checkbox(ctx, STEM_NAMES.piano .. '##piano', S.dm_stems.piano)
-  if rv then S.dm_stems.piano = nv end
-  reaper.ImGui_EndDisabled(ctx)
+  g.begin_disabled(not is6s)
+  local cl, nv = g.checkbox(STEM_NAMES.guitar .. "##guitar", S.dm_stems.guitar)
+  if cl then S.dm_stems.guitar = nv end
+  g.same_line(22)
+  cl, nv = g.checkbox(STEM_NAMES.piano .. "##piano", S.dm_stems.piano)
+  if cl then S.dm_stems.piano = nv end
+  g.end_disabled()
   if not is6s then
-    reaper.ImGui_SameLine(ctx)
-    reaper.ImGui_TextDisabled(ctx, '  (solo htdemucs_6s)')
+    g.same_line(8)
+    g.text_disabled("(solo htdemucs_6s)")
   end
 
-  reaper.ImGui_Spacing(ctx)
-  if reaper.ImGui_Button(ctx, 'Todos') then
+  g.spacing()
+  if g.button("Todos", 70, t.ITEM_H) then
     for _, k in ipairs(STEM_KEYS) do S.dm_stems[k] = true end
   end
-  reaper.ImGui_SameLine(ctx)
-  if reaper.ImGui_Button(ctx, 'Ninguno') then
+  g.same_line()
+  if g.button("Ninguno", 70, t.ITEM_H) then
     for _, k in ipairs(STEM_KEYS) do S.dm_stems[k] = false end
   end
 end
 
--- ── TAB SAM AUDIO ──────────────────────────────────────────────
+-- ── TAB SAM AUDIO ────────────────────────────────────────────────
 local function draw_sam_tab()
-  local tbl_flags = 0
-  if reaper.ImGui_BeginTable(ctx, '##samtbl', 2, tbl_flags, 0, 0) then
-    reaper.ImGui_TableSetupColumn(ctx, '##lbl',
-      reaper.ImGui_TableColumnFlags_WidthFixed(), 90)
-    reaper.ImGui_TableSetupColumn(ctx, '##wgt',
-      reaper.ImGui_TableColumnFlags_WidthStretch())
+  local g = gui
+  local t = theme
+  local lw = 78  -- label column width
 
-    -- Prompt ─────────────────────────────────────────────────────
-    reaper.ImGui_TableNextRow(ctx)
-    reaper.ImGui_TableSetColumnIndex(ctx, 0)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'Prompt:')
-    reaper.ImGui_TableSetColumnIndex(ctx, 1)
-    reaper.ImGui_SetNextItemWidth(ctx, -1)
-    local rv, new_val = reaper.ImGui_InputText(ctx, '##prompt', S.sam_prompt,
-      reaper.ImGui_InputTextFlags_AutoSelectAll())
-    if rv then S.sam_prompt = new_val end
+  -- Prompt
+  g.row_label("Prompt:", lw)
+  local rv, nv = widgets.input_text("##prompt", S.sam_prompt)
+  if rv then S.sam_prompt = nv end
 
-    -- Modelo ─────────────────────────────────────────────────────
-    reaper.ImGui_TableNextRow(ctx)
-    reaper.ImGui_TableSetColumnIndex(ctx, 0)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'Modelo:')
-    reaper.ImGui_TableSetColumnIndex(ctx, 1)
-    reaper.ImGui_SetNextItemWidth(ctx, -1)
-    S.sam_midx = combo1('##sam_model', S.sam_midx, SAM_MODELS)
+  -- Modelo
+  g.row_label("Modelo:", lw)
+  g.next_width(-1)
+  S.sam_midx = widgets.combo("##sam_model", S.sam_midx, SAM_MODELS)
 
-    -- GPU + ODE method (mismo row) ───────────────────────────────
-    reaper.ImGui_TableNextRow(ctx)
-    reaper.ImGui_TableSetColumnIndex(ctx, 0)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'GPU:')
-    reaper.ImGui_TableSetColumnIndex(ctx, 1)
-    reaper.ImGui_SetNextItemWidth(ctx, 90)
-    S.sam_gidx = combo1('##sam_gpu', S.sam_gidx, SAM_GPUS)
-    reaper.ImGui_SameLine(ctx, 0, 14)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'ODE:')
-    reaper.ImGui_SameLine(ctx, 0, 6)
-    reaper.ImGui_SetNextItemWidth(ctx, -1)
-    S.sam_oidx = combo1('##sam_ode', S.sam_oidx, ODE_METHODS)
+  -- GPU + ODE method
+  g.row_label("GPU:", lw)
+  g.next_width(90)
+  S.sam_gidx = widgets.combo("##sam_gpu", S.sam_gidx, SAM_GPUS)
+  g.same_line(14)
+  g.inline_text("ODE:")
+  g.same_line(6)
+  g.next_width(-1)
+  S.sam_oidx = widgets.combo("##sam_ode", S.sam_oidx, ODE_METHODS)
 
-    -- ODE steps + Confianza (mismo row) ─────────────────────────
-    reaper.ImGui_TableNextRow(ctx)
-    reaper.ImGui_TableSetColumnIndex(ctx, 0)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'ODE steps:')
-    reaper.ImGui_TableSetColumnIndex(ctx, 1)
-    reaper.ImGui_SetNextItemWidth(ctx, 120)
-    rv, new_val = reaper.ImGui_SliderInt(ctx, '##steps', S.sam_steps, 1, 128)
-    if rv then S.sam_steps = new_val end
-    reaper.ImGui_SameLine(ctx, 0, 14)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'Conf.:')
-    reaper.ImGui_SameLine(ctx, 0, 6)
-    reaper.ImGui_SetNextItemWidth(ctx, -1)
-    rv, new_val = reaper.ImGui_SliderDouble(ctx, '##conf', S.sam_conf, 0.0, 1.0, '%.2f')
-    if rv then S.sam_conf = new_val end
+  -- ODE steps + Confianza
+  g.row_label("ODE steps:", lw)
+  g.next_width(120)
+  rv, nv = g.slider_int("##steps", S.sam_steps, 1, 128)
+  if rv then S.sam_steps = nv end
+  g.same_line(14)
+  g.inline_text("Conf.:")
+  g.same_line(6)
+  g.next_width(-1)
+  rv, nv = g.slider_float("##conf", S.sam_conf, 0.0, 1.0, "%.2f")
+  if rv then S.sam_conf = nv end
 
-    -- Chunk + Overlap + Candidatos (mismo row) ───────────────────
-    reaper.ImGui_TableNextRow(ctx)
-    reaper.ImGui_TableSetColumnIndex(ctx, 0)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'Chunk s:')
-    reaper.ImGui_TableSetColumnIndex(ctx, 1)
-    reaper.ImGui_SetNextItemWidth(ctx, 90)
-    rv, new_val = reaper.ImGui_SliderDouble(ctx, '##chunk', S.sam_chunk, 1.0, 30.0, '%.1f')
-    if rv then S.sam_chunk = new_val end
-    reaper.ImGui_SameLine(ctx, 0, 14)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'Overlap:')
-    reaper.ImGui_SameLine(ctx, 0, 6)
-    reaper.ImGui_SetNextItemWidth(ctx, 80)
-    rv, new_val = reaper.ImGui_SliderDouble(ctx, '##overlap', S.sam_overlap, 0.0, 10.0, '%.1f')
-    if rv then S.sam_overlap = new_val end
-    reaper.ImGui_SameLine(ctx, 0, 14)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'Cand.:')
-    reaper.ImGui_SameLine(ctx, 0, 6)
-    reaper.ImGui_SetNextItemWidth(ctx, -1)
-    rv, new_val = reaper.ImGui_SliderInt(ctx, '##cands', S.sam_cands, 1, 8)
-    if rv then S.sam_cands = new_val end
+  -- Chunk + Overlap + Candidatos
+  g.row_label("Chunk s:", lw)
+  g.next_width(90)
+  rv, nv = g.slider_float("##chunk", S.sam_chunk, 1.0, 30.0, "%.1f")
+  if rv then S.sam_chunk = nv end
+  g.same_line(14)
+  g.inline_text("Overlap:")
+  g.same_line(6)
+  g.next_width(80)
+  rv, nv = g.slider_float("##overlap", S.sam_overlap, 0.0, 10.0, "%.1f")
+  if rv then S.sam_overlap = nv end
+  g.same_line(14)
+  g.inline_text("Cand.:")
+  g.same_line(6)
+  g.next_width(-1)
+  rv, nv = g.slider_int("##cands", S.sam_cands, 1, 8)
+  if rv then S.sam_cands = nv end
 
-    reaper.ImGui_EndTable(ctx)
+  g.spacing()
+  g.text_disabled("A100: ~$0.14/pista  |  A10G: ~$0.09/pista  |  Requiere cuenta Modal.com")
+end
+
+-- ── GFX INIT ─────────────────────────────────────────────────────
+if gfx.w > 0 then gfx.quit() end
+gfx.init("Stem Separator", 560, 740)
+gfx.ext_retina = 1
+theme.init_fonts()
+
+-- ── MAIN LOOP ────────────────────────────────────────────────────
+local function loop()
+  gui.frame_begin()
+  if gui.ctx.should_close then gfx.quit(); return end
+
+  local g = gui
+  local t = theme
+
+  -- Setup banner (async background check)
+  poll_setup_check()
+  if setup_checked and #setup_missing > 0 then
+    g.text_wrapped("⚠  Config. incompleta: " .. table.concat(setup_missing, " · "))
+    g.text_disabled("Carga Setup.lua en Actions > Load ReaScript para configurar.")
+    g.spacing()
   end
 
-  reaper.ImGui_Spacing(ctx)
-  reaper.ImGui_TextDisabled(ctx,
-    'A100: ~$0.14/pista  |  A10G: ~$0.09/pista  |  Requiere cuenta Modal.com')
-end
+  -- Header
+  g.push_font(t.F.H1)
+  g.text("Stem Separator")
+  g.pop_font()
+  g.same_line(10)
+  g.text_colored("● Reaper OK", "GREEN")
+  g.separator()
+  g.spacing()
 
--- ── LOOP PRINCIPAL ─────────────────────────────────────────────
-local function loop()
-  -- Colores del tema oscuro
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(),         0x1A1A1CFF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBg(),          0x232327FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBgActive(),    0x2E2E35FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),          0x2E2E38FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(),   0x3C3C48FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(),    0x4A4A58FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_CheckMark(),        0x4799FFFF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_SliderGrab(),       0x4799FFFF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_SliderGrabActive(), 0x6AADFFFF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),           0x4799FF30)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),    0x4799FF70)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),     0x4799FFAA)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PopupBg(),          0x252528FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Separator(),        0x3A3A44FF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(),             0xEBEBEBFF)
-  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TextDisabled(),     0x848491FF)
-  local N_COL = 16
+  -- Source file row
+  g.row_label("Fuente:", 54)
+  local display_src = (S.src_track_name ~= "")
+    and (S.src_track_name .. "  (" .. (S.src:match("[^/\\]+$") or "") .. ")")
+    or S.src
+  g.next_width(-96)
+  widgets.input_text("##src_disp", display_src, { readonly = true })
+  g.same_line()
+  if g.button("...", 44, t.ITEM_H) then
+    local ok, fn = reaper.GetUserFileNameForRead("", "Abrir audio", "wav")
+    if ok then S.src = fn; S.src_track_name = ""; S.src_track_idx = -1 end
+  end
+  g.same_line()
+  if g.button("R", 44, t.ITEM_H) then grab_from_reaper() end
 
-  -- Bordes redondeados
-  reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(),  4.0)
-  reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_GrabRounding(),   4.0)
-  reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_WindowRounding(), 6.0)
-  local N_VAR = 3
+  if S.src_track_name ~= "" then
+    g.text_disabled("Pista seleccionada  |  clic en R para actualizar")
+  else
+    g.text_disabled("Clic en R para usar pista/item activo de Reaper")
+  end
+  g.spacing()
 
-  reaper.ImGui_PushFont(ctx, font_ui, 14)
-  reaper.ImGui_SetNextWindowSize(ctx, 540, 720, reaper.ImGui_Cond_FirstUseEver())
+  -- Tab bar
+  S.tab = widgets.tab_bar("##maintabs", S.tab, {"DEMUCS  (local)", "SAM AUDIO  (cloud)"})
+  g.spacing()
 
-  local visible, open = reaper.ImGui_Begin(ctx, 'Stem Separator##ss', true)
+  if S.tab == 1 then draw_demucs_tab()
+  else               draw_sam_tab() end
 
-  if visible then
+  g.spacing()
+  g.separator()
+  g.spacing()
 
-    -- SETUP BANNER (se rellena en segundo plano; desaparece si todo está OK)
-    poll_setup_check()
-    if setup_checked and #setup_missing > 0 then
-      reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), C_YELLOW)
-      reaper.ImGui_TextWrapped(ctx, '⚠  Config. incompleta: ' .. table.concat(setup_missing, ' · '))
-      reaper.ImGui_PopStyleColor(ctx)
-      reaper.ImGui_TextDisabled(ctx, 'Carga Setup.lua en Actions > Load ReaScript para configurar.')
-      reaper.ImGui_Spacing(ctx)
-    end
+  -- SEPARAR button — colors change per tab
+  local sep_colors
+  if S.tab == 1 then
+    sep_colors = {
+      norm   = { 0x29/255, 0x66/255, 0xB0/255 },
+      hover  = { 0x3D/255, 0x80/255, 0xD8/255 },
+      active = { 0x47/255, 0x99/255, 0xFF/255 },
+    }
+  else
+    sep_colors = {
+      norm   = { 0x4D/255, 0x19/255, 0xC4/255 },
+      hover  = { 0x66/255, 0x26/255, 0xE0/255 },
+      active = { 0x80/255, 0x33/255, 0xD1/255 },
+    }
+  end
+  local sep_lbl = S.running and "[ Procesando... ]"
+    or (S.tab == 1 and "SEPARAR  (Demucs)" or "SEPARAR  (SAM Audio)")
+  g.begin_disabled(S.running)
+  g.next_width(-1)
+  if g.button(sep_lbl, nil, 36, { solid = sep_colors }) then
+    if S.tab == 1 then launch_demucs() else launch_sam() end
+  end
+  g.end_disabled()
+  g.spacing()
 
-    -- HEADER ──────────────────────────────────────────────────────
-    reaper.ImGui_PushFont(ctx, font_h1, 18)
-    reaper.ImGui_Text(ctx, 'Stem Separator')
-    reaper.ImGui_PopFont(ctx)
-    reaper.ImGui_SameLine(ctx, 0, 10)
-    local dot_c = (reaper.CountTracks(0) >= 0) and C_GREEN or C_RED
-    reaper.ImGui_TextColored(ctx, dot_c, '● Reaper OK')
-    reaper.ImGui_Separator(ctx)
-    reaper.ImGui_Spacing(ctx)
+  -- Progress bar
+  local pct_str = string.format("%d%%", math.floor(S.progress * 100))
+  g.progress_bar(S.progress, nil, 16, pct_str)
 
-    -- FUENTE ──────────────────────────────────────────────────────
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'Fuente:')
-    reaper.ImGui_SameLine(ctx)
-    local display_src = (S.src_track_name ~= "")
-      and (S.src_track_name .. '  (' .. (S.src:match('[^/\\]+$') or '') .. ')')
-      or S.src
-    reaper.ImGui_SetNextItemWidth(ctx, -95)
-    reaper.ImGui_InputText(ctx, '##src_disp', display_src,
-      reaper.ImGui_InputTextFlags_ReadOnly())
-    reaper.ImGui_SameLine(ctx)
-    if reaper.ImGui_Button(ctx, '...', 42, 0) then
-      local ok, fn = reaper.GetUserFileNameForRead("", "Abrir audio", "wav")
-      if ok then S.src = fn; S.src_track_name = ""; S.src_track_idx = -1 end
-    end
-    reaper.ImGui_SameLine(ctx)
-    if reaper.ImGui_Button(ctx, 'R', 42, 0) then grab_from_reaper() end
+  local status_color = S.running and "YELLOW"
+    or (S.done and #S.out_files > 0 and "GREEN")
+    or (S.done and "RED")
+    or "FG_DIM"
+  g.text_colored(S.status:sub(1, 90), status_color)
+  g.spacing()
 
-    if S.src_track_name ~= "" then
-      reaper.ImGui_TextDisabled(ctx, 'Pista seleccionada  |  clic en R para actualizar')
-    else
-      reaper.ImGui_TextDisabled(ctx, 'Clic en R para usar pista/item activo de Reaper')
-    end
-    reaper.ImGui_Spacing(ctx)
-
-    -- TABS ────────────────────────────────────────────────────────
-    if reaper.ImGui_BeginTabBar(ctx, '##maintabs') then
-      if reaper.ImGui_BeginTabItem(ctx, 'DEMUCS  (local)') then
-        S.tab = 1
-        reaper.ImGui_Spacing(ctx)
-        draw_demucs_tab()
-        reaper.ImGui_EndTabItem(ctx)
+  -- Log area
+  if widgets.collapsing_header("Logs", true) then
+    if g.button("Copiar log", 90, t.ITEM_H) then
+      local ok, set_cb = pcall(function()
+        reaper.CF_SetClipboard(table.concat(S.log, "\n"))
+      end)
+      if not ok then
+        -- SWS/CF_ not available; print to console instead
+        reaper.ShowConsoleMsg(table.concat(S.log, "\n") .. "\n")
       end
-      if reaper.ImGui_BeginTabItem(ctx, 'SAM AUDIO  (cloud)') then
-        S.tab = 2
-        reaper.ImGui_Spacing(ctx)
-        draw_sam_tab()
-        reaper.ImGui_EndTabItem(ctx)
-      end
-      reaper.ImGui_EndTabBar(ctx)
+    end
+    g.same_line()
+    if g.button("Limpiar", 70, t.ITEM_H) then S.log = {} end
+    g.spacing()
+
+    -- Scroll to bottom if new lines arrived
+    if S.log_scroll_to_bottom then
+      widgets.scroll_to_bottom("##logscroll")
+      S.log_scroll_to_bottom = false
     end
 
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Separator(ctx)
-    reaper.ImGui_Spacing(ctx)
-
-    -- BOTÓN SEPARAR ───────────────────────────────────────────────
-    local btn_c = S.tab == 1 and 0x2966B0CC or 0x4D19C4CC
-    local btn_h = S.tab == 1 and 0x3D80D8CC or 0x6626E0CC
-    local btn_a = S.tab == 1 and 0x4799FFCC or 0x8033D1CC
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),        btn_c)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), btn_h)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),  btn_a)
-    local sep_lbl = S.running and '[ Procesando... ]'
-      or (S.tab == 1 and 'SEPARAR  (Demucs)' or 'SEPARAR  (SAM Audio)')
-    reaper.ImGui_BeginDisabled(ctx, S.running)
-    if reaper.ImGui_Button(ctx, sep_lbl, -1, 36) then
-      if S.tab == 1 then launch_demucs() else launch_sam() end
-    end
-    reaper.ImGui_EndDisabled(ctx)
-    reaper.ImGui_PopStyleColor(ctx, 3)
-
-    reaper.ImGui_Spacing(ctx)
-
-    -- BARRA DE PROGRESO ───────────────────────────────────────────
-    local pct_str = string.format('%d%%', math.floor(S.progress * 100))
-    reaper.ImGui_ProgressBar(ctx, S.progress, -1, 16, pct_str)
-
-    local msg_c
-    if     S.running                       then msg_c = C_YELLOW
-    elseif S.done and #S.out_files > 0     then msg_c = C_GREEN
-    elseif S.done                          then msg_c = C_RED
-    else                                        msg_c = C_FG2  end
-    reaper.ImGui_TextColored(ctx, msg_c, S.status:sub(1, 90))
-
-    reaper.ImGui_Spacing(ctx)
-
-    -- ÁREA DE LOGS (colapsable) ───────────────────────────────────
-    if reaper.ImGui_CollapsingHeader(ctx, '  Logs##loghdr',
-        reaper.ImGui_TreeNodeFlags_DefaultOpen()) then
-
-      if reaper.ImGui_Button(ctx, 'Copiar log') then
-        reaper.ImGui_SetClipboardText(ctx, table.concat(S.log, '\n'))
-      end
-      reaper.ImGui_SameLine(ctx)
-      if reaper.ImGui_Button(ctx, 'Limpiar') then
-        S.log = {}
-      end
-
-      reaper.ImGui_PushFont(ctx, font_mono, 13)
-      reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), 0x111116FF)
-      local _, avail_h = reaper.ImGui_GetContentRegionAvail(ctx)
-      local log_h = math.max(60, avail_h - 4)
-      reaper.ImGui_BeginChild(ctx, '##logscroll', 0, log_h,
-        reaper.ImGui_ChildFlags_Borders())
-      reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), 0, 2)
+    g.push_font(t.F.MONO)
+    local _, avail_h = gfx.w, gfx.h
+    local log_h = math.max(60, gfx.h - gui.ctx.y - t.PAD_Y - 10)
+    widgets.scroll_region("##logscroll", 0, log_h, function()
       for i = 1, #S.log do
         local ln = S.log[i]
-        if ln:find('^ERROR') then
-          reaper.ImGui_TextColored(ctx, C_RED, ln)
+        if ln:find("^ERROR") then
+          g.text_colored(ln, "RED")
         else
-          reaper.ImGui_TextColored(ctx, C_LOG, ln)
+          g.text_colored(ln, "LOG_FG")
         end
       end
-      reaper.ImGui_PopStyleVar(ctx)
-      if S.log_scroll_to_bottom then
-        reaper.ImGui_SetScrollHereY(ctx, 1.0)
-        S.log_scroll_to_bottom = false
-      end
-      reaper.ImGui_EndChild(ctx)
-      reaper.ImGui_PopStyleColor(ctx)
-      reaper.ImGui_PopFont(ctx)
-    end
+    end)
+    g.pop_font()
+  end
 
-  reaper.ImGui_End(ctx)
-
-  end -- if visible
-
-  reaper.ImGui_PopStyleVar(ctx,   N_VAR)
-  reaper.ImGui_PopStyleColor(ctx, N_COL)
-  reaper.ImGui_PopFont(ctx)
+  gui.frame_end()
 
   if S.running then read_progress() end
-
-  if open then reaper.defer(loop) end
+  reaper.defer(loop)
 end
 
--- ── INICIO ─────────────────────────────────────────────────────
+-- ── INICIO ───────────────────────────────────────────────────────
 add_log("Stem Separator listo.")
-add_log("Demucs: " .. PYTHON)
-add_log("SAM: " .. SAM_DIR)
+add_log("Python: " .. PYTHON)
+add_log("SAM dir: " .. SAM_DIR)
 launch_setup_check()
 reaper.defer(loop)
