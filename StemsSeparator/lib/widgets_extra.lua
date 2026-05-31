@@ -417,6 +417,36 @@ function M.scroll_region(id, w, h, draw_fn)
     s.scroll_to_bottom = false
   end
 
+  -- Scrollbar thumb drag (uses content_h from previous frame — accurate after first render)
+  local max_sc_drag = math.max(0, (s.content_h or h) - h)
+  if max_sc_drag > 0 then
+    local ratio_d   = h / (s.content_h or h)
+    local thumb_h_d = math.max(16, math.floor(h * ratio_d))
+    local sb_x_d    = x + inner_w + 2
+    local thumb_y_d = y + math.floor(s.scroll_y / max_sc_drag * (h - thumb_h_d))
+
+    local on_thumb = ctx.mx >= sb_x_d and ctx.mx < sb_x_d + t.SCROLL_W
+                  and ctx.my >= thumb_y_d and ctx.my < thumb_y_d + thumb_h_d
+    if on_thumb and ctx.mb == 1 and ctx.mb_prev == 0 then
+      s.drag_active       = true
+      s.drag_start_my     = ctx.my
+      s.drag_start_scroll = s.scroll_y
+    end
+
+    if s.drag_active then
+      if ctx.mb == 1 then
+        local delta_my     = ctx.my - s.drag_start_my
+        local delta_scroll = delta_my * max_sc_drag / (h - thumb_h_d)
+        s.scroll_y = math.max(0, math.min(max_sc_drag,
+                       s.drag_start_scroll + delta_scroll))
+      else
+        s.drag_active = false
+      end
+    end
+  else
+    s.drag_active = false
+  end
+
   -- Draw background before text (text draws on top within clipped region)
   local bg = t.C.LOG_BG; gfx.set(bg[1], bg[2], bg[3], 1)
   gfx.rect(x, y, inner_w, h, 1)
@@ -460,18 +490,22 @@ function M.scroll_region(id, w, h, draw_fn)
 
   -- Scrollbar
   if s.content_h and s.content_h > h then
-    local sb_x   = x + inner_w + 2
-    local ratio  = h / s.content_h
+    local sb_x    = x + inner_w + 2
+    local ratio   = h / s.content_h
     local thumb_h = math.max(16, math.floor(h * ratio))
     local max_sc  = s.content_h - h
     local thumb_y = max_sc > 0
       and (y + math.floor(s.scroll_y / max_sc * (h - thumb_h)))
       or  y
 
+    local on_thumb_hover = ctx.mx >= sb_x and ctx.mx < sb_x + t.SCROLL_W
+                        and ctx.my >= thumb_y and ctx.my < thumb_y + thumb_h
+
     local sc = t.C.SCROLLBAR; gfx.set(sc[1], sc[2], sc[3], 0.3)
     gfx.rect(sb_x, y, t.SCROLL_W, h, 1)
 
-    gfx.set(sc[1], sc[2], sc[3], 0.8)
+    local thumb_alpha = (s.drag_active or on_thumb_hover) and 1.0 or 0.8
+    gfx.set(sc[1], sc[2], sc[3], thumb_alpha)
     gfx.rect(sb_x+1, thumb_y, t.SCROLL_W-2, thumb_h, 1)
   end
 
