@@ -76,6 +76,9 @@ def main():
     out_path = Path(args.outdir)
     out_path.mkdir(parents=True, exist_ok=True)
 
+    # Snapshot existing wav files so we can detect only the new ones after the run
+    existing_wavs = set(str(f) for f in out_path.glob("*.wav"))
+
     # --- locate uv binary ----------------------------------------------------
     uv_bin = _find_uv()
     if uv_bin is None:
@@ -160,14 +163,17 @@ def main():
         return 1
 
     # --- discover output files -----------------------------------------------
-    stem_name = Path(args.input).stem
-    # The reference script produces _target.wav and _residual.wav
-    output_files = sorted(str(f) for f in out_path.glob(f"{stem_name}_sam_*_target.wav"))
-    output_files += sorted(str(f) for f in out_path.glob(f"{stem_name}_sam_*_residual.wav"))
+    # Only report files created by this run (not leftovers from previous runs)
+    all_wavs = set(str(f) for f in out_path.glob("*.wav"))
+    output_files = sorted(all_wavs - existing_wavs)
 
     if not output_files:
-        # Fallback: any wav in output dir
-        output_files = sorted(str(f) for f in out_path.glob("*.wav"))
+        # Fallback: any wav matching this stem + prompt (avoids cross-run pollution)
+        stem_name = Path(args.input).stem
+        prompt_tag = args.prompt.replace(" ", "_")
+        output_files = sorted(
+            str(f) for f in out_path.glob(f"{stem_name}_sam_*_{prompt_tag}_*.wav")
+        )
 
     write_progress(pf, "done", 1.0,
                    f"Completado. {len(output_files)} archivos generados.",
