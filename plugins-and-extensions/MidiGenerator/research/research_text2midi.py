@@ -31,16 +31,18 @@ DEFAULT_PROMPT = (
 
 
 def _clone_repo_if_needed():
-    if os.path.isdir(os.path.join(REPO_DIR, "model")):
-        return
-    print(f"[setup] Clonando {REPO_URL} → {REPO_DIR} ...")
-    subprocess.check_call(["git", "clone", "--depth=1", REPO_URL, REPO_DIR])
-    # instalar dependencias específicas del repo (además de las de pyproject.toml)
-    req = os.path.join(REPO_DIR, "requirements-mac.txt")
-    if not os.path.isfile(req):
-        req = os.path.join(REPO_DIR, "requirements.txt")
-    if os.path.isfile(req):
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req, "-q"])
+    sentinel = os.path.join(REPO_DIR, ".deps_installed")
+    if not os.path.isdir(os.path.join(REPO_DIR, "model")):
+        print(f"[setup] Clonando {REPO_URL} → {REPO_DIR} ...")
+        subprocess.check_call(["git", "clone", "--depth=1", REPO_URL, REPO_DIR])
+    if not os.path.isfile(sentinel):
+        req = os.path.join(REPO_DIR, "requirements-mac.txt")
+        if not os.path.isfile(req):
+            req = os.path.join(REPO_DIR, "requirements.txt")
+        if os.path.isfile(req):
+            print(f"[setup] Instalando dependencias de {os.path.basename(req)} ...")
+            subprocess.check_call(["uv", "pip", "install", "-r", req, "-q"])
+            open(sentinel, "w").close()
 
 
 def _device():
@@ -57,7 +59,8 @@ def _mem_mb():
     return psutil.Process().memory_info().rss / 1024 / 1024
 
 
-def generate(prompt: str, out_path: str, temperature: float = 1.0, max_len: int = 2000):
+def generate(prompt: str, out_path: str, temperature: float = 1.0, max_len: int = 512,
+             device_override: str | None = None, half_precision: bool = True):
     _clone_repo_if_needed()
 
     # el model/ del repo text2midi debe estar en el path
@@ -71,8 +74,8 @@ def generate(prompt: str, out_path: str, temperature: float = 1.0, max_len: int 
     # importar desde el repo clonado
     from model.transformer_model import Transformer  # noqa: E402
 
-    device = _device()
-    print(f"[info] device={device}")
+    device = device_override if device_override else _device()
+    print(f"[info] device={device}  half_precision={half_precision}")
 
     # --- carga del modelo ---
     t0 = time.time()
@@ -86,8 +89,12 @@ def generate(prompt: str, out_path: str, temperature: float = 1.0, max_len: int 
         r_tokenizer = pickle.load(f)
 
     vocab_size = len(r_tokenizer)
-    model = Transformer(vocab_size, 768, 8, 2048, 18, 1024, False, 8, device=device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    # Cargar siempre en CPU primero para evitar picos de memoria en MPS
+    model = Transformer(vocab_size, 768, 8, 2048, 18, 1024, False, 8, device="cpu")
+    model.load_state_dict(torch.load(model_path, map_location="cpu"))
+    if half_precision:
+        model = model.half()
+    model = model.to(device)
     model.eval()
 
     text_tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-base")
@@ -102,6 +109,7 @@ def generate(prompt: str, out_path: str, temperature: float = 1.0, max_len: int 
     inputs = text_tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
     input_ids = inputs.input_ids.to(device)
     attention_mask = inputs.attention_mask.to(device)
+    # input_ids son enteros — no convertir a half; sólo los pesos del modelo van en fp16
 
     with torch.no_grad():
         output = model.generate(
@@ -133,10 +141,16 @@ def main():
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     parser.add_argument("--out", default="out_t2m.mid")
     parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--max_len", type=int, default=2000)
+    parser.add_argument("--max_len", type=int, default=512,
+                        help="Tokens a generar (default 512; 2000 para piezas largas)")
+    parser.add_argument("--device", default=None,
+                        help="Forzar dispositivo: cpu, mps, cuda (auto si se omite)")
+    parser.add_argument("--no-half", action="store_true",
+                        help="Desactivar float16 (más RAM, más preciso)")
     args = parser.parse_args()
 
-    generate(args.prompt, args.out, args.temperature, args.max_len)
+    generate(args.prompt, args.out, args.temperature, args.max_len,
+             device_override=args.device, half_precision=not args.no_half)
 
 
 if __name__ == "__main__":

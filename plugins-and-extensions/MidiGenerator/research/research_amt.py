@@ -134,6 +134,8 @@ def main():
                         help="Ruta de salida. Si mode=both se ignora y usa nombres fijos.")
     parser.add_argument("--duration", type=int, default=10,
                         help="Segundos a generar (default: 10)")
+    parser.add_argument("--no-half", action="store_true",
+                        help="Desactivar float16 (más RAM, más preciso)")
     args = parser.parse_args()
 
     # crear fixture si no existe
@@ -148,14 +150,21 @@ def main():
     from transformers import AutoModelForCausalLM
 
     device = _device()
-    print(f"[info] device={device} (AMT optimizado para CUDA; en CPU es más lento)")
+    half_precision = not args.no_half
+    dtype = torch.float16 if half_precision else torch.float32
+    print(f"[info] device={device}  half_precision={half_precision}  (AMT optimizado para CUDA; en CPU es más lento)")
 
     # --- carga del modelo ---
     t0 = time.time()
     mem_before = _mem_mb()
 
     print(f"[setup] cargando {MODEL_NAME} ...")
-    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
+    # low_cpu_mem_usage evita picos de RAM durante la deserialización
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        torch_dtype=dtype,
+        low_cpu_mem_usage=True,
+    )
     model = model.to(device)
     model.eval()
 
