@@ -634,7 +634,7 @@ local function loop()
           g.text_colored(ln, "LOG_FG")
         end
       end
-    end)
+    end, { hscroll = true })
     g.pop_font()
   end
 

@@ -384,129 +384,194 @@ end
 -- ── SCROLL REGION ─────────────────────────────────────────────────
 
 -- draw_fn draws content using gui.* calls.
--- Content Y coordinates are logical (start at 0); screen mapping is automatic.
-function M.scroll_region(id, w, h, draw_fn)
+-- opts: { hscroll = true } enables a horizontal scrollbar at the bottom.
+function M.scroll_region(id, w, h, draw_fn, opts)
+  opts = opts or {}
   local t = theme
   local x, y = ctx.x, ctx.y
-  local sw = t.SCROLL_W + 2  -- scrollbar strip
+  local sw = t.SCROLL_W + 2  -- vertical scrollbar strip width
+  local sh = opts.hscroll and (t.SCROLL_W + 2) or 0  -- h-scrollbar strip height
 
   if not w or w == 0 then
     w = ctx.content_w - (ctx.x - t.PAD_X)
   elseif w < 0 then
     w = math.max(1, (ctx.content_w - (ctx.x - t.PAD_X)) + w)
   end
-  local inner_w = w - sw
+  local inner_w = w - sw     -- width of content area (excluding v-scrollbar strip)
+  local inner_h = h - sh     -- height of content area (excluding h-scrollbar strip)
 
   if not ctx.state[id] then
-    ctx.state[id] = { scroll_y = 0, content_h = h }
+    ctx.state[id] = { scroll_y = 0, scroll_x = 0, content_h = h, content_x = inner_w }
   end
   local s = ctx.state[id]
+  if s.scroll_x == nil then s.scroll_x = 0; s.content_x = inner_w end  -- compat
 
-  -- Wheel scroll
-  -- gfx.mouse_wheel gives ±120 per step (Windows) or fine deltas (macOS trackpad).
-  -- Normalise: treat anything > 60 magnitude as discrete step of 20px.
-  if ctx.mw ~= 0 and ctx.mx >= x and ctx.mx < x+w
-  and ctx.my >= y and ctx.my < y+h then
+  local in_region = ctx.mx >= x and ctx.mx < x+w and ctx.my >= y and ctx.my < y+h
+
+  -- Vertical wheel scroll
+  if ctx.mw ~= 0 and in_region then
     local delta = math.abs(ctx.mw) > 60
       and (ctx.mw > 0 and -20 or 20)
       or  -ctx.mw * 0.25
     s.scroll_y = s.scroll_y + delta
   end
+
+  -- Horizontal scroll: prefer gfx.mouse_hwheel; fall back to Shift+wheel
+  if opts.hscroll then
+    local hdelta = 0
+    if ctx.mhw ~= 0 and in_region then
+      hdelta = math.abs(ctx.mhw) > 60
+        and (ctx.mhw > 0 and -20 or 20)
+        or  -ctx.mhw * 0.25
+    elseif ctx.mw ~= 0 and in_region and (gfx.mouse_cap & 8) ~= 0 then
+      -- Shift+vertical wheel as horizontal scroll
+      hdelta = math.abs(ctx.mw) > 60
+        and (ctx.mw > 0 and 20 or -20)
+        or  ctx.mw * 0.25
+    end
+    if hdelta ~= 0 then s.scroll_x = s.scroll_x + hdelta end
+  end
+
   if s.scroll_to_bottom then
-    s.scroll_y = math.max(0, (s.content_h or 0) - h)
+    s.scroll_y = math.max(0, (s.content_h or 0) - inner_h)
     s.scroll_to_bottom = false
   end
 
-  -- Scrollbar thumb drag (uses content_h from previous frame — accurate after first render)
-  local max_sc_drag = math.max(0, (s.content_h or h) - h)
-  if max_sc_drag > 0 then
-    local ratio_d   = h / (s.content_h or h)
-    local thumb_h_d = math.max(16, math.floor(h * ratio_d))
+  -- Vertical scrollbar thumb drag
+  local max_vy = math.max(0, (s.content_h or inner_h) - inner_h)
+  if max_vy > 0 then
+    local ratio_d   = inner_h / (s.content_h or inner_h)
+    local thumb_h_d = math.max(16, math.floor(inner_h * ratio_d))
     local sb_x_d    = x + inner_w + 2
-    local thumb_y_d = y + math.floor(s.scroll_y / max_sc_drag * (h - thumb_h_d))
-
-    local on_thumb = ctx.mx >= sb_x_d and ctx.mx < sb_x_d + t.SCROLL_W
-                  and ctx.my >= thumb_y_d and ctx.my < thumb_y_d + thumb_h_d
+    local thumb_y_d = y + math.floor(s.scroll_y / max_vy * (inner_h - thumb_h_d))
+    local on_thumb  = ctx.mx >= sb_x_d and ctx.mx < sb_x_d + t.SCROLL_W
+                   and ctx.my >= thumb_y_d and ctx.my < thumb_y_d + thumb_h_d
     if on_thumb and ctx.mb == 1 and ctx.mb_prev == 0 then
-      s.drag_active       = true
-      s.drag_start_my     = ctx.my
-      s.drag_start_scroll = s.scroll_y
+      s.drag_active = true; s.drag_start_my = ctx.my; s.drag_start_scroll = s.scroll_y
     end
-
     if s.drag_active then
       if ctx.mb == 1 then
-        local delta_my     = ctx.my - s.drag_start_my
-        local delta_scroll = delta_my * max_sc_drag / (h - thumb_h_d)
-        s.scroll_y = math.max(0, math.min(max_sc_drag,
-                       s.drag_start_scroll + delta_scroll))
-      else
-        s.drag_active = false
-      end
+        s.scroll_y = math.max(0, math.min(max_vy,
+          s.drag_start_scroll + (ctx.my - s.drag_start_my) * max_vy / (inner_h - thumb_h_d)))
+      else s.drag_active = false end
     end
-  else
-    s.drag_active = false
-  end
+  else s.drag_active = false end
 
-  -- Draw background before text (text draws on top within clipped region)
+  -- Horizontal scrollbar thumb drag
+  local max_hx = opts.hscroll and math.max(0, (s.content_x or inner_w) - inner_w) or 0
+  if max_hx > 0 then
+    local ratio_hd    = inner_w / (s.content_x or inner_w)
+    local thumb_w_d   = math.max(16, math.floor(inner_w * ratio_hd))
+    local sb_y_d      = y + inner_h + 2
+    local thumb_x_d   = x + math.floor(s.scroll_x / max_hx * (inner_w - thumb_w_d))
+    local on_thumb_h  = ctx.mx >= thumb_x_d and ctx.mx < thumb_x_d + thumb_w_d
+                     and ctx.my >= sb_y_d and ctx.my < sb_y_d + t.SCROLL_W
+    if on_thumb_h and ctx.mb == 1 and ctx.mb_prev == 0 then
+      s.hdrag_active = true; s.hdrag_start_mx = ctx.mx; s.hdrag_start_scroll = s.scroll_x
+    end
+    if s.hdrag_active then
+      if ctx.mb == 1 then
+        s.scroll_x = math.max(0, math.min(max_hx,
+          s.hdrag_start_scroll + (ctx.mx - s.hdrag_start_mx) * max_hx / (inner_w - thumb_w_d)))
+      else s.hdrag_active = false end
+    end
+  else s.hdrag_active = false end
+
+  -- Clamp scrolls
+  s.scroll_y = math.max(0, math.min(math.max(0, (s.content_h or 0) - inner_h), s.scroll_y))
+  s.scroll_x = math.max(0, math.min(math.max(0, (s.content_x or 0) - inner_w), s.scroll_x))
+
+  -- Draw background
   local bg = t.C.LOG_BG; gfx.set(bg[1], bg[2], bg[3], 1)
-  gfx.rect(x, y, inner_w, h, 1)
+  gfx.rect(x, y, inner_w, inner_h, 1)
 
   -- Save outer layout context
   local sv = {
     x=ctx.x, y=ctx.y, cw=ctx.content_w,
     lx=ctx.last_x, ly=ctx.last_y, lw=ctx.last_w, lh=ctx.last_h,
     cy1=ctx.clip_y1, cy2=ctx.clip_y2, cyo=ctx.clip_y_off,
+    cx1=ctx.clip_x1, cx2=ctx.clip_x2,
+    cxm=ctx.content_x_max, cxo=ctx.content_x_origin,
   }
 
-  -- Set up inner coordinate system:
-  -- logical Y=0 maps to screen Y = y - scroll_y  (clip_y_off)
-  s.scroll_y = math.max(0, math.min(math.max(0, (s.content_h or 0) - h), s.scroll_y))
+  -- Set up inner coordinate system.
+  -- Vertical: logical Y=0 → screen Y = y - scroll_y.
+  -- Horizontal: content starts at screen x = x+4 - scroll_x.
+  local sx = math.floor(s.scroll_x)
+  s.scroll_y = math.max(0, math.min(math.max(0, (s.content_h or 0) - inner_h), s.scroll_y))
   ctx.clip_y1    = y
-  ctx.clip_y2    = y + h
+  ctx.clip_y2    = y + inner_h
   ctx.clip_y_off = y - math.floor(s.scroll_y)
-  ctx.x          = x + 4
-  ctx.y          = 4          -- logical Y with inner top-padding
+  ctx.x          = x + 4 - sx
+  ctx.y          = 4
   ctx.content_w  = inner_w - 8
+
+  if opts.hscroll then
+    ctx.clip_x1          = x
+    ctx.clip_x2          = x + inner_w
+    ctx.content_x_max    = 0
+    ctx.content_x_origin = x + 4 - sx
+  end
 
   draw_fn()
 
-  -- Compute content height from where the cursor ended up
   s.content_h = ctx.y + math.floor(s.scroll_y)
+  if opts.hscroll and ctx.content_x_max ~= nil then
+    s.content_x = math.max(inner_w, ctx.content_x_max + 8)  -- +8 for right padding
+  end
 
   -- Restore outer context
-  ctx.x         = sv.x;  ctx.y         = sv.y;   ctx.content_w = sv.cw
-  ctx.last_x    = sv.lx; ctx.last_y    = sv.ly;  ctx.last_w    = sv.lw; ctx.last_h = sv.lh
-  ctx.clip_y1   = sv.cy1; ctx.clip_y2  = sv.cy2; ctx.clip_y_off = sv.cyo
+  ctx.x             = sv.x;  ctx.y         = sv.y;   ctx.content_w = sv.cw
+  ctx.last_x        = sv.lx; ctx.last_y    = sv.ly;  ctx.last_w    = sv.lw; ctx.last_h = sv.lh
+  ctx.clip_y1       = sv.cy1; ctx.clip_y2  = sv.cy2; ctx.clip_y_off = sv.cyo
+  ctx.clip_x1       = sv.cx1; ctx.clip_x2  = sv.cx2
+  ctx.content_x_max = sv.cxm; ctx.content_x_origin = sv.cxo
 
-  -- Clamp scroll after content height update
-  s.scroll_y = math.max(0, math.min(math.max(0, s.content_h - h), s.scroll_y))
+  -- Clamp again after content size update
+  s.scroll_y = math.max(0, math.min(math.max(0, (s.content_h or 0) - inner_h), s.scroll_y))
+  s.scroll_x = math.max(0, math.min(math.max(0, (s.content_x or 0) - inner_w), s.scroll_x))
 
-  -- Border
+  -- Border around content area
   local bc = t.C.FRAME; gfx.set(bc[1], bc[2], bc[3], 1)
-  gfx.line(x,        y,    x+inner_w, y)
-  gfx.line(x,        y+h,  x+inner_w, y+h)
-  gfx.line(x,        y,    x,         y+h)
-  gfx.line(x+inner_w, y,   x+inner_w, y+h)
+  gfx.line(x,        y,         x+inner_w, y)
+  gfx.line(x,        y+inner_h, x+inner_w, y+inner_h)
+  gfx.line(x,        y,         x,         y+inner_h)
+  gfx.line(x+inner_w, y,        x+inner_w, y+inner_h)
 
-  -- Scrollbar
-  if s.content_h and s.content_h > h then
+  -- Vertical scrollbar
+  if s.content_h and s.content_h > inner_h then
     local sb_x    = x + inner_w + 2
-    local ratio   = h / s.content_h
-    local thumb_h = math.max(16, math.floor(h * ratio))
-    local max_sc  = s.content_h - h
+    local ratio   = inner_h / s.content_h
+    local thumb_h = math.max(16, math.floor(inner_h * ratio))
+    local max_sc  = s.content_h - inner_h
     local thumb_y = max_sc > 0
-      and (y + math.floor(s.scroll_y / max_sc * (h - thumb_h)))
+      and (y + math.floor(s.scroll_y / max_sc * (inner_h - thumb_h)))
       or  y
-
     local on_thumb_hover = ctx.mx >= sb_x and ctx.mx < sb_x + t.SCROLL_W
                         and ctx.my >= thumb_y and ctx.my < thumb_y + thumb_h
-
     local sc = t.C.SCROLLBAR; gfx.set(sc[1], sc[2], sc[3], 0.3)
-    gfx.rect(sb_x, y, t.SCROLL_W, h, 1)
-
-    local thumb_alpha = (s.drag_active or on_thumb_hover) and 1.0 or 0.8
-    gfx.set(sc[1], sc[2], sc[3], thumb_alpha)
+    gfx.rect(sb_x, y, t.SCROLL_W, inner_h, 1)
+    local alpha = (s.drag_active or on_thumb_hover) and 1.0 or 0.8
+    gfx.set(sc[1], sc[2], sc[3], alpha)
     gfx.rect(sb_x+1, thumb_y, t.SCROLL_W-2, thumb_h, 1)
+  end
+
+  -- Horizontal scrollbar
+  if opts.hscroll and s.content_x and s.content_x > inner_w then
+    local sb_y    = y + inner_h + 2
+    local ratio   = inner_w / s.content_x
+    local thumb_w = math.max(16, math.floor(inner_w * ratio))
+    local max_sc  = s.content_x - inner_w
+    local thumb_x = max_sc > 0
+      and (x + math.floor(s.scroll_x / max_sc * (inner_w - thumb_w)))
+      or  x
+    local on_thumb_hover = ctx.mx >= thumb_x and ctx.mx < thumb_x + thumb_w
+                        and ctx.my >= sb_y and ctx.my < sb_y + t.SCROLL_W
+    local sc = t.C.SCROLLBAR; gfx.set(sc[1], sc[2], sc[3], 0.3)
+    gfx.rect(x, sb_y, inner_w, t.SCROLL_W, 1)
+    local alpha = (s.hdrag_active or on_thumb_hover) and 1.0 or 0.8
+    gfx.set(sc[1], sc[2], sc[3], alpha)
+    gfx.rect(thumb_x+1, sb_y+1, thumb_w-2, t.SCROLL_W-2, 1)
   end
 
   ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h

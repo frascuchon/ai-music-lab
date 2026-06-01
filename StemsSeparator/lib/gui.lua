@@ -11,13 +11,18 @@ local ctx = {
   -- Layout cursor
   x = 0, y = 0, content_w = 0,
   last_x = 0, last_y = 0, last_w = 0, last_h = 0,
-  -- Clip region (used inside scroll_region)
+  -- Vertical clip region (used inside scroll_region)
   clip_y1 = nil, clip_y2 = nil,
   clip_y_off = 0,   -- screen_y = logical_y + clip_y_off
+  -- Horizontal clip region (used inside h-scroll scroll_region)
+  clip_x1 = nil, clip_x2 = nil,  -- screen x bounds of visible content area
+  -- Content width tracking (set by scroll_region when hscroll = true)
+  content_x_max    = nil,   -- running max of content right edge (content-relative px)
+  content_x_origin = 0,     -- screen x that maps to content x=0
   -- Mouse
   mx = 0, my = 0,
   mb = 0, mb_prev = 0,
-  mw = 0,
+  mw = 0, mhw = 0,  -- vertical and horizontal wheel
   -- Keyboard queues drained each frame
   char_queue = {}, key_queue = {},
   -- Widget interaction
@@ -84,6 +89,12 @@ end
 
 local function advance(x, y, w, h)
   ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
+  -- Track maximum content width when inside an h-scrollable scroll_region.
+  -- content_x_origin is the screen x that corresponds to content x=0.
+  if ctx.content_x_max ~= nil then
+    local cr = (x + w) - ctx.content_x_origin
+    if cr > ctx.content_x_max then ctx.content_x_max = cr end
+  end
   ctx.x = theme.PAD_X
   ctx.y = y + h + theme.SPACING_Y
 end
@@ -109,6 +120,9 @@ function M.frame_begin()
   ctx.mb = gfx.mouse_cap & 1
   ctx.mw = gfx.mouse_wheel
   gfx.mouse_wheel = 0
+  -- Horizontal wheel (available in REAPER 6+; nil-safe)
+  ctx.mhw = gfx.mouse_hwheel or 0
+  if gfx.mouse_hwheel then gfx.mouse_hwheel = 0 end
 
   -- Drain keyboard buffer
   ctx.char_queue = {}
@@ -150,6 +164,9 @@ function M.frame_begin()
   ctx.clip_y1    = nil
   ctx.clip_y2    = nil
   ctx.clip_y_off = 0
+  ctx.clip_x1    = nil
+  ctx.clip_x2    = nil
+  ctx.content_x_max = nil
   ctx.disabled_depth = 0
   ctx.font_stack = {}
   ctx.next_width = nil
@@ -215,12 +232,35 @@ end
 -- ── TEXT ──────────────────────────────────────────────────────────
 
 local function drawstr_clipped(s, x, screen_y, th)
-  if ctx.clip_y1 then
-    -- Inside a scroll_region: clip text horizontally to content_w to prevent
-    -- overflow into the scrollbar or beyond the window edge.
-    gfx.drawstr(s, 0, x + ctx.content_w, screen_y + th)
+  if not ctx.clip_y1 then
+    gfx.drawstr(s); return
+  end
+  if ctx.clip_x1 then
+    -- H-scroll active: clip against [clip_x1, clip_x2].
+    local tw = gfx.measurestr(s)
+    if x + tw < ctx.clip_x1 or x >= ctx.clip_x2 then return end  -- fully outside
+    local draw_s, draw_x = s, x
+    if x < ctx.clip_x1 then
+      -- Text starts to the left of the visible area: binary-search for the
+      -- first character that falls inside, then draw from clip_x1.
+      local offset = ctx.clip_x1 - x
+      local lo, hi, trim = 1, #s, 0
+      while lo <= hi do
+        local mid = math.floor((lo + hi) / 2)
+        if gfx.measurestr(s:sub(1, mid)) <= offset then
+          trim = mid; lo = mid + 1
+        else
+          hi = mid - 1
+        end
+      end
+      draw_s = s:sub(trim + 1)
+      draw_x = ctx.clip_x1
+    end
+    gfx.x = draw_x
+    gfx.drawstr(draw_s, 0, ctx.clip_x2, screen_y + th)
   else
-    gfx.drawstr(s)
+    -- Only vertical scroll: right-clip to content_w.
+    gfx.drawstr(s, 0, x + ctx.content_w, screen_y + th)
   end
 end
 
