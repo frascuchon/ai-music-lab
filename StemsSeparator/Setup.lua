@@ -142,11 +142,13 @@ end
 
 -- ── GFX INIT ─────────────────────────────────────────────────────
 if gfx.w > 0 then gfx.quit() end
-gfx.init("Stem Separator — Configuración", 500, 560)
+local LOGICAL_W = 500
+gfx.init("Stem Separator — Configuración", LOGICAL_W, 560)
 gfx.ext_retina = 1
 theme.init_fonts()
 
 local first_frame = true
+local _scale_init = false
 local pending_recheck = false
 
 -- ── DRAW CHECKS LIST ─────────────────────────────────────────────
@@ -238,6 +240,16 @@ end
 
 -- ── MAIN LOOP ────────────────────────────────────────────────────
 local function loop()
+  -- On first frame, detect Retina scale from physical vs logical width.
+  if not _scale_init then
+    _scale_init = true
+    local s = math.floor(gfx.w / LOGICAL_W + 0.5)
+    if s > 1 then
+      theme.apply_scale(s)
+      theme.init_fonts(s)
+    end
+  end
+
   gui.frame_begin()
   if gui.ctx.should_close then gfx.quit(); return end
 

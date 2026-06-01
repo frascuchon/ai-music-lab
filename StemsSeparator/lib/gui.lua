@@ -372,12 +372,12 @@ end
 function M.checkbox(label, value)
   local t = theme
   local h = t.ITEM_H
-  local box_s = 14
+  local bs = t.CHECK_BOX_S
   local x, y = ctx.x, ctx.y
   local disp = label:match("^(.-)##") or label   -- strip ##id suffix
   gfx.setfont(cur_font())
   local lw = gfx.measurestr(disp)
-  local w = box_s + 6 + lw
+  local w = bs + 6 + lw
 
   local a = af()
   local hover   = in_rect(x, y, w, h) and ctx.disabled_depth == 0 and not ctx.popup
@@ -386,23 +386,26 @@ function M.checkbox(label, value)
   if not clipped(y, h) then
     local gy = sy(y)
     local bx = x
-    local by = gy + math.floor((h - box_s) / 2)
+    local by = gy + math.floor((h - bs) / 2)
 
     local bg = hover and t.C.FRAME_HOV or t.C.FRAME
     gfx.set(bg[1], bg[2], bg[3], a)
-    gfx.rect(bx, by, box_s, box_s, 1)
+    gfx.rect(bx, by, bs, bs, 1)
 
     if value then
       local cc = t.C.ACCENT
       gfx.set(cc[1], cc[2], cc[3], a)
-      gfx.line(bx+2,       by+6,          bx+5, by+box_s-3, 1)
-      gfx.line(bx+5, by+box_s-3, bx+box_s-2,   by+2,        1)
+      local f = bs / 14
+      local p2 = math.floor(2*f+0.5); local p5 = math.floor(5*f+0.5)
+      local p6 = math.floor(6*f+0.5); local p3 = math.floor(3*f+0.5)
+      gfx.line(bx+p2,    by+p6,      bx+p5,    by+bs-p3, 1)
+      gfx.line(bx+p5,    by+bs-p3,   bx+bs-p2, by+p2,    1)
     end
 
     local _, th = gfx.measurestr(disp)
     local fc = t.C.FG
     gfx.set(fc[1], fc[2], fc[3], a)
-    gfx.x = x + box_s + 6
+    gfx.x = x + bs + 6
     gfx.y = gy + math.floor((h - th) / 2)
     gfx.drawstr(disp)
   end
@@ -460,7 +463,7 @@ local function draw_slider(id, val, vmin, vmax, fmt, is_int)
   local nw = ctx.next_width; ctx.next_width = nil
   local w = resolve_w(nw)
   local x, y = ctx.x, ctx.y
-  local grab_w, grab_h = 12, 18
+  local grab_w, grab_h = t.SLIDER_GRAB_W, t.SLIDER_GRAB_H
 
   local a = af()
   local hover = in_rect(x, y, w, h) and ctx.disabled_depth == 0 and not ctx.popup
