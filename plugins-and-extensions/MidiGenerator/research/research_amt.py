@@ -160,10 +160,12 @@ def main():
 
     print(f"[setup] cargando {MODEL_NAME} ...")
     # low_cpu_mem_usage evita picos de RAM durante la deserialización
+    # use_safetensors=False evita el thread de conversión automática que falla sin red
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
         torch_dtype=dtype,
         low_cpu_mem_usage=True,
+        use_safetensors=False,
     )
     model = model.to(device)
     model.eval()
