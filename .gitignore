@@ -1,4 +1,5 @@
-*-workspace/
 .DS_Store
 __pycache__/
 *.pyc
+stemsep_setup*.txt
+stemsep_setup.log
