@@ -54,6 +54,11 @@ function M.set(name, alpha)
   gfx.set(c[1], c[2], c[3], alpha or 1.0)
 end
 
+-- Scale a 1x pixel value to the current display scale.
+function M.sc(v)
+  return math.floor(v * M.SCALE + 0.5)
+end
+
 local function sc(v, s) return math.floor(v * s + 0.5) end
 
 -- Scale all layout metrics by s (call once after detecting display DPI).

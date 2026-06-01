@@ -335,7 +335,7 @@ local function draw_demucs_tab()
   local g = gui
   local t = theme
 
-  g.row_label("Modelo:", 68)
+  g.row_label("Modelo:", t.sc(68))
   g.next_width(-1)
   S.dm_idx = widgets.combo("##dm_model", S.dm_idx, DM_LABELS)
   g.spacing()
@@ -348,27 +348,27 @@ local function draw_demucs_tab()
   for i, k in ipairs(row1) do
     local cl, nv = g.checkbox(STEM_NAMES[k] .. "##" .. k, S.dm_stems[k])
     if cl then S.dm_stems[k] = nv end
-    if i < #row1 then g.same_line(22) end
+    if i < #row1 then g.same_line(t.sc(22)) end
   end
 
   g.begin_disabled(not is6s)
   local cl, nv = g.checkbox(STEM_NAMES.guitar .. "##guitar", S.dm_stems.guitar)
   if cl then S.dm_stems.guitar = nv end
-  g.same_line(22)
+  g.same_line(t.sc(22))
   cl, nv = g.checkbox(STEM_NAMES.piano .. "##piano", S.dm_stems.piano)
   if cl then S.dm_stems.piano = nv end
   g.end_disabled()
   if not is6s then
-    g.same_line(8)
+    g.same_line(t.sc(8))
     g.text_disabled("(solo htdemucs_6s)")
   end
 
   g.spacing()
-  if g.button("Todos", 70, t.ITEM_H) then
+  if g.button("Todos", t.sc(70), t.ITEM_H) then
     for _, k in ipairs(STEM_KEYS) do S.dm_stems[k] = true end
   end
   g.same_line()
-  if g.button("Ninguno", 70, t.ITEM_H) then
+  if g.button("Ninguno", t.sc(70), t.ITEM_H) then
     for _, k in ipairs(STEM_KEYS) do S.dm_stems[k] = false end
   end
 end
@@ -377,7 +377,7 @@ end
 local function draw_sam_tab()
   local g = gui
   local t = theme
-  local lw = 78  -- label column width
+  local lw = t.sc(78)  -- label column width
 
   -- Prompt
   g.row_label("Prompt:", lw)
@@ -391,40 +391,40 @@ local function draw_sam_tab()
 
   -- GPU + ODE method
   g.row_label("GPU:", lw)
-  g.next_width(90)
+  g.next_width(t.sc(90))
   S.sam_gidx = widgets.combo("##sam_gpu", S.sam_gidx, SAM_GPUS)
-  g.same_line(14)
+  g.same_line(t.sc(14))
   g.inline_text("ODE:")
-  g.same_line(6)
+  g.same_line(t.sc(6))
   g.next_width(-1)
   S.sam_oidx = widgets.combo("##sam_ode", S.sam_oidx, ODE_METHODS)
 
   -- ODE steps + Confianza
   g.row_label("ODE steps:", lw)
-  g.next_width(120)
+  g.next_width(t.sc(120))
   rv, nv = g.slider_int("##steps", S.sam_steps, 1, 128)
   if rv then S.sam_steps = nv end
-  g.same_line(14)
+  g.same_line(t.sc(14))
   g.inline_text("Conf.:")
-  g.same_line(6)
+  g.same_line(t.sc(6))
   g.next_width(-1)
   rv, nv = g.slider_float("##conf", S.sam_conf, 0.0, 1.0, "%.2f")
   if rv then S.sam_conf = nv end
 
   -- Chunk + Overlap + Candidatos
   g.row_label("Chunk s:", lw)
-  g.next_width(90)
+  g.next_width(t.sc(90))
   rv, nv = g.slider_float("##chunk", S.sam_chunk, 1.0, 30.0, "%.1f")
   if rv then S.sam_chunk = nv end
-  g.same_line(14)
+  g.same_line(t.sc(14))
   g.inline_text("Overlap:")
-  g.same_line(6)
-  g.next_width(80)
+  g.same_line(t.sc(6))
+  g.next_width(t.sc(80))
   rv, nv = g.slider_float("##overlap", S.sam_overlap, 0.0, 10.0, "%.1f")
   if rv then S.sam_overlap = nv end
-  g.same_line(14)
+  g.same_line(t.sc(14))
   g.inline_text("Cand.:")
-  g.same_line(6)
+  g.same_line(t.sc(6))
   g.next_width(-1)
   rv, nv = g.slider_int("##cands", S.sam_cands, 1, 8)
   if rv then S.sam_cands = nv end
@@ -479,19 +479,19 @@ local function loop()
   g.spacing()
 
   -- Source file row
-  g.row_label("Fuente:", 54)
+  g.row_label("Fuente:", t.sc(54))
   local display_src = (S.src_track_name ~= "")
     and (S.src_track_name .. "  (" .. (S.src:match("[^/\\]+$") or "") .. ")")
     or S.src
-  g.next_width(-96)
+  g.next_width(-(2 * t.SPACING_X + 2 * t.sc(44)))
   widgets.input_text("##src_disp", display_src, { readonly = true })
   g.same_line()
-  if g.button("...", 44, t.ITEM_H) then
+  if g.button("...", t.sc(44), t.ITEM_H) then
     local ok, fn = reaper.GetUserFileNameForRead("", "Abrir audio", "wav")
     if ok then S.src = fn; S.src_track_name = ""; S.src_track_idx = -1 end
   end
   g.same_line()
-  if g.button("R", 44, t.ITEM_H) then grab_from_reaper() end
+  if g.button("R", t.sc(44), t.ITEM_H) then grab_from_reaper() end
 
   if S.src_track_name ~= "" then
     g.text_disabled("Pista seleccionada  |  clic en R para actualizar")
@@ -530,7 +530,7 @@ local function loop()
     or (S.tab == 1 and "SEPARAR  (Demucs)" or "SEPARAR  (SAM Audio)")
   g.begin_disabled(S.running)
   g.next_width(-1)
-  if g.button(sep_lbl, nil, 36, { solid = sep_colors }) then
+  if g.button(sep_lbl, nil, t.sc(36), { solid = sep_colors }) then
     if S.tab == 1 then launch_demucs() else launch_sam() end
   end
   g.end_disabled()
@@ -538,7 +538,7 @@ local function loop()
 
   -- Progress bar
   local pct_str = string.format("%d%%", math.floor(S.progress * 100))
-  g.progress_bar(S.progress, nil, 16, pct_str)
+  g.progress_bar(S.progress, nil, t.sc(16), pct_str)
 
   local status_color = S.running and "YELLOW"
     or (S.done and #S.out_files > 0 and "GREEN")
@@ -549,7 +549,7 @@ local function loop()
 
   -- Log area
   if widgets.collapsing_header("Logs", true) then
-    if g.button("Copiar log", 90, t.ITEM_H) then
+    if g.button("Copiar log", t.sc(90), t.ITEM_H) then
       local ok, set_cb = pcall(function()
         reaper.CF_SetClipboard(table.concat(S.log, "\n"))
       end)
@@ -559,7 +559,7 @@ local function loop()
       end
     end
     g.same_line()
-    if g.button("Limpiar", 70, t.ITEM_H) then S.log = {} end
+    if g.button("Limpiar", t.sc(70), t.ITEM_H) then S.log = {} end
     g.spacing()
 
     -- Scroll to bottom if new lines arrived
@@ -569,7 +569,7 @@ local function loop()
     end
 
     g.push_font(t.F.MONO)
-    local log_h = math.max(60, gfx.h - gui.ctx.y - t.PAD_Y - 10)
+    local log_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y - t.sc(10))
     widgets.scroll_region("##logscroll", 0, log_h, function()
       for i = 1, #S.log do
         local ln = S.log[i]
