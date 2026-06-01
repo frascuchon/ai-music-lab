@@ -50,6 +50,10 @@ local S = {
   src            = "",
   src_track_name = "",
   src_track_idx  = -1,
+  src_start_offs  = 0,    -- start offset into source file (seconds)
+  src_section_dur = 0,    -- section duration in source time (seconds)
+  src_item_pos    = nil,  -- item position in project timeline
+  src_is_section  = false,
   outdir         = HOME .. "/stems",
   -- Demucs
   dm_idx         = 1,
@@ -152,6 +156,23 @@ local function read_progress()
 end
 
 -- ── INTEGRACIÓN REAPER ───────────────────────────────────────────
+local function detect_section(item, take, src)
+  local item_pos   = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+  local item_len   = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+  local start_offs = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+  local play_rate  = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
+  if play_rate == 0 then play_rate = 1.0 end
+  local src_len    = reaper.GetMediaSourceLength(src)
+  local section_dur = item_len * play_rate
+  local is_section = (start_offs > 0.001) or (section_dur < src_len - 0.001)
+
+  S.src_item_pos    = item_pos
+  S.src_start_offs  = start_offs
+  S.src_section_dur = section_dur
+  S.src_is_section  = is_section
+  return is_section, start_offs, section_dur
+end
+
 local function grab_from_reaper()
   local tcnt = reaper.CountSelectedTracks(0)
   if tcnt > 0 then
@@ -169,7 +190,13 @@ local function grab_from_reaper()
         local fname = reaper.GetMediaSourceFileName(src, "")
         if fname and fname ~= "" then
           S.src = fname
-          add_log("Fuente (pista): " .. S.src_track_name .. " | " .. fname)
+          local is_sec, offs, dur = detect_section(item, take, src)
+          if is_sec then
+            add_log(string.format("Fuente (pista): %s | %s [sec %.2fs → %.2fs]",
+              S.src_track_name, fname:match("[^/\\]+$") or fname, offs, offs + dur))
+          else
+            add_log("Fuente (pista): " .. S.src_track_name .. " | " .. fname)
+          end
           return
         end
       end
@@ -191,14 +218,20 @@ local function grab_from_reaper()
   local fname = reaper.GetMediaSourceFileName(src, "")
   if fname and fname ~= "" then
     S.src = fname; S.src_track_name = ""; S.src_track_idx = -1
-    add_log("Fuente: " .. fname)
+    local is_sec, offs, dur = detect_section(item, take, src)
+    if is_sec then
+      add_log(string.format("Fuente: %s [sec %.2fs → %.2fs]",
+        fname:match("[^/\\]+$") or fname, offs, offs + dur))
+    else
+      add_log("Fuente: " .. fname)
+    end
   end
 end
 
 function import_stems()
   if #S.out_files == 0 then return end
   reaper.Undo_BeginBlock()
-  local cursor   = reaper.GetCursorPosition()
+  local cursor   = S.src_item_pos or reaper.GetCursorPosition()
   local imported = 0
 
   local folder_name = S.src_track_name
@@ -287,11 +320,18 @@ local function launch_demucs()
   local model = DM_MODELS[S.dm_idx]
   clear_run("Iniciando Demucs (" .. model .. ")...")
   add_log("Modelo: " .. model .. " | Stems: " .. table.concat(stems, ", "))
+  local section_args = ""
+  if S.src_is_section then
+    section_args = string.format(" --start %.6f --duration %.6f",
+      S.src_start_offs, S.src_section_dur)
+    add_log(string.format("Sección: %.2fs → %.2fs",
+      S.src_start_offs, S.src_start_offs + S.src_section_dur))
+  end
   local cmd = string.format(
-    '%s %s --input %s --model %s --stems %s --outdir %s --python %s --progress %s >>%s 2>&1 &',
+    '%s %s --input %s --model %s --stems %s --outdir %s --python %s%s --progress %s >>%s 2>&1 &',
     q(PYTHON), q(DEMUCS_PY),
     q(S.src), q(model), table.concat(stems, ","),
-    q(S.outdir), q(PYTHON), q(PROGRESS_F), q(LOG_F))
+    q(S.outdir), q(PYTHON), section_args, q(PROGRESS_F), q(LOG_F))
   add_log("Lanzando proceso...")
   os.execute(cmd)
 end
@@ -316,16 +356,23 @@ local function launch_sam()
   clear_run("Iniciando SAM Audio via Modal...")
   add_log("Prompt: " .. S.sam_prompt)
   add_log("Modelo: " .. SAM_MODELS[S.sam_midx] .. " | GPU: " .. SAM_GPUS[S.sam_gidx])
+  local section_args = ""
+  if S.src_is_section then
+    section_args = string.format(" --start %.6f --duration %.6f",
+      S.src_start_offs, S.src_section_dur)
+    add_log(string.format("Sección: %.2fs → %.2fs",
+      S.src_start_offs, S.src_start_offs + S.src_section_dur))
+  end
   local cmd = string.format(
     '%s %s --sam-dir %s --input %s --prompt %s --model %s --gpu %s' ..
     ' --steps %d --ode-method %s --chunk %.1f --overlap %.1f' ..
-    ' --confidence %.2f --candidates %d --outdir %s --progress %s >>%s 2>&1 &',
+    ' --confidence %.2f --candidates %d%s --outdir %s --progress %s >>%s 2>&1 &',
     q(PYTHON), q(SAM_PY), q(SAM_DIR),
     q(S.src), q(S.sam_prompt),
     q(SAM_MODELS[S.sam_midx]), q(SAM_GPUS[S.sam_gidx]),
     S.sam_steps, ODE_METHODS[S.sam_oidx],
     S.sam_chunk, S.sam_overlap, S.sam_conf, S.sam_cands,
-    q(S.outdir), q(PROGRESS_F), q(LOG_F))
+    section_args, q(S.outdir), q(PROGRESS_F), q(LOG_F))
   add_log("Lanzando proceso Modal...")
   os.execute(cmd)
 end
@@ -488,7 +535,10 @@ local function loop()
   g.same_line()
   if g.button("...", t.sc(44), t.ITEM_H) then
     local ok, fn = reaper.GetUserFileNameForRead("", "Abrir audio", "wav")
-    if ok then S.src = fn; S.src_track_name = ""; S.src_track_idx = -1 end
+    if ok then
+      S.src = fn; S.src_track_name = ""; S.src_track_idx = -1
+      S.src_is_section = false; S.src_item_pos = nil
+    end
   end
   g.same_line()
   if g.button("R", t.sc(44), t.ITEM_H) then grab_from_reaper() end
@@ -497,6 +547,11 @@ local function loop()
     g.text_disabled("Pista seleccionada  |  clic en R para actualizar")
   else
     g.text_disabled("Clic en R para usar pista/item activo de Reaper")
+  end
+  if S.src_is_section then
+    g.text_colored(string.format("Sección: %.2fs → %.2fs  (%.2fs)",
+      S.src_start_offs, S.src_start_offs + S.src_section_dur, S.src_section_dur),
+      "YELLOW")
   end
   g.spacing()
 

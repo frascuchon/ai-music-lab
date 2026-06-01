@@ -15,6 +15,7 @@ import argparse
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -46,6 +47,18 @@ def write_progress(path, state, pct, msg, files=None):
         pass
 
 
+def extract_section(src_path: Path, start: float, duration: float, dst_path: Path):
+    """Write a time slice of src_path to dst_path using soundfile."""
+    import soundfile as sf
+    with sf.SoundFile(str(src_path)) as f:
+        sr = f.samplerate
+        start_frame = int(start * sr)
+        num_frames = int(duration * sr)
+        f.seek(start_frame)
+        data = f.read(num_frames, dtype="float32", always_2d=True)
+    sf.write(str(dst_path), data, sr)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--input", required=True)
@@ -66,12 +79,35 @@ def main():
                    action=argparse.BooleanOptionalAction)
     p.add_argument("--internal-candidates", type=int, default=2,
                    dest="internal_candidates")
+    p.add_argument("--start", type=float, default=None,
+                   help="Start time within source file (seconds)")
+    p.add_argument("--duration", type=float, default=None,
+                   help="Duration of section to process (seconds)")
     p.add_argument("--outdir", default="separated")
     p.add_argument("--progress", default="")
     args = p.parse_args()
 
     pf = args.progress
     write_progress(pf, "running", 0.02, "Preparando entorno Modal via uv...")
+
+    input_path = Path(args.input)
+
+    # Extract section to a temp file when start/duration are provided.
+    temp_dir = None
+    process_path = input_path
+    if args.start is not None and args.duration is not None:
+        write_progress(pf, "running", 0.01,
+                       f"Extrayendo sección {args.start:.2f}s → "
+                       f"{args.start + args.duration:.2f}s...")
+        try:
+            temp_dir = tempfile.mkdtemp(prefix="stemsep_")
+            section_file = Path(temp_dir) / input_path.name
+            extract_section(input_path, args.start, args.duration, section_file)
+            process_path = section_file
+            print(f"Section extracted to: {section_file}", flush=True)
+        except Exception as exc:
+            write_progress(pf, "error", 0, f"Error extrayendo sección: {exc}")
+            return 1
 
     out_path = Path(args.outdir)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -107,7 +143,7 @@ def main():
     ]
     # Typer args (--input, --output-dir, etc.)
     cmd += [
-        "--input", args.input,
+        "--input", str(process_path),
         "--output-dir", str(out_path),
         "--prompt", args.prompt,
         "--model", args.model,
@@ -157,6 +193,9 @@ def main():
         write_progress(pf, "running", pct, line[:80])
 
     proc.wait()
+    if temp_dir:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
     if proc.returncode != 0:
         write_progress(pf, "error", 0,
                        f"SAM Audio fallo con codigo {proc.returncode}")
@@ -169,7 +208,7 @@ def main():
 
     if not output_files:
         # Fallback: any wav matching this stem + prompt (avoids cross-run pollution)
-        stem_name = Path(args.input).stem
+        stem_name = process_path.stem
         prompt_tag = args.prompt.replace(" ", "_")
         output_files = sorted(
             str(f) for f in out_path.glob(f"{stem_name}_sam_*_{prompt_tag}_*.wav")
