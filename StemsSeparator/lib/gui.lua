@@ -214,6 +214,16 @@ end
 
 -- ── TEXT ──────────────────────────────────────────────────────────
 
+local function drawstr_clipped(s, x, screen_y, th)
+  if ctx.clip_y1 then
+    -- Inside a scroll_region: clip text horizontally to content_w to prevent
+    -- overflow into the scrollbar or beyond the window edge.
+    gfx.drawstr(s, 0, x + ctx.content_w, screen_y + th)
+  else
+    gfx.drawstr(s)
+  end
+end
+
 function M.text(s)
   gfx.setfont(cur_font())
   local tw, th = gfx.measurestr(s)
@@ -222,7 +232,7 @@ function M.text(s)
     local c = theme.C.FG
     gfx.set(c[1], c[2], c[3], af())
     gfx.x = x; gfx.y = sy(y)
-    gfx.drawstr(s)
+    drawstr_clipped(s, x, sy(y), th)
   end
   advance(x, y, tw, th)
 end
@@ -235,7 +245,7 @@ function M.text_colored(s, color_name, alpha_override)
     local c = theme.C[color_name] or theme.C.FG
     gfx.set(c[1], c[2], c[3], (alpha_override or 1.0) * af())
     gfx.x = x; gfx.y = sy(y)
-    gfx.drawstr(s)
+    drawstr_clipped(s, x, sy(y), th)
   end
   advance(x, y, tw, th)
 end
@@ -248,7 +258,7 @@ function M.text_disabled(s)
     local c = theme.C.FG_DIM
     gfx.set(c[1], c[2], c[3], af())
     gfx.x = x; gfx.y = sy(y)
-    gfx.drawstr(s)
+    drawstr_clipped(s, x, sy(y), th)
   end
   advance(x, y, tw, th)
 end
