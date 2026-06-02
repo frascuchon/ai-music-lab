@@ -9,17 +9,21 @@
 
 ---
 
-## Tabla comparativa de candidatos
+## Tabla comparativa de candidatos (actualizada 2026-06-02)
 
 | Modelo | Flujo soportado | MIDI nativo | Mac (MPS/CPU) | Licencia | Multi-track | Madurez | Veredicto |
 |---|---|---|---|---|---|---|---|
-| **Text2midi** (AMAAI-Lab) | Text→MIDI | ✅ sí | ✅ MPS oficial | MIT | ⚠️ ver notas | ✅ AAAI 2025, HF | **ELEGIDO flujo 1** |
-| **Anticipatory MT** (Stanford) | Variaciones/infilling | ✅ sí | ⚠️ CPU (lento) | Apache 2.0 | ✅ sí | ✅ publicado, pesos abiertos | **ELEGIDO flujo 2** |
-| **MuseCoco** (Microsoft) | Text→MIDI con atributos | ✅ sí | ⚠️ stack fairseq pesado | MIT | ✅ sí | ✅ activo en muzic repo | Alternativa flujo 1 (Modal) |
-| **Music Transformer** (Magenta) | Continuación piano | ✅ sí | ✅ TF2 funciona en CPU | Apache 2.0 | ❌ piano solo | ⚠️ legado (~2018) | Descartado (legado, mono) |
+| **Text2midi** (AMAAI-Lab) | Text→MIDI | ✅ sí | ✅ MPS oficial | MIT | ✅ sí | ✅ AAAI 2025, HF | Evaluado: calidad 2/5 |
+| **MIDI-LLM** (slSeanWU) | Text→MIDI | ✅ sí | ✅ MPS (bfloat16) | MIT | ✅ sí | ✅ NeurIPS AI4Music 2025 | **NUEVO candidato flujo 1** |
+| **Aria** (EleutherAI) | Continuación piano | ✅ sí | ✅ MLX optimizado | Apache 2.0 | ❌ piano solo | ✅ ISMIR 2025, 60k h datos | **Candidato flujo 2 (piano)** |
+| **Anticipatory MT** (Stanford) | Variaciones/infilling | ✅ sí | ⚠️ CPU (lento) | Apache 2.0 | ✅ sí | ✅ ICLR 2024, pesos abiertos | Evaluado: calidad 2/5 |
+| **FIGARO** (ETH Zürich) | Fine-grained MIDI | ✅ sí | ✅ PyTorch CPU/MPS | ? | ✅ sí | ✅ ICLR 2022 | ⚠️ No acepta texto libre |
+| **ChatMusician** (m-a-p) | Text→ABC notation | ❌ ABC (conv. necesaria) | ✅ MPS (LLaMA 2) | MIT | ✅ sí | ✅ 2024, HF Hub | ⚠️ Requiere ABC→MIDI extra |
+| **MuseCoco** (Microsoft) | Text→MIDI con atributos | ✅ sí | ❌ fairseq pesado | MIT | ✅ sí | ✅ activo en muzic repo | Alternativa flujo 1 (Modal) |
+| **Amadeus** (AMAAI-Lab 2025) | Text→MIDI simbólico | ✅ sí | ? (por confirmar) | ? | ✅ sí | ⚠️ paper ago 2025, sin repo | Candidato v3 cuando salga |
+| **Music Transformer** (Magenta) | Continuación piano | ✅ sí | ✅ TF2 CPU | Apache 2.0 | ❌ piano solo | ⚠️ legado (~2018) | Descartado (legado, mono) |
 | **Foundation-1** (RoyalCities) | Text→Audio (MIDI post-hoc) | ❌ MIDI extraído | ❌ CUDA 7GB VRAM | Stability AI | ✅ multi-inst | ⚠️ requiere wrapper externo | Descartado (no MIDI nativo) |
-| **Amadeus** (2025) | Text→MIDI simbólico | ✅ sí | ? (por confirmar) | ? | ✅ sí | ⚠️ reciente, repo pendiente | Candidato v2 si Text2midi falla |
-| **MMM** (Multi-track Machine) | Infilling multi-track | ✅ sí | ✅ | ? | ✅ sí | ⚠️ antiguo (2020) | Baseline; superado por AMT |
+| **MMM** (Multi-track Machine) | Infilling multi-track | ✅ sí | ✅ | ? | ✅ sí | ⚠️ antiguo (2020) | Descartado; superado por AMT |
 
 ---
 
@@ -80,6 +84,49 @@
 | Calidad subjetiva accompaniment (0-5) | pendiente de re-escucha tras corrección del script |
 | Coherencia con melodía de entrada | pendiente de verificación en REAPER |
 | Notas | Latencia excelente en CPU. Ver sección "Diagnóstico post-PoC" para detalles del bug corregido. |
+
+---
+
+### MIDI-LLM — Flujo 1 alternativo: Text→MIDI con LLM
+
+- **Repositorio**: https://github.com/slSeanWU/MIDI-LLM
+- **Modelo HF**: `slseanwu/MIDI-LLM_Llama-3.2-1B` (3.45 GB safetensors)
+- **Paper**: NeurIPS AI4Music Workshop 2025, "MIDI-LLM: Adapting LLMs for Text-to-MIDI Generation"
+- **Arquitectura**: Llama 3.2 1B con vocabulario extendido (+55k tokens MIDI de la librería `anticipation`)
+- **Tokenización MIDI**: idéntica a AMT (eventos `anticipation`), rango [128256, 183282]
+- **Dataset**: no publicado en paper (presumiblemente LakhMIDI / MidiCaps similares a Text2midi)
+- **Soporte MPS**: bfloat16 funciona en MPS (confirmado PyTorch 2.0+ en M1+); script original hardcodea CUDA pero es adaptable
+- **Ventajas vs Text2midi**: LLM decoder-only → mayor capacidad de seguir instrucciones textuales; 4-5× más rápido según benchmark del paper
+- **Desventajas**: modelo 3.45 GB (vs ~900 MB Text2midi); primera descarga lenta
+
+#### Resultados PoC (pendiente ejecución)
+
+| Métrica | Valor |
+|---|---|
+| device | pendiente |
+| tiempo carga (s) | pendiente |
+| tiempo inferencia (s) | pendiente |
+| RAM delta (MB) | pendiente |
+| MIDI válido | pendiente |
+| Calidad subjetiva (0-5) | pendiente |
+| Notas | Script: `uv run research_midi_llm.py --prompt "..." --out out_mllm.mid` |
+
+---
+
+### Aria (EleutherAI) — Flujo 2 alternativo: Continuación piano con MLX
+
+- **Repositorio**: https://github.com/EleutherAI/aria
+- **Modelo HF**: `loubb/aria-medium-base` / `loubb/aria-medium-gen`
+- **Paper**: ISMIR 2025, "Scaling Self-Supervised Representation Learning for Symbolic Piano Performance"
+- **Arquitectura**: Llama 3.2 1B entrenado en ~60k horas de piano MIDI expresivo
+- **Soporte MPS**: ✅ MLX nativo para Apple Silicon (implementación optimizada, no solo PyTorch)
+- **Capacidades**: continuación piano desde MIDI existente — reemplazaría AMT para flujo 2 piano
+- **Limitación**: piano solo (no multi-track). Para acompañamiento multi-instrumento AMT sigue siendo la opción.
+- **Nota**: no es text-to-zero, requiere MIDI de entrada como contexto
+
+#### Resultados PoC (no ejecutado — depende de decisión sobre flujo 2)
+
+Evaluar si la latencia de Aria en MLX es perceptiblemente mejor que AMT en CPU antes de añadir script.
 
 ---
 
@@ -169,29 +216,36 @@ Una vez validados los PoCs y firmada la decisión:
 uv sync  # instala todas las dependencias (incluyendo AMT desde git)
 ```
 
-### PoC 1 — Text2midi
+### PoC 1a — Text2midi (referencia, ya ejecutado)
 ```bash
 cd plugins-and-extensions/MidiGenerator/research
 uv run research_text2midi.py --prompt "upbeat pop song in C major, 120 BPM, piano and strings" --out out_t2m.mid
-# Verificar: abrir out_t2m.mid en REAPER y escuchar
 ```
 
-### PoC 2 — Anticipatory Music Transformer
+### PoC 1b — MIDI-LLM (nuevo candidato, pendiente evaluación)
 ```bash
-# genera fixture + continuación + acompañamiento
-uv run research_amt.py --mode both
+cd plugins-and-extensions/MidiGenerator/research
+# Primera ejecución: clona repo MIDI-LLM + descarga modelo 3.4 GB (una sola vez)
+uv run research_midi_llm.py --prompt "upbeat jazz trio, 120 BPM, piano bass and drums" --out out_mllm.mid
 
-# o por separado:
-uv run research_amt.py --mode continuation --input fixtures/melody.mid --out out_cont.mid
-uv run research_amt.py --mode accompaniment --input fixtures/melody.mid --out out_acc.mid
-# Verificar: abrir los .mid en REAPER y escuchar
+# Probar con diferente prompt para comparar con Text2midi:
+uv run research_midi_llm.py --prompt "upbeat pop song in C major, 120 BPM, piano and strings" --out out_mllm_pop.mid
+
+# Si los tokens no pasan validación (excessive notes), bajar temperatura:
+uv run research_midi_llm.py --prompt "..." --temperature 0.85 --out out_mllm.mid
+```
+
+### PoC 2 — Anticipatory Music Transformer (referencia, ya ejecutado)
+```bash
+uv run research_amt.py --mode both
 ```
 
 ### Validación en REAPER
 1. Arrastrar cada `.mid` generado a una pista de REAPER
 2. Escuchar y anotar calidad subjetiva (0-5) en las tablas de resultados arriba
-3. Para AMT: verificar que `out_acc.mid` suena coherente con `fixtures/melody.mid`
+3. Comparar `out_mllm.mid` vs `out_t2m.mid` con el mismo prompt
+4. Para AMT: verificar que `out_acc.mid` suena coherente con `fixtures/melody.mid`
 
 ---
 
-*Documento generado: 2026-06-01. PoC ejecutados: 2026-06-02. Scripts corregidos: 2026-06-02. Pendiente: re-escucha de out_acc.mid (corregido) en REAPER.*
+*Documento generado: 2026-06-01. PoC Text2midi+AMT ejecutados: 2026-06-02. MIDI-LLM añadido: 2026-06-02. Pendiente: ejecutar PoC 1b y comparar calidad subjetiva.*
