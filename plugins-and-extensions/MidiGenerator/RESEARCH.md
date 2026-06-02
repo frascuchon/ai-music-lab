@@ -37,17 +37,17 @@
 - **Limitaciones conocidas**: pendiente verificación de si genera multi-track o solo piano; max 2000 tokens (~30-60s de música según densidad de notas)
 - **Puntos fuertes**: MIT, MPS, end-to-end desde texto natural (no requiere atributos estructurados), HuggingFace Hub
 
-#### Resultados PoC (rellenar tras ejecutar research_text2midi.py)
+#### Resultados PoC (ejecutado 2026-06-02)
 
 | Métrica | Valor |
 |---|---|
-| device | ___ |
-| tiempo carga (s) | ___ |
-| tiempo inferencia (s) | ___ |
-| RAM delta (MB) | ___ |
-| MIDI válido | ✅ / ❌ |
-| Calidad subjetiva (0-5) | ___ |
-| Notas | ___ |
+| device | mps |
+| tiempo carga (s) | 3.7 |
+| tiempo inferencia (s) | 98.0 |
+| RAM delta (MB) | 780 |
+| MIDI válido | ✅ |
+| Calidad subjetiva (0-5) | pendiente de escucha en REAPER |
+| Notas | 512 tokens generados (max_len por defecto); velocidad ~5 tok/s en MPS (warm-up lento en los primeros ~20 tokens) |
 
 ---
 
@@ -66,20 +66,20 @@
 - **Output**: objetos `mido.MidiFile` via `events_to_midi()`
 - **Puntos fuertes**: Apache 2.0, único diseñado para condicionamiento en MIDI de entrada, multi-track
 
-#### Resultados PoC (rellenar tras ejecutar research_amt.py)
+#### Resultados PoC (ejecutado 2026-06-02)
 
 | Métrica | Valor |
 |---|---|
-| device | ___ |
-| tiempo carga (s) | ___ |
-| tiempo inferencia continuation (s) | ___ |
-| tiempo inferencia accompaniment (s) | ___ |
-| RAM delta (MB) | ___ |
-| MIDIs válidos | ✅ / ❌ |
-| Calidad subjetiva continuation (0-5) | ___ |
-| Calidad subjetiva accompaniment (0-5) | ___ |
-| Coherencia con melodía de entrada | ___ |
-| Notas | ___ |
+| device | cpu (float32) |
+| tiempo carga (s) | 0.8 |
+| tiempo inferencia continuation (s) | 11.2 |
+| tiempo inferencia accompaniment (s) | 4.6 |
+| RAM delta (MB) | 15 (pesos en caché HF, modelo ya descargado) |
+| MIDIs válidos | ✅ out_cont.mid (297B), ✅ out_acc.mid (195B) |
+| Calidad subjetiva continuation (0-5) | pendiente de escucha en REAPER |
+| Calidad subjetiva accompaniment (0-5) | pendiente de escucha en REAPER |
+| Coherencia con melodía de entrada | pendiente de verificación en REAPER |
+| Notas | Latencia de inferencia excelente en CPU (~11s cont, ~5s acc para 10s de música). MPS no activado (AMT usa CUDA-first); CPU es suficientemente rápido para uso local. |
 
 ---
 
@@ -167,4 +167,4 @@ uv run research_amt.py --mode accompaniment --input fixtures/melody.mid --out ou
 
 ---
 
-*Documento generado: 2026-06-01. Actualizar tras ejecutar los PoC.*
+*Documento generado: 2026-06-01. PoC ejecutados: 2026-06-02. Pendiente: escucha subjetiva en REAPER de out_t2m.mid, out_cont.mid, out_acc.mid.*
