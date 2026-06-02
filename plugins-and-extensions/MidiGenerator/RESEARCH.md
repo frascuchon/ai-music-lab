@@ -101,16 +101,18 @@
 
 #### Resultados PoC (ejecutado 2026-06-02)
 
-| Métrica | Valor (jazz, 1024 tok) | Valor (pop, 2046 tok) |
-|---|---|---|
-| device | mps | mps |
-| tiempo carga (s) | 346.6 (incl. descarga 3.4 GB) | **5.2** (modelo en caché) |
-| tiempo inferencia (s) | 64.2 | 145.1 |
-| RAM delta proceso (MB) | ~65 (pesos en GPU unified mem) | ~65 |
-| MIDI válido | ✅ (3 pistas, 339 notas, 8.4s) | ✅ (5 pistas, 682 notas, 28.5s) |
-| Instrumentos | piano ×2, fretless bass (35) | piano, bass (33), vibraphone (11), strings (48), piano |
-| Calidad subjetiva (0-5) | pendiente escucha en REAPER | pendiente escucha en REAPER |
-| Notas | El prompt "jazz trio" generó 339 notas vs 117 en Text2midi. Density muy superior. | "pop + strings" capturó instrumentos coherentes con el prompt. |
+| Métrica | Jazz corto (1024 tok) | Pop (2046 tok) | Jazz largo (2046 tok) |
+|---|---|---|---|
+| device | mps | mps | mps |
+| tiempo carga (s) | 346.6 (incl. descarga 3.4 GB) | **5.2** (modelo en caché) | **5.5** (modelo en caché) |
+| tiempo inferencia (s) | 64.2 | 145.1 | 142.8 |
+| RAM delta proceso (MB) | ~65 (pesos en GPU unified mem) | ~65 | ~65 |
+| MIDI válido | ✅ (3 pistas, 339 notas, 8.4s) | ✅ (5 pistas, 682 notas, 28.5s) | ✅ (2 pistas, 681 notas, 24.2s) |
+| Instrumentos | piano ×2, fretless bass (35) | piano, bass (33), vibraphone (11), strings (48), piano | piano ×2 (sin bass, sin batería real) |
+| Calidad subjetiva (0-5) | — (demasiado corto para evaluar) | **3/5** — correcto, instrumentación coherente con el género | **2.5/5** — estructura razonable pero sin línea de contrabajo y batería atropellada |
+| Notas | Demasiado corto, densidad muy alta. | Mejor resultado del modelo: pop mejor representado en el dataset de entrenamiento. | Falta contrabajo (ambas pistas asignadas a piano gm=0); batería poco orgánica. |
+
+**Conclusión evaluación MIDI-LLM**: El modelo conoce mejor el género pop que el jazz. En pop logra instrumentación coherente (3/5); en jazz le falta la línea de bajo y la batería no suena natural (2.5/5). Mejor que Text2midi (2/5) en densidad y seguimiento del prompt, pero no suficiente para producción sin post-proceso.
 
 **Comparativa directa con Text2midi** (mismo prompt "pop in C major"):
 
