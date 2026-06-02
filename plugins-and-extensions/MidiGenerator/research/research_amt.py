@@ -182,10 +182,10 @@ def main():
     # --- inferencia ---
     with torch.no_grad():
         if args.mode in ("continuation", "both"):
-            out = args.out if args.mode == "continuation" else "out_cont.mid"
+            out = args.out or "out_cont.mid"
             t_cont = run_continuation(model, args.input, out, args.duration)
         if args.mode in ("accompaniment", "both"):
-            out = args.out if args.mode == "accompaniment" else "out_acc.mid"
+            out = args.out or "out_acc.mid"
             t_acc = run_accompaniment(model, args.input, out, args.duration)
 
     # resumen para RESEARCH.md
