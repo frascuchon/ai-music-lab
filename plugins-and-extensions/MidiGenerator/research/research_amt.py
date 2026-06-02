@@ -148,19 +148,22 @@ def main():
 
     import torch
     from transformers import AutoModelForCausalLM
+    import transformers.safetensors_conversion as _sc
+    _sc.auto_conversion = lambda *a, **kw: None  # silencia el thread de conversión HF
+
+    # AMT requiere float32: en fp16 genera tokens fuera de vocabulario (assert negativo)
+    if not args.no_half:
+        print("[warning] AMT no es compatible con float16; usando float32 automáticamente")
+    dtype = torch.float32
 
     device = _device()
-    half_precision = not args.no_half
-    dtype = torch.float16 if half_precision else torch.float32
-    print(f"[info] device={device}  half_precision={half_precision}  (AMT optimizado para CUDA; en CPU es más lento)")
+    print(f"[info] device={device}  dtype=float32  (AMT optimizado para CUDA; en CPU es más lento)")
 
     # --- carga del modelo ---
     t0 = time.time()
     mem_before = _mem_mb()
 
     print(f"[setup] cargando {MODEL_NAME} ...")
-    # low_cpu_mem_usage evita picos de RAM durante la deserialización
-    # use_safetensors=False evita el thread de conversión automática que falla sin red
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
         torch_dtype=dtype,
@@ -186,7 +189,7 @@ def main():
     # resumen para RESEARCH.md
     print("\n--- RESULTADOS (copiar en RESEARCH.md) ---")
     print(f"  modelo:          {MODEL_NAME}")
-    print(f"  device:          {device}")
+    print(f"  device:          {device}  (dtype: float32)")
     print(f"  carga (s):       {t_load:.1f}")
     if args.mode in ("continuation", "both"):
         print(f"  inferencia cont (s): {t_cont:.1f}")
