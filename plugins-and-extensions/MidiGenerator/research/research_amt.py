@@ -37,31 +37,52 @@ def _device():
 
 
 def create_fixture_midi(path: str):
-    """Genera un MIDI simple de 8 compases (melodía en C mayor, 4/4, 120 BPM)."""
+    """Genera un MIDI multi-track (piano + bajo) de 8 compases, 120 BPM.
+
+    Dos tracks son necesarios para que run_accompaniment funcione correctamente:
+    AMT necesita un historial de eventos no-piano como 'inputs' para no arrancar
+    en frío y generar sólo REST tokens.
+    """
     import mido
 
-    mid = mido.MidiFile(type=0, ticks_per_beat=480)
-    track = mido.MidiTrack()
-    mid.tracks.append(track)
+    mid = mido.MidiFile(type=1, ticks_per_beat=480)
 
-    track.append(mido.MetaMessage("set_tempo", tempo=500000, time=0))  # 120 BPM
-    track.append(mido.MetaMessage("time_signature", numerator=4, denominator=4, time=0))
-    track.append(mido.Message("program_change", program=0, channel=0, time=0))  # piano
+    # Track 0: piano melody (channel 0, program 0)
+    piano = mido.MidiTrack()
+    mid.tracks.append(piano)
+    piano.append(mido.MetaMessage("set_tempo", tempo=500000, time=0))  # 120 BPM
+    piano.append(mido.MetaMessage("time_signature", numerator=4, denominator=4, time=0))
+    piano.append(mido.Message("program_change", program=0, channel=0, time=0))
 
-    # escala de C mayor: C D E F G A B C, 2 octavas, quarter notes
-    notes = [60, 62, 64, 65, 67, 69, 71, 72,   # C4..C5
-             72, 71, 69, 67, 65, 64, 62, 60,   # C5..C4
-             60, 64, 67, 72, 60, 64, 67, 72,   # arpegios
-             72, 67, 64, 60, 72, 67, 64, 60]   # arpegios inversos
+    melody_notes = [60, 62, 64, 65, 67, 69, 71, 72,   # C4..C5
+                    72, 71, 69, 67, 65, 64, 62, 60,   # C5..C4
+                    60, 64, 67, 72, 60, 64, 67, 72,   # arpegios
+                    72, 67, 64, 60, 72, 67, 64, 60]   # arpegios inversos
 
     quarter = 480
-    for note in notes:
-        track.append(mido.Message("note_on", note=note, velocity=80, channel=0, time=0))
-        track.append(mido.Message("note_off", note=note, velocity=0, channel=0, time=quarter))
+    for note in melody_notes:
+        piano.append(mido.Message("note_on", note=note, velocity=80, channel=0, time=0))
+        piano.append(mido.Message("note_off", note=note, velocity=0, channel=0, time=quarter))
+
+    # Track 1: bajo (channel 1, program 32 = acoustic bass)
+    # Progresión I-IV-V-I en C, 16 half-notes = 16s (igual que el piano)
+    bass = mido.MidiTrack()
+    mid.tracks.append(bass)
+    bass.append(mido.Message("program_change", program=32, channel=1, time=0))
+
+    bass_notes = [36, 36, 36, 36,   # C2 ×4 half-notes (compases 1-2)
+                  41, 41, 41, 41,   # F2 ×4 (compases 3-4)
+                  43, 43, 43, 43,   # G2 ×4 (compases 5-6)
+                  36, 36, 36, 36]   # C2 ×4 (compases 7-8)
+
+    half = 960  # half-note a 120 BPM
+    for note in bass_notes:
+        bass.append(mido.Message("note_on", note=note, velocity=70, channel=1, time=0))
+        bass.append(mido.Message("note_off", note=note, velocity=0, channel=1, time=half))
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     mid.save(path)
-    print(f"[fixture] MIDI de prueba generado en: {os.path.abspath(path)}")
+    print(f"[fixture] MIDI multi-track (piano + bajo) generado en: {os.path.abspath(path)}")
 
 
 def run_continuation(model, input_midi_path: str, out_path: str, duration: int = 10):
@@ -104,8 +125,13 @@ def run_accompaniment(model, input_midi_path: str, out_path: str, duration: int 
     print("[accompaniment] cargando MIDI de entrada como melodía de control...")
     events = midi_to_events(input_midi_path)
     melody = clip(events, 0, duration)
-    # extract_instruments devuelve (remaining_events, controls_con_CONTROL_OFFSET)
-    _, controls = extract_instruments(melody, [0])
+
+    # Piano (instr 0) → controles de guía; resto (bajo u otras voces) → historial
+    # de entrada. Sin historial, AMT arranca en frío y sólo genera REST tokens.
+    remaining, controls = extract_instruments(melody, [0])
+    if not remaining:
+        print("[warning] fixture mono-canal: no hay historial no-piano. "
+              "Regenerar el fixture o proporcionar un MIDI multi-track.")
 
     print(f"[accompaniment] generando {duration}s de acompañamiento...")
     t0 = time.time()
@@ -113,13 +139,13 @@ def run_accompaniment(model, input_midi_path: str, out_path: str, duration: int 
         model,
         start_time=0,
         end_time=duration,
-        controls=controls,
+        inputs=remaining,   # historial: voces no-piano como contexto
+        controls=controls,  # guía: melodía de piano anticipada
         top_p=0.98,
     )
     t_infer = time.time() - t0
     print(f"[timing] inferencia: {t_infer:.1f}s")
 
-    # combine(events, controls): resta CONTROL_OFFSET a controls y mezcla con events
     combined = combine(accompaniment, controls)
     mid = events_to_midi(combined)
     mid.save(out_path)

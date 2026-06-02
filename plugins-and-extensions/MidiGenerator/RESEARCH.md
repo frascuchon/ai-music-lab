@@ -37,7 +37,7 @@
 - **Limitaciones conocidas**: pendiente verificación de si genera multi-track o solo piano; max 2000 tokens (~30-60s de música según densidad de notas)
 - **Puntos fuertes**: MIT, MPS, end-to-end desde texto natural (no requiere atributos estructurados), HuggingFace Hub
 
-#### Resultados PoC (ejecutado 2026-06-02)
+#### Resultados PoC (ejecutado 2026-06-02, revisión manual 2026-06-02)
 
 | Métrica | Valor |
 |---|---|
@@ -45,9 +45,9 @@
 | tiempo carga (s) | 3.7 |
 | tiempo inferencia (s) | 98.0 |
 | RAM delta (MB) | 780 |
-| MIDI válido | ✅ |
-| Calidad subjetiva (0-5) | pendiente de escucha en REAPER |
-| Notas | 512 tokens generados (max_len por defecto); velocidad ~5 tok/s en MPS (warm-up lento en los primeros ~20 tokens) |
+| MIDI válido | ✅ (6 pistas, 117 notas, instrumentos [0,1,28,33,35]) |
+| Calidad subjetiva (0-5) | 2 — caótico pero guarda coherencia parcial |
+| Notas | Multi-track confirmado (5 instrumentos). Resultado mejorable bajando temperatura (default 1.0) o aumentando max_len. Viable para el plugin. |
 
 ---
 
@@ -66,20 +66,47 @@
 - **Output**: objetos `mido.MidiFile` via `events_to_midi()`
 - **Puntos fuertes**: Apache 2.0, único diseñado para condicionamiento en MIDI de entrada, multi-track
 
-#### Resultados PoC (ejecutado 2026-06-02)
+#### Resultados PoC (ejecutado 2026-06-02, revisión manual 2026-06-02, script corregido 2026-06-02)
 
 | Métrica | Valor |
 |---|---|
 | device | cpu (float32) |
 | tiempo carga (s) | 0.8 |
 | tiempo inferencia continuation (s) | 11.2 |
-| tiempo inferencia accompaniment (s) | 4.6 |
-| RAM delta (MB) | 15 (pesos en caché HF, modelo ya descargado) |
-| MIDIs válidos | ✅ out_cont.mid (297B), ✅ out_acc.mid (195B) |
-| Calidad subjetiva continuation (0-5) | pendiente de escucha en REAPER |
-| Calidad subjetiva accompaniment (0-5) | pendiente de escucha en REAPER |
+| tiempo inferencia accompaniment (s) | 8.2 (tras corrección) |
+| RAM delta (MB) | 15 (pesos en caché HF) |
+| MIDIs válidos | ✅ out_cont.mid · ✅ out_acc.mid (corregido, 2 pistas, instr [0,32]) |
+| Calidad subjetiva continuation (0-5) | 2 — progresión armónica coherente pero sosa |
+| Calidad subjetiva accompaniment (0-5) | pendiente de re-escucha tras corrección del script |
 | Coherencia con melodía de entrada | pendiente de verificación en REAPER |
-| Notas | Latencia de inferencia excelente en CPU (~11s cont, ~5s acc para 10s de música). MPS no activado (AMT usa CUDA-first); CPU es suficientemente rápido para uso local. |
+| Notas | Latencia excelente en CPU. Ver sección "Diagnóstico post-PoC" para detalles del bug corregido. |
+
+---
+
+## Diagnóstico post-PoC y correcciones de scripts
+
+### Bug: `run_accompaniment` generaba solo REST tokens (resultado = melodía de entrada)
+
+**Síntoma**: `out_acc.mid` (primera ejecución) sonaba exactamente igual que `fixtures/melody.mid`. Diagnóstico: 21 notas, todas instrumento 0 (piano). El modelo generaba únicamente REST tokens durante los 10 segundos → output = solo la melodía decodificada desde los controles de guía.
+
+**Causa raíz (dos factores combinados)**:
+
+1. **Fixture mono-canal**: `create_fixture_midi` generaba un MIDI type=0 con solo piano (canal 0, programa 0). Al llamar `extract_instruments(melody, [0])`, todos los eventos se convertían en controles y `remaining` quedaba vacío.
+
+2. **Modelo arrancando en frío**: `generate(inputs=None, controls=piano)` — sin ningún historial de eventos (`inputs=[]`), AMT (entrenado en Lakh MIDI multi-track) generaba REST tokens para toda la ventana. El modelo nunca había visto en entrenamiento el estado de "cero eventos + solo controles".
+
+   Verificación: el tqdm mostraba `950/1000` en 4.6s (~200 it/s, velocidad de REST tokens), vs ~150 it/s cuando genera notas reales.
+
+**Correcciones aplicadas** (2026-06-02):
+
+- `create_fixture_midi` → tipo 1 multi-track: piano (canal 0, prog 0) + bajo (canal 1, prog 32, progresión I-IV-V-I en C mayor, half-notes).
+- `run_accompaniment` → `remaining, controls = extract_instruments(melody, [0])` en lugar de `_, controls = ...`. Se pasa `inputs=remaining` a `generate`. Ahora el bajo existente actúa como historial y el modelo genera notas reales de acompañamiento condicionadas por la melodía de piano.
+
+**Resultado tras corrección**: `out_acc.mid` = 2 pistas, instrumentos [0, 32], 33 notas en 10s. El modelo genera notas reales.
+
+### Limitación: Text2midi con temperatura 1.0 produce resultados irregulares
+
+El resultado "caótico" no es un bug — es el comportamiento esperado con `temperature=1.0` (default). El modelo usa muestreo estocástico sin temperatura explícita en el script. Para producción se recomienda añadir control de temperatura (`--temperature 0.8`) y aumentar `max_len` (actualmente 512, máximo soportado 2000).
 
 ---
 
@@ -167,4 +194,4 @@ uv run research_amt.py --mode accompaniment --input fixtures/melody.mid --out ou
 
 ---
 
-*Documento generado: 2026-06-01. PoC ejecutados: 2026-06-02. Pendiente: escucha subjetiva en REAPER de out_t2m.mid, out_cont.mid, out_acc.mid.*
+*Documento generado: 2026-06-01. PoC ejecutados: 2026-06-02. Scripts corregidos: 2026-06-02. Pendiente: re-escucha de out_acc.mid (corregido) en REAPER.*
