@@ -19,7 +19,7 @@
 | **Anticipatory MT** (Stanford) | Variaciones/infilling | ✅ sí | ⚠️ CPU (lento) | Apache 2.0 | ✅ sí | ✅ ICLR 2024, pesos abiertos | Evaluado: calidad 2/5 |
 | **FIGARO** (ETH Zürich) | Fine-grained MIDI | ✅ sí | ✅ PyTorch CPU/MPS | ? | ✅ sí | ✅ ICLR 2022 | ⚠️ No acepta texto libre |
 | **ChatMusician** (m-a-p) | Text→ABC notation | ❌ ABC (conv. necesaria) | ✅ MPS (LLaMA 2) | MIT | ✅ sí | ✅ 2024, HF Hub | ⚠️ Requiere ABC→MIDI extra |
-| **MuseCoco** (Microsoft) | Text→MIDI con atributos | ✅ sí | ❌ fairseq pesado | MIT | ✅ sí | ✅ activo en muzic repo | Alternativa flujo 1 (Modal) |
+| **MuseCoco** (Microsoft) | Text→MIDI con atributos | ✅ sí | ❌ fairseq pesado | MIT | ✅ sí | ✅ activo en muzic repo | **Script Modal listo** |
 | **Amadeus** (AMAAI-Lab 2025) | Text→MIDI simbólico | ✅ sí | ? (por confirmar) | ? | ✅ sí | ⚠️ paper ago 2025, sin repo | Candidato v3 cuando salga |
 | **Music Transformer** (Magenta) | Continuación piano | ✅ sí | ✅ TF2 CPU | Apache 2.0 | ❌ piano solo | ⚠️ legado (~2018) | Descartado (legado, mono) |
 | **Foundation-1** (RoyalCities) | Text→Audio (MIDI post-hoc) | ❌ MIDI extraído | ❌ CUDA 7GB VRAM | Stability AI | ✅ multi-inst | ⚠️ requiere wrapper externo | Descartado (no MIDI nativo) |
@@ -142,6 +142,40 @@ Evaluar si la latencia de Aria en MLX es perceptiblemente mejor que AMT en CPU a
 
 ---
 
+### MuseCoco (Microsoft/muzic) — Flujo 1 en Modal GPU
+
+- **Repositorio**: https://github.com/microsoft/muzic/tree/main/musecoco
+- **Modelos HF**:
+  - `XinXuNLPer/MuseCoco_text2attribute` — 1.35 GB (BERT fine-tuned para clasificación multi-label)
+  - `XinXuNLPer/MuseCoco_attribute2music` — 14.5 GB (1B params, fairseq, linear attention)
+- **Paper**: arXiv:2306.00110 (AAAI 2024), "MuseCoco: Generating Symbolic Music from Text"
+- **Arquitectura**: dos etapas — (1) texto → atributos musicales estructurados, (2) atributos → tokens REMI2 → MIDI
+- **Soporte Mac local**: ❌ — fairseq 0.10.2 + pytorch-fast-transformers requieren CUDA + Python 3.8
+- **Ejecución**: Modal GPU (T4 16 GB, ~$0.009/generación, ~3 min)
+- **Atributos controlables**: instrumento, ritmo, emoción, tonalidad, tempo, rango de pitch, compás, barras, firma de tiempo, artista, género
+- **Ventaja clave**: control explícito multi-atributo; 947k MIDIs de entrenamiento; multi-track nativo (5-6 instrumentos)
+
+#### Implementación Modal (research_musecoco_modal.py)
+- **Image**: `pytorch/pytorch:1.11.0-cuda11.3-cudnn8-devel` + fairseq + pytorch-fast-transformers (compilado con NVCC)
+- **Volume**: `musecoco-weights` — pesos persistentes (16 GB total, descarga única ~20-40 min)
+- **Setup (una vez)**: `modal run research_musecoco_modal.py::setup_weights`
+- **Inferencia**: `modal run research_musecoco_modal.py --prompt "..." --out out.mid`
+
+#### Resultados PoC (pendiente ejecución)
+
+| Métrica | Valor |
+|---|---|
+| device | Modal T4 GPU |
+| tiempo total (s) | pendiente |
+| pistas | pendiente |
+| notas | pendiente |
+| duración (s) | pendiente |
+| instrumentos | pendiente |
+| Calidad subjetiva (0-5) | pendiente |
+| Notas | Control explícito de atributos → esperar mayor coherencia con el prompt |
+
+---
+
 ## Diagnóstico post-PoC y correcciones de scripts
 
 ### Bug: `run_accompaniment` generaba solo REST tokens (resultado = melodía de entrada)
@@ -234,6 +268,22 @@ cd plugins-and-extensions/MidiGenerator/research
 uv run research_text2midi.py --prompt "upbeat pop song in C major, 120 BPM, piano and strings" --out out_t2m.mid
 ```
 
+### PoC 1c — MuseCoco vía Modal (nuevo candidato, pendiente evaluación)
+```bash
+# Primera vez: descarga ~16 GB de pesos al Volume de Modal (ejecutar una sola vez)
+modal run research_musecoco_modal.py::setup_weights
+
+# Inferencia en T4 GPU:
+modal run research_musecoco_modal.py \
+    --prompt "jazz piano trio, 120 BPM, C major, happy mood" \
+    --out out_muse.mid
+
+# Comparar con el mismo prompt usado en Text2midi y MIDI-LLM:
+modal run research_musecoco_modal.py \
+    --prompt "upbeat pop song in C major, 120 BPM, piano and strings" \
+    --out out_muse_pop.mid
+```
+
 ### PoC 1b — MIDI-LLM (nuevo candidato, pendiente evaluación)
 ```bash
 cd plugins-and-extensions/MidiGenerator/research
@@ -260,4 +310,4 @@ uv run research_amt.py --mode both
 
 ---
 
-*Documento generado: 2026-06-01. PoC Text2midi+AMT ejecutados: 2026-06-02. MIDI-LLM PoC ejecutado: 2026-06-02. Pendiente: escuchar out_mllm.mid y out_mllm_pop.mid en REAPER y anotar calidad subjetiva.*
+*Documento generado: 2026-06-01. PoC Text2midi+AMT: 2026-06-02. MIDI-LLM: 2026-06-02. MuseCoco Modal script: 2026-06-02. Pendiente: (1) escuchar out_mllm.mid en REAPER, (2) ejecutar setup_weights y PoC MuseCoco, (3) comparar calidad entre los tres.*

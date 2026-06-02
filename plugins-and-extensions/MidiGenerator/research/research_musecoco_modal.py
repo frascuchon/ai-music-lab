@@ -1,0 +1,428 @@
+"""
+Modal.com inference app para MuseCoco (Microsoft/muzic, MIT License).
+
+Generación MIDI multi-track desde texto via dos etapas:
+  Stage 1 — text2attribute : texto → atributos musicales (CPU, transformers 4.26)
+  Stage 2 — attribute2music: atributos → tokens REMI2 → MIDI  (GPU, fairseq 0.10.2)
+
+Modelos en HuggingFace:
+  XinXuNLPer/MuseCoco_text2attribute   (~1.4 GB)
+  XinXuNLPer/MuseCoco_attribute2music  (~14.5 GB)
+
+Dependencias clave: fairseq==0.10.2 + pytorch-fast-transformers (CUDA kernels)
+→ requieren Python 3.8 + PyTorch 1.11 + CUDA 11.3 devel image.
+→ Los pesos se guardan en un Modal Volume (se descargan solo la primera vez).
+
+Setup (primera vez, descarga ~16 GB al Volume):
+    modal run research_musecoco_modal.py::setup_weights
+
+Inferencia:
+    modal run research_musecoco_modal.py --prompt "jazz piano trio, 120 BPM" --out out_muse.mid
+    modal run research_musecoco_modal.py --prompt "..." --n_samples 2 --out out_muse.mid
+
+Coste estimado (T4, $0.17/hr):
+  ~3 min/generación  →  ~$0.009 por track
+  Con $30/mes de créditos Modal  →  ~3000 generaciones/mes
+
+Alternativas a Modal si buscas más barato (sin créditos gratuitos):
+  RunPod    $0.09-0.20/hr (A4000/A5000), pago desde el día 1, muy económico
+  Vast.ai   $0.20-0.40/hr (A100), spot market, sin garantía de uptime
+
+Referencia: https://github.com/microsoft/muzic/tree/main/musecoco
+Paper: arXiv:2306.00110  (AAAI 2024)
+"""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import modal
+
+# ---------------------------------------------------------------------------
+# Volumes — pesos persistentes entre ejecuciones (16 GB total, descarga única)
+# ---------------------------------------------------------------------------
+weights_vol = modal.Volume.from_name("musecoco-weights", create_if_missing=True)
+WEIGHTS_MOUNT = "/vol/weights"
+A2M_CKPT = f"{WEIGHTS_MOUNT}/attribute2music.pt"
+T2A_MODEL_DIR = f"{WEIGHTS_MOUNT}/text2attribute"
+
+# ---------------------------------------------------------------------------
+# Container image
+# pytorch:1.11.0-cuda11.3-cudnn8-devel incluye NVCC → necesario para compilar
+# pytorch-fast-transformers (kernels CUDA de linear attention)
+# ---------------------------------------------------------------------------
+MUZIC_DIR = "/opt/muzic/musecoco"
+STAGE1_DIR = f"{MUZIC_DIR}/1-text2attribute_model"
+STAGE2_DIR = f"{MUZIC_DIR}/2-attribute2music_model"
+
+image = (
+    modal.Image.from_registry("pytorch/pytorch:1.11.0-cuda11.3-cudnn8-devel")
+    .apt_install(["git", "g++", "build-essential"])
+    # pytorch-fast-transformers: linear attention CUDA kernels usados por MuseCoco.
+    # Compilado desde source con el NVCC del devel image (~5 min de build, cacheado).
+    .run_commands(
+        "pip install pytorch-fast-transformers",
+    )
+    .pip_install(
+        # Pin de versiones testadas por los autores de MuseCoco
+        "fairseq==0.10.2",
+        "transformers==4.26.0",
+        "accelerate",
+        "sentencepiece!=0.1.92",
+        "protobuf==3.20.3",
+        "tqdm",
+        "scikit-learn",
+        "miditoolkit",
+        "scipy",
+        "numpy==1.23.4",
+        "music21",
+        "msgpack",
+        "huggingface_hub",
+        "pretty_midi",
+        "psutil",
+    )
+    # Clonar muzic repo (código personalizado fairseq + midiprocessor incluido)
+    .run_commands(
+        "git clone --depth=1 https://github.com/microsoft/muzic.git /opt/muzic",
+    )
+)
+
+app = modal.App("musecoco-inference", image=image)
+
+
+# ---------------------------------------------------------------------------
+# Función de setup — descarga los pesos al Volume (ejecutar solo una vez)
+# ---------------------------------------------------------------------------
+@app.function(
+    cpu=4,
+    memory=8192,
+    timeout=7200,  # 2h para los 16 GB
+    volumes={WEIGHTS_MOUNT: weights_vol},
+)
+def download_weights() -> None:
+    """Descarga ambos modelos MuseCoco al Volume. Ejecutar una sola vez."""
+    import time
+    from huggingface_hub import hf_hub_download, snapshot_download
+
+    os.makedirs(WEIGHTS_MOUNT, exist_ok=True)
+
+    # --- text2attribute (~1.4 GB via snapshot, solo pytorch_model.bin) ---
+    t0 = time.time()
+    if not os.path.exists(f"{T2A_MODEL_DIR}/pytorch_model.bin"):
+        print("Descargando MuseCoco_text2attribute (~1.4 GB)...")
+        snapshot_download(
+            repo_id="XinXuNLPer/MuseCoco_text2attribute",
+            local_dir=T2A_MODEL_DIR,
+            ignore_patterns=["optimizer.pt", "rng_state.pth"],  # omitir estado del optimizador
+        )
+        print(f"  text2attribute descargado en {time.time()-t0:.0f}s")
+    else:
+        print("text2attribute ya en Volume, saltando.")
+
+    # --- attribute2music (~14.5 GB checkpoint único) ---
+    t1 = time.time()
+    if not os.path.exists(A2M_CKPT):
+        print("Descargando MuseCoco_attribute2music (~14.5 GB)...")
+        hf_hub_download(
+            repo_id="XinXuNLPer/MuseCoco_attribute2music",
+            filename="attribute2music.pt",
+            local_dir=WEIGHTS_MOUNT,
+        )
+        print(f"  attribute2music descargado en {time.time()-t1:.0f}s")
+    else:
+        print("attribute2music ya en Volume, saltando.")
+
+    weights_vol.commit()
+    print("Volume sincronizado.")
+
+
+# ---------------------------------------------------------------------------
+# Función principal de inferencia
+# ---------------------------------------------------------------------------
+@app.function(
+    gpu="T4",
+    cpu=4,
+    memory=16384,
+    timeout=1800,
+    volumes={WEIGHTS_MOUNT: weights_vol},
+)
+def generate(prompt: str, n_samples: int = 1) -> list[bytes]:
+    """
+    Genera n_samples archivos MIDI desde un prompt de texto.
+    Retorna lista de bytes MIDI.
+    """
+    import pickle
+    import shutil
+    import tempfile
+    import time
+    from copy import deepcopy
+
+    weights_vol.reload()  # asegurar que el Volume está actualizado
+
+    if not os.path.exists(A2M_CKPT):
+        raise RuntimeError(
+            "Pesos no encontrados. Ejecuta primero:\n"
+            "  modal run research_musecoco_modal.py::setup_weights"
+        )
+
+    # -------------------------------------------------------------------------
+    # Preparar paths y sys.path para el código del muzic repo
+    # -------------------------------------------------------------------------
+    stage2_linear = f"{STAGE2_DIR}/linear_mask"
+    for path in [STAGE1_DIR, STAGE2_DIR, stage2_linear]:
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+    data_bin_dir = f"{STAGE2_DIR}/data/truncated_2560/data-bin"
+    att_key_path = f"{STAGE1_DIR}/data/att_key.json"
+    num_labels_path = f"{STAGE1_DIR}/num_labels.json"
+    inference_script = f"{stage2_linear}/interactive_dict_v5_1billion.py"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # -----------------------------------------------------------------------
+        # STAGE 1: text → attributes
+        # Reproduce predict.sh: python main.py --do_predict ...
+        # -----------------------------------------------------------------------
+        t0 = time.time()
+        print(f"[stage1] text→attributes | prompt='{prompt}'")
+
+        # predict.json: formato esperado por main.py de MuseCoco
+        predict_json = [{"text": prompt}]
+        predict_json_path = f"{tmpdir}/predict.json"
+        with open(predict_json_path, "w") as f:
+            json.dump(predict_json, f)
+
+        stage1_out_dir = f"{tmpdir}/stage1_out"
+        os.makedirs(stage1_out_dir, exist_ok=True)
+
+        cmd_stage1 = [
+            sys.executable, f"{STAGE1_DIR}/main.py",
+            "--do_predict",
+            f"--model_name_or_path={T2A_MODEL_DIR}",
+            f"--test_file={predict_json_path}",
+            f"--attributes={att_key_path}",
+            f"--num_labels={num_labels_path}",
+            f"--output_dir={stage1_out_dir}",
+            "--overwrite_output_dir",
+        ]
+        result = subprocess.run(
+            cmd_stage1,
+            cwd=STAGE1_DIR,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print("[stage1] stdout:", result.stdout[-2000:])
+            print("[stage1] stderr:", result.stderr[-2000:])
+            raise RuntimeError(f"Stage 1 falló con código {result.returncode}")
+
+        predict_attrs_path = f"{stage1_out_dir}/predict_attributes.json"
+        softmax_probs_path = f"{stage1_out_dir}/softmax_probs.json"
+        if not os.path.exists(predict_attrs_path):
+            raise RuntimeError(f"No se generó predict_attributes.json en {stage1_out_dir}")
+
+        t_s1 = time.time() - t0
+        print(f"[stage1] completado en {t_s1:.1f}s")
+
+        # -----------------------------------------------------------------------
+        # STAGE 1→2 PRE: atributos → infer_test.bin
+        # Reproduce la lógica de stage2_pre.py (hardcoded paths → aquí dinámicos)
+        # -----------------------------------------------------------------------
+        t1 = time.time()
+        print("[pre] generando infer_test.bin...")
+
+        test_data = json.load(open(predict_json_path))
+        pred_attrs = json.load(open(predict_attrs_path))
+        softmax_probs = json.load(open(softmax_probs_path))
+        att_key = json.load(open(att_key_path))
+
+        final = []
+        for line in test_data:
+            ins = {
+                "text": line["text"],
+                "pred_labels": {},
+                "pred_probs": {},
+            }
+            final.append(deepcopy(ins))
+
+        for k, v in pred_attrs.items():
+            for j in range(len(v)):
+                final[j]["pred_labels"][k] = deepcopy(v[j])
+        for k, v in softmax_probs.items():
+            for j in range(len(v)):
+                final[j]["pred_probs"][k] = deepcopy(v[j])
+
+        # Agrupar atributos I1s2 y S4 (igual que stage2_pre.py original)
+        I1s2_key = [a for a in att_key if a[:4] == "I1s2"]
+        S4_key = [a for a in att_key if a[:2] == "S4"]
+
+        for idx in range(len(final)):
+            pred_labels_I1s2 = [deepcopy(final[idx]["pred_labels"].pop(k)) for k in I1s2_key]
+            pred_probs_I1s2 = [deepcopy(final[idx]["pred_probs"].pop(k)) for k in I1s2_key]
+            pred_labels_S4 = [deepcopy(final[idx]["pred_labels"].pop(k)) for k in S4_key]
+            pred_probs_S4 = [deepcopy(final[idx]["pred_probs"].pop(k)) for k in S4_key]
+            final[idx]["pred_probs"]["I1s2"] = pred_probs_I1s2
+            final[idx]["pred_probs"]["S4"] = pred_probs_S4
+            final[idx]["pred_labels"]["I1s2"] = pred_labels_I1s2
+            final[idx]["pred_labels"]["S4"] = pred_labels_S4
+
+        infer_bin_path = f"{tmpdir}/infer_test.bin"
+        with open(infer_bin_path, "wb") as f:
+            pickle.dump(final, f)
+
+        t_pre = time.time() - t1
+        print(f"[pre] infer_test.bin generado en {t_pre:.1f}s | {len(final)} samples")
+
+        # -----------------------------------------------------------------------
+        # STAGE 2: attribute → MIDI (fairseq GPU)
+        # Reproduce interactive_1billion.sh con n_samples samples
+        # -----------------------------------------------------------------------
+        t2 = time.time()
+        print("[stage2] attributes→MIDI | GPU inference...")
+
+        save_root = f"{tmpdir}/generation"
+        os.makedirs(save_root, exist_ok=True)
+
+        cmd_stage2 = [
+            sys.executable, "-u", inference_script,
+            data_bin_dir,
+            "--task", "language_modeling_control",
+            "--path", A2M_CKPT,
+            "--ctrl_command_path", infer_bin_path,
+            "--save_root", save_root,
+            "--need_num", str(n_samples),
+            "--start", "0",
+            "--end", "1",
+            "--max-len-b", "2560",
+            "--min-len", "512",
+            "--sampling",
+            "--beam", "1",
+            "--sampling-topk", "15",
+            "--temperature", "1.0",
+            "--no-repeat-ngram-size", "0",
+            "--buffer-size", "1",
+            "--batch-size", "1",
+        ]
+        result = subprocess.run(
+            cmd_stage2,
+            cwd=stage2_linear,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": f"{STAGE2_DIR}:{stage2_linear}:{os.environ.get('PYTHONPATH', '')}",
+            },
+        )
+        if result.returncode != 0:
+            print("[stage2] stdout:", result.stdout[-3000:])
+            print("[stage2] stderr:", result.stderr[-3000:])
+            raise RuntimeError(f"Stage 2 falló con código {result.returncode}")
+
+        t_s2 = time.time() - t2
+        print(f"[stage2] completado en {t_s2:.1f}s")
+
+        # -----------------------------------------------------------------------
+        # Recoger archivos MIDI generados
+        # Estructura: save_root/{command_idx}/midi/{sample_id}.mid
+        # -----------------------------------------------------------------------
+        midi_files = sorted(Path(save_root).glob("**/midi/*.mid"))
+        if not midi_files:
+            print("[stage2] stdout:", result.stdout[-2000:])
+            raise RuntimeError("No se generaron archivos MIDI. Revisa el output de stage2.")
+
+        midi_bytes_list = [f.read_bytes() for f in midi_files]
+        print(f"[output] {len(midi_bytes_list)} MIDI(s) generados")
+
+        # Logging de cada MIDI generado
+        try:
+            import pretty_midi
+            for i, (f, b) in enumerate(zip(midi_files, midi_bytes_list)):
+                import io
+                pm = pretty_midi.PrettyMIDI(io.BytesIO(b))
+                n_tracks = len(pm.instruments)
+                n_notes = sum(len(i.notes) for i in pm.instruments)
+                dur = pm.get_end_time()
+                instrs = [inst.program for inst in pm.instruments]
+                print(f"  [{i+1}] {n_tracks} pistas | {n_notes} notas | {dur:.1f}s | instrs: {instrs}")
+        except Exception:
+            pass
+
+        print(f"\n--- TIEMPOS ---")
+        print(f"  Stage 1 (text→attr):   {t_s1:.1f}s")
+        print(f"  Pre  (attr→bin):        {t_pre:.1f}s")
+        print(f"  Stage 2 (attr→MIDI):   {t_s2:.1f}s")
+        print(f"  TOTAL:                  {t_s1+t_pre+t_s2:.1f}s")
+
+        return midi_bytes_list
+
+
+# ---------------------------------------------------------------------------
+# Local entrypoint de setup
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def setup_weights() -> None:
+    """Descarga los pesos de MuseCoco al Volume (ejecutar solo una vez)."""
+    print("Descargando pesos de MuseCoco al Modal Volume...")
+    print("  text2attribute: ~1.4 GB (pytorch_model.bin)")
+    print("  attribute2music: ~14.5 GB (attribute2music.pt)")
+    print("  Total: ~16 GB  |  Tiempo estimado: 20-40 min (red depende de Modal)")
+    download_weights.remote()
+    print("Setup completado. Ahora puedes ejecutar inferencias.")
+
+
+# ---------------------------------------------------------------------------
+# Local entrypoint de inferencia
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def main(
+    prompt: str = "upbeat jazz piano trio, 120 BPM, C major, happy mood",
+    out: str = "out_muse.mid",
+    n_samples: int = 1,
+) -> None:
+    """
+    Genera MIDI desde texto usando MuseCoco en Modal (T4 GPU).
+
+    Ejemplo:
+        modal run research_musecoco_modal.py \\
+            --prompt "jazz piano trio, upbeat, 120 BPM" \\
+            --out out_muse.mid
+    """
+    out_path = Path(out)
+    print(f"Enviando a Modal [T4] | prompt='{prompt}' | n_samples={n_samples}")
+
+    midi_results = generate.remote(prompt=prompt, n_samples=n_samples)
+
+    if not midi_results:
+        print("[error] No se recibió ningún MIDI.")
+        return
+
+    # Guardar el primer resultado (o todos con sufijo numérico)
+    if n_samples == 1:
+        out_path.write_bytes(midi_results[0])
+        print(f"\n[saved] {out_path.resolve()}")
+    else:
+        for i, b in enumerate(midi_results):
+            p = out_path.with_stem(f"{out_path.stem}_{i+1}")
+            p.write_bytes(b)
+            print(f"[saved] {p.resolve()}")
+
+    print("\n--- RESULTADOS (copiar en RESEARCH.md) ---")
+    try:
+        import io
+        import pretty_midi
+        pm = pretty_midi.PrettyMIDI(io.BytesIO(midi_results[0]))
+        n_tracks = len(pm.instruments)
+        n_notes = sum(len(i.notes) for i in pm.instruments)
+        dur = pm.get_end_time()
+        instrs = [inst.program for inst in pm.instruments]
+        print(f"  prompt:      {prompt}")
+        print(f"  device:      Modal T4 GPU")
+        print(f"  pistas:      {n_tracks}")
+        print(f"  notas:       {n_notes}")
+        print(f"  duración:    {dur:.1f}s")
+        print(f"  instrumentos: {instrs}")
+    except ImportError:
+        print("  (instala pretty_midi localmente para ver detalles del MIDI)")
