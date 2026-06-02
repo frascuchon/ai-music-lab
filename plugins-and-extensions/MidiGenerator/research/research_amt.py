@@ -66,7 +66,7 @@ def create_fixture_midi(path: str):
 
 def run_continuation(model, input_midi_path: str, out_path: str, duration: int = 10):
     from anticipation.convert import events_to_midi, midi_to_events
-    from anticipation.ops import clip
+    from anticipation.ops import clip, sort
     from anticipation.sample import generate
 
     print("[continuation] cargando MIDI de entrada...")
@@ -86,8 +86,9 @@ def run_continuation(model, input_midi_path: str, out_path: str, duration: int =
     t_infer = time.time() - t0
     print(f"[timing] inferencia: {t_infer:.1f}s")
 
-    from anticipation.ops import combine
-    combined = combine(history, new_events)
+    # combine(a, b) resta CONTROL_OFFSET a b — sólo válido cuando b son controles.
+    # history y new_events son eventos normales; basta concatenar y ordenar.
+    combined = sort(history + new_events)
     mid = events_to_midi(combined)
     mid.save(out_path)
     print(f"[output] MIDI guardado en: {os.path.abspath(out_path)}")
@@ -96,14 +97,15 @@ def run_continuation(model, input_midi_path: str, out_path: str, duration: int =
 
 def run_accompaniment(model, input_midi_path: str, out_path: str, duration: int = 10):
     from anticipation.convert import events_to_midi, midi_to_events
-    from anticipation.ops import clip, extract_instruments
+    from anticipation.ops import clip, combine
     from anticipation.sample import generate
+    from anticipation.tokenize import extract_instruments
 
     print("[accompaniment] cargando MIDI de entrada como melodía de control...")
     events = midi_to_events(input_midi_path)
     melody = clip(events, 0, duration)
-    # track 0 como melodía de control; el modelo genera el resto
-    controls = extract_instruments(melody, [0])
+    # extract_instruments devuelve (remaining_events, controls_con_CONTROL_OFFSET)
+    _, controls = extract_instruments(melody, [0])
 
     print(f"[accompaniment] generando {duration}s de acompañamiento...")
     t0 = time.time()
@@ -117,8 +119,8 @@ def run_accompaniment(model, input_midi_path: str, out_path: str, duration: int 
     t_infer = time.time() - t0
     print(f"[timing] inferencia: {t_infer:.1f}s")
 
-    from anticipation.ops import combine
-    combined = combine(controls, accompaniment)
+    # combine(events, controls): resta CONTROL_OFFSET a controls y mezcla con events
+    combined = combine(accompaniment, controls)
     mid = events_to_midi(combined)
     mid.save(out_path)
     print(f"[output] MIDI guardado en: {os.path.abspath(out_path)}")
