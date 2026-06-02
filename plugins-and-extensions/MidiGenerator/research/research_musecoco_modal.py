@@ -11,6 +11,8 @@ Modelos en HuggingFace:
 
 Dependencias clave: fairseq==0.10.2 + pytorch-fast-transformers (CUDA kernels)
 → requieren Python 3.8 + PyTorch 1.11 + CUDA 11.3 devel image.
+→ Modal runner requiere Python 3.10+: se instala Python 3.11 (add_python) para Modal
+  y se mantiene conda Python 3.8 para la inferencia MuseCoco via subprocess.
 → Los pesos se guardan en un Modal Volume (se descargan solo la primera vez).
 
 Setup (primera vez, descarga ~16 GB al Volume):
@@ -51,37 +53,66 @@ T2A_MODEL_DIR = f"{WEIGHTS_MOUNT}/text2attribute"
 # ---------------------------------------------------------------------------
 # Container image
 # pytorch:1.11.0-cuda11.3-cudnn8-devel incluye NVCC → necesario para compilar
-# pytorch-fast-transformers (kernels CUDA de linear attention)
+# pytorch-fast-transformers (kernels CUDA de linear attention).
+#
+# Conflicto de versiones Python:
+#   - Modal runner necesita Python ≥ 3.10
+#   - fairseq 0.10.2 + pytorch-fast-transformers solo funcionan con Python 3.8
+# Solución: add_python="3.11" instala Python 3.11 para el runner de Modal;
+# las deps de MuseCoco se instalan en conda Python 3.8 (/opt/conda/bin/pip),
+# y los subprocesos de inferencia lo invocan como /opt/conda/bin/python.
 # ---------------------------------------------------------------------------
 MUZIC_DIR = "/opt/muzic/musecoco"
 STAGE1_DIR = f"{MUZIC_DIR}/1-text2attribute_model"
 STAGE2_DIR = f"{MUZIC_DIR}/2-attribute2music_model"
 
+# Python 3.8 (conda) en el devel image — usado por los subprocesos de inferencia
+CONDA_PYTHON = "/opt/conda/bin/python"
+CONDA_PIP = "/opt/conda/bin/pip"
+
 image = (
-    modal.Image.from_registry("pytorch/pytorch:1.11.0-cuda11.3-cudnn8-devel")
+    modal.Image.from_registry(
+        "pytorch/pytorch:1.11.0-cuda11.3-cudnn8-devel",
+        # Python 3.11 para el runner de Modal (requiere ≥ 3.10)
+        add_python="3.11",
+    )
+    # Ubuntu 18.04 + CUDA 11.3 repos tienen claves GPG rotadas → apt-get update falla.
+    # Eliminamos esas fuentes (CUDA ya está instalado en la imagen); sólo necesitamos
+    # los repos base de Ubuntu para git/g++.
+    .run_commands(
+        "rm -f /etc/apt/sources.list.d/cuda.list /etc/apt/sources.list.d/nvidia-ml.list",
+    )
     .apt_install(["git", "g++", "build-essential"])
     # pytorch-fast-transformers: linear attention CUDA kernels usados por MuseCoco.
-    # Compilado desde source con el NVCC del devel image (~5 min de build, cacheado).
+    # Debe compilarse con Python 3.8 + NVCC del devel image (~5 min, cacheado).
     .run_commands(
-        "pip install pytorch-fast-transformers",
+        f"{CONDA_PIP} install pytorch-fast-transformers",
     )
+    # Deps de inferencia MuseCoco → conda Python 3.8 (fairseq 0.10.2 solo soporta 3.8)
+    .run_commands(
+        f"{CONDA_PIP} install"
+        " fairseq==0.10.2"
+        " transformers==4.26.0"
+        " accelerate"
+        " protobuf==3.20.3"
+        " tqdm"
+        " scikit-learn"
+        " miditoolkit"
+        " scipy"
+        " numpy==1.23.4"
+        " music21"
+        " msgpack"
+        " huggingface_hub"
+        " pretty_midi"
+        " psutil",
+        # sentencepiece aparte para evitar problemas de escaping con !
+        f"{CONDA_PIP} install 'sentencepiece!=0.1.92'",
+    )
+    # Deps de las funciones Modal (download_weights, logging) → Python 3.11
     .pip_install(
-        # Pin de versiones testadas por los autores de MuseCoco
-        "fairseq==0.10.2",
-        "transformers==4.26.0",
-        "accelerate",
-        "sentencepiece!=0.1.92",
-        "protobuf==3.20.3",
-        "tqdm",
-        "scikit-learn",
-        "miditoolkit",
-        "scipy",
-        "numpy==1.23.4",
-        "music21",
-        "msgpack",
         "huggingface_hub",
         "pretty_midi",
-        "psutil",
+        "tqdm",
     )
     # Clonar muzic repo (código personalizado fairseq + midiprocessor incluido)
     .run_commands(
@@ -167,13 +198,7 @@ def generate(prompt: str, n_samples: int = 1) -> list[bytes]:
             "  modal run research_musecoco_modal.py::setup_weights"
         )
 
-    # -------------------------------------------------------------------------
-    # Preparar paths y sys.path para el código del muzic repo
-    # -------------------------------------------------------------------------
     stage2_linear = f"{STAGE2_DIR}/linear_mask"
-    for path in [STAGE1_DIR, STAGE2_DIR, stage2_linear]:
-        if path not in sys.path:
-            sys.path.insert(0, path)
 
     data_bin_dir = f"{STAGE2_DIR}/data/truncated_2560/data-bin"
     att_key_path = f"{STAGE1_DIR}/data/att_key.json"
@@ -198,7 +223,7 @@ def generate(prompt: str, n_samples: int = 1) -> list[bytes]:
         os.makedirs(stage1_out_dir, exist_ok=True)
 
         cmd_stage1 = [
-            sys.executable, f"{STAGE1_DIR}/main.py",
+            CONDA_PYTHON, f"{STAGE1_DIR}/main.py",
             "--do_predict",
             f"--model_name_or_path={T2A_MODEL_DIR}",
             f"--test_file={predict_json_path}",
@@ -286,7 +311,7 @@ def generate(prompt: str, n_samples: int = 1) -> list[bytes]:
         os.makedirs(save_root, exist_ok=True)
 
         cmd_stage2 = [
-            sys.executable, "-u", inference_script,
+            CONDA_PYTHON, "-u", inference_script,
             data_bin_dir,
             "--task", "language_modeling_control",
             "--path", A2M_CKPT,
