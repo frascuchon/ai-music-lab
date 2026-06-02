@@ -99,17 +99,29 @@
 - **Ventajas vs Text2midi**: LLM decoder-only → mayor capacidad de seguir instrucciones textuales; 4-5× más rápido según benchmark del paper
 - **Desventajas**: modelo 3.45 GB (vs ~900 MB Text2midi); primera descarga lenta
 
-#### Resultados PoC (pendiente ejecución)
+#### Resultados PoC (ejecutado 2026-06-02)
 
-| Métrica | Valor |
-|---|---|
-| device | pendiente |
-| tiempo carga (s) | pendiente |
-| tiempo inferencia (s) | pendiente |
-| RAM delta (MB) | pendiente |
-| MIDI válido | pendiente |
-| Calidad subjetiva (0-5) | pendiente |
-| Notas | Script: `uv run research_midi_llm.py --prompt "..." --out out_mllm.mid` |
+| Métrica | Valor (jazz, 1024 tok) | Valor (pop, 2046 tok) |
+|---|---|---|
+| device | mps | mps |
+| tiempo carga (s) | 346.6 (incl. descarga 3.4 GB) | **5.2** (modelo en caché) |
+| tiempo inferencia (s) | 64.2 | 145.1 |
+| RAM delta proceso (MB) | ~65 (pesos en GPU unified mem) | ~65 |
+| MIDI válido | ✅ (3 pistas, 339 notas, 8.4s) | ✅ (5 pistas, 682 notas, 28.5s) |
+| Instrumentos | piano ×2, fretless bass (35) | piano, bass (33), vibraphone (11), strings (48), piano |
+| Calidad subjetiva (0-5) | pendiente escucha en REAPER | pendiente escucha en REAPER |
+| Notas | El prompt "jazz trio" generó 339 notas vs 117 en Text2midi. Density muy superior. | "pop + strings" capturó instrumentos coherentes con el prompt. |
+
+**Comparativa directa con Text2midi** (mismo prompt "pop in C major"):
+
+| | Text2midi | MIDI-LLM |
+|---|---|---|
+| Tokens generados | 512 | 2046 |
+| Tiempo inferencia | 98s | 145s |
+| Pistas | 6 | 5 |
+| Notas totales | 117 | **682** |
+| Duración MIDI | ~30s | 28.5s |
+| Instrumentos | [0,1,28,33,35] | [0,33,11,48,0] |
 
 ---
 
@@ -248,4 +260,4 @@ uv run research_amt.py --mode both
 
 ---
 
-*Documento generado: 2026-06-01. PoC Text2midi+AMT ejecutados: 2026-06-02. MIDI-LLM añadido: 2026-06-02. Pendiente: ejecutar PoC 1b y comparar calidad subjetiva.*
+*Documento generado: 2026-06-01. PoC Text2midi+AMT ejecutados: 2026-06-02. MIDI-LLM PoC ejecutado: 2026-06-02. Pendiente: escuchar out_mllm.mid y out_mllm_pop.mid en REAPER y anotar calidad subjetiva.*
