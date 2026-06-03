@@ -469,9 +469,12 @@ def main(
     while rel_paths is None:
         try:
             rel_paths = call.get(timeout=30)
+        except TimeoutError:
+            print(".", end="", flush=True)
+            dots += 1
         except Exception as e:
             msg = str(e).lower()
-            if any(k in msg for k in ("timeout", "deadline", "timed out")):
+            if any(k in msg for k in ("deadline", "timed out")):
                 print(".", end="", flush=True)
                 dots += 1
             else:
