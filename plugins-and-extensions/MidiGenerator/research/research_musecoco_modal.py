@@ -18,9 +18,9 @@ Dependencias clave: fairseq==0.10.2 + pytorch-fast-transformers (CUDA kernels)
 Setup (primera vez, descarga ~16 GB al Volume):
     modal run research_musecoco_modal.py::setup_weights
 
-Inferencia:
-    modal run research_musecoco_modal.py --prompt "jazz piano trio, 120 BPM" --out out_muse.mid
-    modal run research_musecoco_modal.py --prompt "..." --n_samples 2 --out out_muse.mid
+Inferencia (::main requerido porque hay dos local_entrypoints):
+    modal run research_musecoco_modal.py::main --prompt "jazz piano trio, 120 BPM" --out out_muse.mid
+    modal run research_musecoco_modal.py::main --prompt "..." --n_samples 2 --out out_muse.mid
 
 Coste estimado (T4, $0.17/hr):
   ~3 min/generación  →  ~$0.009 por track
@@ -99,6 +99,7 @@ image = (
         f"{CONDA_PYTHON} -m pip install"
         " fairseq==0.10.2"
         " transformers==4.26.0"
+        " datasets"
         " accelerate"
         " protobuf==3.20.3"
         " tqdm"
