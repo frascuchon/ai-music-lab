@@ -106,7 +106,7 @@ image = (
         " protobuf==3.20.3"
         " tqdm"
         " scikit-learn"
-        " miditoolkit"
+        " miditoolkit==0.1.16"
         " scipy"
         " numpy==1.23.4"
         " music21"
