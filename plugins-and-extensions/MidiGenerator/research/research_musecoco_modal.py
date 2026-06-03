@@ -187,10 +187,12 @@ def download_weights() -> None:
     timeout=1800,
     volumes={WEIGHTS_MOUNT: weights_vol},
 )
-def generate(prompt: str, n_samples: int = 1) -> list[bytes]:
+def generate(prompt: str, n_samples: int = 1) -> list[str]:
     """
-    Genera n_samples archivos MIDI desde un prompt de texto.
-    Retorna lista de bytes MIDI.
+    Genera n_samples MIDIs desde un prompt. Guarda en el Volume y retorna
+    rutas relativas (output/<job_id>/sample_N.mid) para que main() las
+    descargue con 'modal volume get'. Así el cliente local no necesita
+    mantener una conexión gRPC de 11 min (stage2 tarda ~664s en T4).
     """
     import pickle
     import shutil
@@ -198,7 +200,7 @@ def generate(prompt: str, n_samples: int = 1) -> list[bytes]:
     import time
     from copy import deepcopy
 
-    weights_vol.reload()  # asegurar que el Volume está actualizado
+    weights_vol.reload()
 
     if not os.path.exists(A2M_CKPT):
         raise RuntimeError(
@@ -212,6 +214,11 @@ def generate(prompt: str, n_samples: int = 1) -> list[bytes]:
     att_key_path = f"{STAGE1_DIR}/data/att_key.json"
     num_labels_path = f"{STAGE1_DIR}/num_labels.json"
     inference_script = f"{stage2_linear}/interactive_dict_v5_1billion.py"
+
+    # Directorio de salida persistente en el Volume
+    job_id = str(int(time.time()))
+    vol_output_dir = f"{WEIGHTS_MOUNT}/output/{job_id}"
+    os.makedirs(vol_output_dir, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # -----------------------------------------------------------------------
@@ -358,32 +365,46 @@ def generate(prompt: str, n_samples: int = 1) -> list[bytes]:
         print(f"[stage2] completado en {t_s2:.1f}s")
 
         # -----------------------------------------------------------------------
-        # Recoger archivos MIDI generados
+        # Recoger archivos MIDI generados y copiar al Volume
         # -----------------------------------------------------------------------
-        # Debug: listar toda la estructura de save_root para entender la ruta real
-        print(f"[debug] Árbol de {save_root}:")
-        for p in sorted(Path(save_root).rglob("*")):
+        # Listar árbol completo de save_root (debug: visible en container logs)
+        all_files = list(Path(save_root).rglob("*"))
+        print(f"[debug] {len(all_files)} entradas en save_root:")
+        for p in sorted(all_files):
             print(f"  {p}")
+
+        # Guardar stdout de stage2 en Volume para poder revisarlo offline
+        with open(f"{vol_output_dir}/stage2_stdout.txt", "w") as lf:
+            lf.write(result.stdout[-5000:])
 
         midi_files = sorted(Path(save_root).glob("**/*.mid"))
         if not midi_files:
-            # Buscar también .midi
             midi_files = sorted(Path(save_root).glob("**/*.midi"))
         if not midi_files:
-            print("[stage2] stdout:", result.stdout[-2000:])
-            raise RuntimeError("No se generaron archivos MIDI. Revisa el output de stage2.")
+            weights_vol.commit()
+            raise RuntimeError(
+                f"No se encontraron archivos .mid en {save_root}. "
+                f"Revisa stage2_stdout.txt en el Volume (job_id={job_id})."
+            )
 
-        midi_bytes_list = [f.read_bytes() for f in midi_files]
-        print(f"[output] {len(midi_bytes_list)} MIDI(s) generados")
+        # Copiar MIDIs al Volume
+        rel_paths = []
+        for i, mf in enumerate(midi_files):
+            rel = f"output/{job_id}/sample_{i+1}.mid"
+            shutil.copy(str(mf), f"{WEIGHTS_MOUNT}/{rel}")
+            rel_paths.append(rel)
 
-        # Logging de cada MIDI generado
+        weights_vol.commit()
+        print(f"[output] {len(rel_paths)} MIDI(s) guardados en el Volume")
+
+        # Análisis desde el container (pretty_midi instalado en conda py3.8)
         try:
+            import io
             import pretty_midi
-            for i, (f, b) in enumerate(zip(midi_files, midi_bytes_list)):
-                import io
-                pm = pretty_midi.PrettyMIDI(io.BytesIO(b))
+            for i, mf in enumerate(midi_files):
+                pm = pretty_midi.PrettyMIDI(str(mf))
                 n_tracks = len(pm.instruments)
-                n_notes = sum(len(i.notes) for i in pm.instruments)
+                n_notes = sum(len(inst.notes) for inst in pm.instruments)
                 dur = pm.get_end_time()
                 instrs = [inst.program for inst in pm.instruments]
                 print(f"  [{i+1}] {n_tracks} pistas | {n_notes} notas | {dur:.1f}s | instrs: {instrs}")
@@ -391,12 +412,10 @@ def generate(prompt: str, n_samples: int = 1) -> list[bytes]:
             pass
 
         print(f"\n--- TIEMPOS ---")
-        print(f"  Stage 1 (text→attr):   {t_s1:.1f}s")
-        print(f"  Pre  (attr→bin):        {t_pre:.1f}s")
-        print(f"  Stage 2 (attr→MIDI):   {t_s2:.1f}s")
-        print(f"  TOTAL:                  {t_s1+t_pre+t_s2:.1f}s")
+        print(f"  Stage 1: {t_s1:.1f}s  |  Pre: {t_pre:.1f}s  |  Stage 2: {t_s2:.1f}s")
+        print(f"  TOTAL:   {t_s1 + t_pre + t_s2:.1f}s")
 
-        return midi_bytes_list
+        return rel_paths
 
 
 # ---------------------------------------------------------------------------
@@ -425,44 +444,68 @@ def main(
     """
     Genera MIDI desde texto usando MuseCoco en Modal (T4 GPU).
 
+    Usa spawn()+polling para que el cliente local no necesite mantener
+    una conexión gRPC de 11 min (stage2 en T4 tarda ~664s). Los MIDIs se
+    guardan en el Volume y se descargan con 'modal volume get'.
+
     Ejemplo:
-        modal run research_musecoco_modal.py \\
+        modal run research_musecoco_modal.py::main \\
             --prompt "jazz piano trio, upbeat, 120 BPM" \\
             --out out_muse.mid
     """
+    import subprocess as sp
+    import time
+
     out_path = Path(out)
     print(f"Enviando a Modal [T4] | prompt='{prompt}' | n_samples={n_samples}")
+    print("[spawn] Stage2 tarda ~11 min; usando spawn+poll para evitar heartbeat timeout")
 
-    midi_results = generate.remote(prompt=prompt, n_samples=n_samples)
+    call = generate.spawn(prompt=prompt, n_samples=n_samples)
+    print(f"[spawned] object_id={call.object_id}")
 
-    if not midi_results:
-        print("[error] No se recibió ningún MIDI.")
+    # Polling cada 30s para no depender de una conexión gRPC larga
+    rel_paths = None
+    dots = 0
+    while rel_paths is None:
+        try:
+            rel_paths = call.get(timeout=30)
+        except Exception as e:
+            msg = str(e).lower()
+            if any(k in msg for k in ("timeout", "deadline", "timed out")):
+                print(".", end="", flush=True)
+                dots += 1
+            else:
+                raise
+    if dots:
+        print()
+
+    if not rel_paths:
+        print("[error] La función no retornó rutas MIDI.")
         return
 
-    # Guardar el primer resultado (o todos con sufijo numérico)
-    if n_samples == 1:
-        out_path.write_bytes(midi_results[0])
-        print(f"\n[saved] {out_path.resolve()}")
-    else:
-        for i, b in enumerate(midi_results):
-            p = out_path.with_stem(f"{out_path.stem}_{i+1}")
-            p.write_bytes(b)
-            print(f"[saved] {p.resolve()}")
+    # Descargar MIDIs del Volume a local
+    for i, rel_path in enumerate(rel_paths):
+        local_out = out_path if i == 0 else out_path.with_stem(f"{out_path.stem}_{i+1}")
+        print(f"[download] {rel_path} → {local_out}")
+        sp.run(
+            ["modal", "volume", "get", "musecoco-weights", rel_path, str(local_out)],
+            check=True,
+        )
+        print(f"[saved] {local_out.resolve()}")
 
-    print("\n--- RESULTADOS (copiar en RESEARCH.md) ---")
+    print("\n--- RESULTADOS ---")
     try:
-        import io
         import pretty_midi
-        pm = pretty_midi.PrettyMIDI(io.BytesIO(midi_results[0]))
+        pm = pretty_midi.PrettyMIDI(str(out_path))
         n_tracks = len(pm.instruments)
-        n_notes = sum(len(i.notes) for i in pm.instruments)
+        n_notes = sum(len(inst.notes) for inst in pm.instruments)
         dur = pm.get_end_time()
         instrs = [inst.program for inst in pm.instruments]
-        print(f"  prompt:      {prompt}")
-        print(f"  device:      Modal T4 GPU")
-        print(f"  pistas:      {n_tracks}")
-        print(f"  notas:       {n_notes}")
-        print(f"  duración:    {dur:.1f}s")
+        print(f"  prompt:       {prompt}")
+        print(f"  device:       Modal T4 GPU")
+        print(f"  pistas:       {n_tracks}")
+        print(f"  notas:        {n_notes}")
+        print(f"  duración:     {dur:.1f}s")
         print(f"  instrumentos: {instrs}")
     except ImportError:
         print("  (instala pretty_midi localmente para ver detalles del MIDI)")
