@@ -99,7 +99,7 @@ image = (
         f"{CONDA_PYTHON} -m pip install"
         " fairseq==0.10.2"
         " transformers==4.26.0"
-        " datasets"
+        " datasets==2.14.6"
         " accelerate"
         " protobuf==3.20.3"
         " tqdm"
