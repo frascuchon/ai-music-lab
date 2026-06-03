@@ -100,6 +100,7 @@ image = (
         " fairseq==0.10.2"
         " transformers==4.26.0"
         " datasets==2.14.6"
+        " absl-py"
         " accelerate"
         " protobuf==3.20.3"
         " tqdm"
