@@ -359,9 +359,16 @@ def generate(prompt: str, n_samples: int = 1) -> list[bytes]:
 
         # -----------------------------------------------------------------------
         # Recoger archivos MIDI generados
-        # Estructura: save_root/{command_idx}/midi/{sample_id}.mid
         # -----------------------------------------------------------------------
-        midi_files = sorted(Path(save_root).glob("**/midi/*.mid"))
+        # Debug: listar toda la estructura de save_root para entender la ruta real
+        print(f"[debug] Árbol de {save_root}:")
+        for p in sorted(Path(save_root).rglob("*")):
+            print(f"  {p}")
+
+        midi_files = sorted(Path(save_root).glob("**/*.mid"))
+        if not midi_files:
+            # Buscar también .midi
+            midi_files = sorted(Path(save_root).glob("**/*.midi"))
         if not midi_files:
             print("[stage2] stdout:", result.stdout[-2000:])
             raise RuntimeError("No se generaron archivos MIDI. Revisa el output de stage2.")
