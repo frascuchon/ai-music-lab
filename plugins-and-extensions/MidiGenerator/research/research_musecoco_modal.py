@@ -38,6 +38,7 @@ import json
 import os
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import modal
@@ -363,6 +364,59 @@ def generate(prompt: str, n_samples: int = 1) -> list[str]:
 
         t_s2 = time.time() - t2
         print(f"[stage2] completado en {t_s2:.1f}s")
+
+        # -----------------------------------------------------------------------
+        # STAGE 3: REMI tokens → MIDI  (midiprocessor, Python 3.8)
+        # interactive_dict_v5_1billion.py tiene except:pass que silencia errores
+        # de decodificación. Hacemos la conversión explícitamente aquí.
+        # -----------------------------------------------------------------------
+        stage3_script = textwrap.dedent(f"""\
+            import sys, pathlib
+            sys.path.insert(0, '{STAGE2_DIR}')
+            from midiprocessor import MidiDecoder
+
+            save_root = pathlib.Path(sys.argv[1])
+            decoder = MidiDecoder("REMIGEN2")
+            remi_files = sorted(save_root.rglob("remi/*.txt"))
+            if not remi_files:
+                print("[stage3] ERROR: no remi/*.txt files found", flush=True)
+                sys.exit(1)
+            ok = 0
+            for remi_txt in remi_files:
+                midi_dir = remi_txt.parent.parent / "midi"
+                midi_dir.mkdir(exist_ok=True)
+                midi_path = midi_dir / (remi_txt.stem + ".mid")
+                with open(remi_txt) as f:
+                    tokens = f.read().strip().split()
+                # strip attribute prefix: keep tokens after <sep>
+                sep_indices = [i for i, t in enumerate(tokens) if t == "<sep>"]
+                if sep_indices:
+                    tokens = tokens[sep_indices[-1] + 1:]
+                # strip leading/trailing special tokens
+                tokens = [t for t in tokens if not t.startswith("<") or t == "<unk>"]
+                try:
+                    midi_obj = decoder.decode_from_token_str_list(tokens)
+                    midi_obj.dump(str(midi_path))
+                    print(f"[stage3] OK {{midi_path}}", flush=True)
+                    ok += 1
+                except Exception as e:
+                    print(f"[stage3] ERROR {{remi_txt}}: {{e}}", flush=True)
+                    raise
+            print(f"[stage3] {{ok}}/{{len(remi_files)}} converted", flush=True)
+        """)
+        t3 = time.time()
+        print("[stage3] REMI→MIDI conversion...")
+        result3 = subprocess.run(
+            [CONDA_PYTHON, "-c", stage3_script, save_root],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": f"{STAGE2_DIR}:{os.environ.get('PYTHONPATH', '')}"},
+        )
+        print(result3.stdout)
+        if result3.returncode != 0:
+            print("[stage3] stderr:", result3.stderr[-2000:])
+            raise RuntimeError(f"Stage 3 (REMI→MIDI) falló con código {result3.returncode}")
+        print(f"[stage3] completado en {time.time() - t3:.1f}s")
 
         # -----------------------------------------------------------------------
         # Recoger archivos MIDI generados y copiar al Volume
