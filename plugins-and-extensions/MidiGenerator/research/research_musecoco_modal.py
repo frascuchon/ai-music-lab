@@ -66,9 +66,10 @@ MUZIC_DIR = "/opt/muzic/musecoco"
 STAGE1_DIR = f"{MUZIC_DIR}/1-text2attribute_model"
 STAGE2_DIR = f"{MUZIC_DIR}/2-attribute2music_model"
 
-# Python 3.8 (conda) en el devel image — usado por los subprocesos de inferencia
-CONDA_PYTHON = "/opt/conda/bin/python"
-CONDA_PIP = "/opt/conda/bin/pip"
+# Python 3.8 (conda) en el devel image — usado por los subprocesos de inferencia.
+# IMPORTANTE: usar python3.8 explícito (no python/python3) porque sus symlinks
+# en /opt/conda/bin/ se sobreescriben para que apunten a Python 3.11.
+CONDA_PYTHON = "/opt/conda/bin/python3.8"
 
 image = (
     modal.Image.from_registry(
@@ -79,18 +80,23 @@ image = (
     # Ubuntu 18.04 + CUDA 11.3 repos tienen claves GPG rotadas → apt-get update falla.
     # Eliminamos esas fuentes (CUDA ya está instalado en la imagen); sólo necesitamos
     # los repos base de Ubuntu para git/g++.
+    # Además, redirigimos los symlinks python/python3 de conda a Python 3.11:
+    # add_python instala 3.11 en /usr/local/bin/, pero /opt/conda/bin/ va primero
+    # en PATH, por lo que sin esta corrección el runner sigue usando Python 3.8.
     .run_commands(
         "rm -f /etc/apt/sources.list.d/cuda.list /etc/apt/sources.list.d/nvidia-ml.list",
+        "ln -sf /usr/local/bin/python3.11 /opt/conda/bin/python",
+        "ln -sf /usr/local/bin/python3.11 /opt/conda/bin/python3",
     )
     .apt_install(["git", "g++", "build-essential"])
     # pytorch-fast-transformers: linear attention CUDA kernels usados por MuseCoco.
     # Debe compilarse con Python 3.8 + NVCC del devel image (~5 min, cacheado).
     .run_commands(
-        f"{CONDA_PIP} install pytorch-fast-transformers",
+        f"{CONDA_PYTHON} -m pip install pytorch-fast-transformers",
     )
     # Deps de inferencia MuseCoco → conda Python 3.8 (fairseq 0.10.2 solo soporta 3.8)
     .run_commands(
-        f"{CONDA_PIP} install"
+        f"{CONDA_PYTHON} -m pip install"
         " fairseq==0.10.2"
         " transformers==4.26.0"
         " accelerate"
@@ -106,7 +112,7 @@ image = (
         " pretty_midi"
         " psutil",
         # sentencepiece aparte para evitar problemas de escaping con !
-        f"{CONDA_PIP} install 'sentencepiece!=0.1.92'",
+        f"{CONDA_PYTHON} -m pip install 'sentencepiece!=0.1.92'",
     )
     # Deps de las funciones Modal (download_weights, logging) → Python 3.11
     .pip_install(
