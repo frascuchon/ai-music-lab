@@ -22,9 +22,9 @@ Inferencia (::main requerido porque hay dos local_entrypoints):
     modal run research_musecoco_modal.py::main --prompt "jazz piano trio, 120 BPM" --out out_muse.mid
     modal run research_musecoco_modal.py::main --prompt "..." --n_samples 2 --out out_muse.mid
 
-Coste estimado (L4 24GB, $0.80/hr):
-  ~7 min/generación  →  ~$0.09 por track
-  T4 (16GB) era más barato/hr pero ~22 min/gen por presión de VRAM → L4 más barato por generación
+Coste estimado (A100-40GB, $2.10/hr):
+  ~1.5-2 min/generación  →  ~$0.05 por track
+  L4 (24GB, $0.80/hr): ~3.5 min → $0.05  |  T4 (16GB, $0.59/hr): ~22 min → $0.21 (presión VRAM)
 
 Alternativas a Modal si buscas más barato (sin créditos gratuitos):
   RunPod    $0.09-0.20/hr (A4000/A5000), pago desde el día 1, muy económico
@@ -182,7 +182,7 @@ def download_weights() -> None:
 # Función principal de inferencia
 # ---------------------------------------------------------------------------
 @app.function(
-    gpu="L4",
+    gpu="A100-40GB",
     cpu=4,
     memory=16384,
     timeout=1800,
@@ -555,7 +555,7 @@ def main(
     instr_list = [int(x.strip()) for x in instruments.split(",") if x.strip()] if instruments else None
 
     out_path = Path(out)
-    print(f"Enviando a Modal [L4] | prompt='{prompt}' | n_samples={n_samples}")
+    print(f"Enviando a Modal [A100-40GB] | prompt='{prompt}' | n_samples={n_samples}")
     if instr_list:
         print(f"[override] instrumentos: {instr_list}")
     print("[spawn] Stage2 tarda ~11 min; usando spawn+poll para evitar heartbeat timeout")
@@ -616,7 +616,7 @@ def _download_and_report(rel_paths: list[str], out_path: Path, prompt: str = "")
         instrs = [inst.program for inst in pm.instruments]
         if prompt:
             print(f"  prompt:       {prompt}")
-        print(f"  device:       Modal L4 GPU")
+        print(f"  device:       Modal A100-40GB GPU")
         print(f"  pistas:       {n_tracks}")
         print(f"  notas:        {n_notes}")
         print(f"  duración:     {dur:.1f}s")
