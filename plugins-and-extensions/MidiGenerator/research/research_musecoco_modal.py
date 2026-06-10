@@ -441,8 +441,29 @@ def generate(prompt: str, n_samples: int = 1, instruments: list[int] | None = No
                     print(f"[stage3] OK {{midi_path}}", flush=True)
                     ok += 1
                 except Exception as e:
-                    print(f"[stage3] ERROR {{remi_txt}}: {{e}}", flush=True)
-                    raise
+                    # Secuencia REMI malformada (AssertionError de token ordering):
+                    # truncar en el último token válido e intentar de nuevo.
+                    print(f"[stage3] WARN malformed sequence in {{remi_txt}}: {{e}} — intentando truncar", flush=True)
+                    try:
+                        # Buscar el último token válido antes del error re-decodificando
+                        # de forma incremental (bisección simple)
+                        lo, hi = 0, len(tokens)
+                        while hi - lo > 8:
+                            mid = (lo + hi) // 2
+                            try:
+                                decoder.decode_from_token_str_list(tokens[:mid])
+                                lo = mid
+                            except Exception:
+                                hi = mid
+                        midi_obj = decoder.decode_from_token_str_list(tokens[:lo])
+                        midi_obj.dump(str(midi_path))
+                        print(f"[stage3] OK (truncated at {{lo}}/{{len(tokens)}} tokens) {{midi_path}}", flush=True)
+                        ok += 1
+                    except Exception as e2:
+                        print(f"[stage3] SKIP {{remi_txt}}: no se pudo recuperar: {{e2}}", flush=True)
+            if ok == 0:
+                print("[stage3] ERROR: 0 MIDIs generados", flush=True)
+                sys.exit(1)
             print(f"[stage3] {{ok}}/{{len(remi_files)}} converted", flush=True)
         """)
         t3 = time.time()
