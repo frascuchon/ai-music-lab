@@ -188,7 +188,7 @@ def download_weights() -> None:
     timeout=1800,
     volumes={WEIGHTS_MOUNT: weights_vol},
 )
-def generate(prompt: str, n_samples: int = 1) -> list[str]:
+def generate(prompt: str, n_samples: int = 1, instruments: list[int] | None = None) -> list[str]:
     """
     Genera n_samples MIDIs desde un prompt. Guarda en el Volume y retorna
     rutas relativas (output/<job_id>/sample_N.mid) para que main() las
@@ -267,6 +267,31 @@ def generate(prompt: str, n_samples: int = 1) -> list[str]:
         t_s1 = time.time() - t0
         print(f"[stage1] completado en {t_s1:.1f}s")
 
+        # Debug: mostrar atributos predichos por stage 1
+        _dbg_attrs = json.load(open(predict_attrs_path))
+        _att_key_all = json.load(open(att_key_path))
+        _I1s2_keys = [a for a in _att_key_all if a[:4] == "I1s2"]
+        _INST_NAMES = [
+            "piano","keyboard","percussion","organ","guitar","bass",
+            "violin","viola","cello","harp","strings","voice",
+            "trumpet","trombone","tuba","horn","brass","sax",
+            "oboe","bassoon","clarinet","piccolo","flute","pipe",
+            "synthesizer","ethnic","sound_effect","drum",
+        ]
+        active_instr = []
+        for ki, k in enumerate(_I1s2_keys):
+            label = _dbg_attrs.get(k, [[0]])[0]
+            label_val = label[0] if isinstance(label, list) else label
+            if label_val == 1:  # vector [p_yes, p_no, p_na]: posición 0 = yes → label_val=1 significa yes
+                name = _INST_NAMES[ki] if ki < len(_INST_NAMES) else f"class_{ki}"
+                active_instr.append(f"{name}(class={ki})")
+        print(f"[stage1] instrumentos predichos: {active_instr if active_instr else 'ninguno (solo piano por defecto?)'}")
+        # Mostrar los demás atributos clave
+        for attr in ["R1", "R3", "S4", "B1s1", "TS1s1", "K1", "T1s1", "EM1"]:
+            val = _dbg_attrs.get(attr)
+            if val is not None:
+                print(f"[stage1]   {attr}: {val[0]}")
+
         # -----------------------------------------------------------------------
         # STAGE 1→2 PRE: atributos → infer_test.bin
         # Reproduce la lógica de stage2_pre.py (hardcoded paths → aquí dinámicos)
@@ -294,6 +319,22 @@ def generate(prompt: str, n_samples: int = 1) -> list[str]:
         for k, v in softmax_probs.items():
             for j in range(len(v)):
                 final[j]["pred_probs"][k] = deepcopy(v[j])
+
+        # Override de instrumentos: inyectar I1s2 directamente sin pasar por stage 1.
+        # instruments = lista de class IDs (0-27) a activar. El resto se fuerzan a "no".
+        if instruments:
+            print(f"[override] forzando instrumentos: {instruments}")
+            I1s2_key_all = [a for a in att_key if a[:4] == "I1s2"]
+            for idx in range(len(final)):
+                for ki, k in enumerate(I1s2_key_all):
+                    # Formato del vector: [p_yes, p_no, p_na] — índice 0 = "yes"
+                    # Activar = [1,0,0] (yes), desactivar = [0,1,0] (no)
+                    if ki in instruments:
+                        final[idx]["pred_labels"][k] = [1, 0, 0]
+                        final[idx]["pred_probs"][k] = [0.90, 0.05, 0.05]
+                    else:
+                        final[idx]["pred_labels"][k] = [0, 1, 0]
+                        final[idx]["pred_probs"][k] = [0.05, 0.90, 0.05]
 
         # Agrupar atributos I1s2 y S4 (igual que stage2_pre.py original)
         I1s2_key = [a for a in att_key if a[:4] == "I1s2"]
@@ -494,6 +535,7 @@ def main(
     prompt: str = "upbeat jazz piano trio, 120 BPM, C major, happy mood",
     out: str = "out_muse.mid",
     n_samples: int = 1,
+    instruments: str = "",
 ) -> None:
     """
     Genera MIDI desde texto usando MuseCoco en Modal (T4 GPU).
@@ -507,15 +549,24 @@ def main(
             --prompt "jazz piano trio, upbeat, 120 BPM" \\
             --out out_muse.mid
     """
-    import subprocess as sp
     import time
+
+    # instruments: "0,5,27" → [0, 5, 27] (class IDs). Vacío = dejar que stage 1 decida.
+    instr_list = [int(x.strip()) for x in instruments.split(",") if x.strip()] if instruments else None
 
     out_path = Path(out)
     print(f"Enviando a Modal [T4] | prompt='{prompt}' | n_samples={n_samples}")
+    if instr_list:
+        print(f"[override] instrumentos: {instr_list}")
     print("[spawn] Stage2 tarda ~11 min; usando spawn+poll para evitar heartbeat timeout")
 
-    call = generate.spawn(prompt=prompt, n_samples=n_samples)
+    call = generate.spawn(prompt=prompt, n_samples=n_samples, instruments=instr_list)
     print(f"[spawned] object_id={call.object_id}")
+
+    # Persistir call_id localmente para poder hacer recover si el cliente cae
+    _state = {"call_id": call.object_id, "out": str(out_path), "prompt": prompt}
+    Path(".musecoco_last_call.json").write_text(json.dumps(_state, indent=2))
+    print(f"[recovery] estado guardado en .musecoco_last_call.json")
 
     # Polling cada 30s para no depender de una conexión gRPC larga
     rel_paths = None
@@ -540,12 +591,17 @@ def main(
         print("[error] La función no retornó rutas MIDI.")
         return
 
-    # Descargar MIDIs del Volume a local
+    _download_and_report(rel_paths, out_path, prompt)
+
+
+def _download_and_report(rel_paths: list[str], out_path: Path, prompt: str = "") -> None:
+    import subprocess as sp
+
     for i, rel_path in enumerate(rel_paths):
         local_out = out_path if i == 0 else out_path.with_stem(f"{out_path.stem}_{i+1}")
         print(f"[download] {rel_path} → {local_out}")
         sp.run(
-            ["modal", "volume", "get", "musecoco-weights", rel_path, str(local_out)],
+            ["modal", "volume", "get", "--force", "musecoco-weights", rel_path, str(local_out)],
             check=True,
         )
         print(f"[saved] {local_out.resolve()}")
@@ -558,7 +614,8 @@ def main(
         n_notes = sum(len(inst.notes) for inst in pm.instruments)
         dur = pm.get_end_time()
         instrs = [inst.program for inst in pm.instruments]
-        print(f"  prompt:       {prompt}")
+        if prompt:
+            print(f"  prompt:       {prompt}")
         print(f"  device:       Modal T4 GPU")
         print(f"  pistas:       {n_tracks}")
         print(f"  notas:        {n_notes}")
@@ -566,3 +623,63 @@ def main(
         print(f"  instrumentos: {instrs}")
     except ImportError:
         print("  (instala pretty_midi localmente para ver detalles del MIDI)")
+
+
+# ---------------------------------------------------------------------------
+# Local entrypoint de recovery — retoma un call spawneado que quedó huérfano
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def recover(
+    call_id: str = "",
+    out: str = "",
+) -> None:
+    """
+    Descarga el resultado de un generate() spawneado previamente.
+    Sin argumentos, lee .musecoco_last_call.json del directorio actual.
+
+    Ejemplo:
+        modal run research_musecoco_modal.py::recover
+        modal run research_musecoco_modal.py::recover --call-id fc-XXXX --out out.mid
+    """
+    import time
+
+    if not call_id:
+        state_file = Path(".musecoco_last_call.json")
+        if not state_file.exists():
+            print("[recover] No hay .musecoco_last_call.json y no se pasó --call-id")
+            return
+        state = json.loads(state_file.read_text())
+        call_id = state["call_id"]
+        if not out:
+            out = state.get("out", "out_recovered.mid")
+        prompt = state.get("prompt", "")
+    else:
+        prompt = ""
+
+    out_path = Path(out or "out_recovered.mid")
+    print(f"[recover] Polling call_id={call_id} → {out_path}")
+
+    call = modal.functions.FunctionCall.from_id(call_id)
+    rel_paths = None
+    dots = 0
+    while rel_paths is None:
+        try:
+            rel_paths = call.get(timeout=30)
+        except TimeoutError:
+            print(".", end="", flush=True)
+            dots += 1
+        except Exception as e:
+            msg = str(e).lower()
+            if any(k in msg for k in ("deadline", "timed out")):
+                print(".", end="", flush=True)
+                dots += 1
+            else:
+                raise
+    if dots:
+        print()
+
+    if not rel_paths:
+        print("[recover] La función no retornó rutas MIDI.")
+        return
+
+    _download_and_report(rel_paths, out_path, prompt)
