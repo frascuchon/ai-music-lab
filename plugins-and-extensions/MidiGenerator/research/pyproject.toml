@@ -14,6 +14,11 @@ dependencies = [
     "pretty_midi>=0.2.10",
     # Anticipatory Music Transformer (Apache 2.0)
     "anticipation @ git+https://github.com/jthickstun/anticipation.git",
+    # Text2midi deps (clonado localmente en text2midi/)
+    "jsonlines>=4.0",           # requerido por text2midi/model/transformer_model.py
+    "st-moe-pytorch>=0.1.8",   # MoE layer usado por el transformer decoder
+    "accelerate>=0.18",         # carga optimizada del modelo en MPS
+    "spacy>=3.8",               # evaluación/métricas de text2midi
     # utilidades de research
     "psutil>=5.9",
 ]

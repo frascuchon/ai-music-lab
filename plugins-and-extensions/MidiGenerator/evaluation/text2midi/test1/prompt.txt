@@ -1,0 +1,5 @@
+Model: Text2midi (amaai-lab/text2midi)
+Source: https://amaai-lab.github.io/Text2midi/ — Demo D
+Prompt: "A sad pop song with a strong piano presence."
+Reference: reference_official.mid (MIDI generado por la implementación oficial)
+Our command: uv run research_text2midi.py --prompt "A sad pop song with a strong piano presence." --out generated.mid

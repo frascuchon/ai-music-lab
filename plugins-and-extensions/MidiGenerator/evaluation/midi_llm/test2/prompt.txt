@@ -1,0 +1,5 @@
+Model: MIDI-LLM (slseanwu/MIDI-LLM_Llama-3.2-1B)
+Source: https://github.com/slSeanWU/MIDI-LLM — assets/example_prompts.txt, prompt 2
+Prompt: "A slow and relaxing classical piece featuring a church organ and French horn, likely to be used as a soundtrack in a dramatic or emotional film. Written in A minor and 4/4 time. The chord progression of E7, Am, and E contributes to the piece's sentimental atmosphere."
+Reference: no hay audio de referencia oficial pre-generado (demo interactivo en vercel)
+Our command: uv run research_midi_llm.py --prompt "<see above>" --max_tokens 2046 --out generated.mid

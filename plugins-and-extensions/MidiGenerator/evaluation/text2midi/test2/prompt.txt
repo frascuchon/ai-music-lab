@@ -1,0 +1,5 @@
+Model: Text2midi (amaai-lab/text2midi)
+Source: https://amaai-lab.github.io/Text2midi/ — Demo E
+Prompt: "A rock song with strong drums and electric guitar. The tempo is very fast."
+Reference: reference_official.mid (MIDI generado por la implementación oficial)
+Our command: uv run research_text2midi.py --prompt "A rock song with strong drums and electric guitar. The tempo is very fast." --out generated.mid

@@ -1,0 +1,12 @@
+Model: Anticipatory Music Transformer (stanford-crfm/music-medium-800k)
+Source: https://crfm.stanford.edu/2023/06/16/anticipatory-music-transformer.html — Continuation/Prompt task
+Mode: continuation
+Reference files:
+  - reference_official_prompt.mp3 — audio del fragmento de entrada (demos oficiales)
+  - reference_official_continuation.mp3 — continuación generada por el modelo oficial
+  - reference_official_continuation.mid — MIDI de la continuación oficial
+Input: input_fixture.mid (piano+bajo, 8 compases, 120 BPM)
+Our command: uv run research_amt.py --mode continuation --duration 10 --out generated.mid
+Result: MIDI generado (10s), inferencia ~11s en CPU
+Timing: carga 0.8s, inferencia ~11s
+Generated: generated.mid + generated.mp3

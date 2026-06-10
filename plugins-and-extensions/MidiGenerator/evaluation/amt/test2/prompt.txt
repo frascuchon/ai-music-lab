@@ -1,0 +1,11 @@
+Model: Anticipatory Music Transformer (stanford-crfm/music-medium-800k)
+Source: https://crfm.stanford.edu/2023/06/16/anticipatory-music-transformer.html — Melody+Accompaniment (popular demos)
+Mode: accompaniment
+Reference files:
+  - reference_official_melody.mp3 — melodía de entrada (demos oficiales)
+  - reference_official_accompaniment.mp3 — acompañamiento generado por el modelo oficial
+  - reference_official_accompaniment.mid — MIDI del acompañamiento oficial
+Input: input_fixture.mid (piano como melodía de control, bajo como historial de entrada)
+Our command: uv run research_amt.py --mode accompaniment --duration 10 --out generated.mid
+Timing: carga 0.7s, inferencia ~11.5s en CPU
+Generated: generated.mid + generated.mp3

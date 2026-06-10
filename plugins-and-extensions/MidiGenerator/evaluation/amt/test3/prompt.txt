@@ -1,0 +1,10 @@
+Model: Anticipatory Music Transformer (stanford-crfm/music-medium-800k)
+Source: https://crfm.stanford.edu/2023/06/16/anticipatory-music-transformer.html — Interactive melody accompaniment
+Mode: continuation (20s — generación extendida)
+Reference files:
+  - reference_official_melody.mp3 — audio melodía (demos oficiales del sitio interact/)
+  - reference_official_accompaniment.mp3 — acompañamiento (demos interactivos)
+Input: input_fixture.mid (piano+bajo, 8 compases, 120 BPM)
+Our command: uv run research_amt.py --mode continuation --duration 20 --out generated.mid
+Timing: carga 0.9s, inferencia 122.3s en CPU (20s de música requiere 2000 tokens)
+Generated: generated.mid + generated.mp3
