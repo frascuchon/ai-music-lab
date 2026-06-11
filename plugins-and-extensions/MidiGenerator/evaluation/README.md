@@ -24,9 +24,9 @@ evaluation/
 │   └── test3/  "Upbeat and playful jazz music with lively saxophones" — prompt #4
 │
 ├── amt/                   # Demos de https://crfm.stanford.edu/2023/06/16/...
-│   ├── test1/  Continuation (10s) — referencia del sitio: prompt/system4/0-clip-v0
-│   ├── test2/  Accompaniment (10s) — referencia del sitio: demos/system0/0-clip-v0
-│   └── test3/  Continuation (20s) — referencia del sitio: interact/span5/0-clip-v0
+│   ├── test1/  Continuation (20s) — referencia del sitio: prompt/system4/0-clip-v0
+│   ├── test2/  Accompaniment (20s) — referencia del sitio: demos/system0/0-clip-v0
+│   └── test3/  [pendiente — fixture no representativo del prompt oficial]
 │
 └── musecoco/              # Demos del paper MuseCoco (AAAI 2024)
     ├── test1/  "jazz piano trio, 120 BPM" — sin referencia de audio directa
@@ -78,6 +78,26 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 | musecoco | test1 | ✅ (Modal) | ~2 min (A100-40GB) | jazz piano |
 | musecoco | test2 | ✅ (Modal) | ~2 min | ID 109 sax+drum |
 | musecoco | test3 | ✅ (Modal) | ~2 min | ID 2273 piano+bass |
+
+---
+
+## Evaluación cualitativa — AMT
+
+### Continuation (test1) ✅ Buena calidad
+La continuación de 20s funciona bien. El resultado es coherente musicalmente con el prompt
+de entrada y puede considerarse de calidad aceptable para uso en producción. El modelo
+mantiene el estilo, la tonalidad y el ritmo del fragmento original.
+
+### Accompaniment (test2) ⚠️ Calidad insuficiente
+El acompañamiento generado es pobre en calidad. Los problemas observados son:
+- Escasa densidad armónica y rítmica respecto a la melodía de entrada
+- Las voces generadas no dialogan con la melodía de forma convincente
+- Pendiente identificar causas y posibles mejoras en próxima sesión
+
+### test3
+No ejecutado. El fixture jazz/Bb mayor creado no es representativo del prompt oficial
+de referencia (`interact/span5/0-clip-v0`). Requiere buscar un input fixture adecuado
+antes de repetir.
 
 ---
 
