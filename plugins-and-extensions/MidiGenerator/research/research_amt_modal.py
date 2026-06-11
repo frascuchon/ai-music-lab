@@ -84,6 +84,7 @@ LAST_CALL_FILE = ".amt_last_call.json"
 # ---------------------------------------------------------------------------
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .apt_install(["git"])  # requerido para pip install git+...
     .pip_install(
         "torch",
         "transformers>=4.44",
