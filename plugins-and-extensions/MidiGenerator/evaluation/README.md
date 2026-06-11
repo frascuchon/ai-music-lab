@@ -48,8 +48,13 @@ se refleja en la instrumentación y estructura.
 
 **AMT (test1-3)**: el sitio oficial publica audio de demos con el modelo real. Comparar
 `reference_official_continuation.mp3` / `reference_official_accompaniment.mp3` contra
-`generated.mp3`. La fixture de entrada es diferente (usamos nuestro fixture local), pero
-la *calidad y estilo de continuación* deben ser similares.
+`generated.mp3`. Los fixtures de entrada son distintos en cada test y relacionados con
+la referencia correspondiente:
+- test1: `input_fixture.mid` extraído del track `prompt` de `reference_official_continuation.mid`
+  → MISMO input que usó el modelo oficial
+- test2: `input_fixture.mid` extraído de los tracks `prompt` + `prompt_drums` de
+  `reference_official_accompaniment.mid` → MISMO input que usó el modelo oficial
+- test3: fixture jazz swing Bb mayor 100 BPM, distinto a test1 y test2
 
 **MuseCoco (test2, test3)**: comparación directa — `reference_official_*.mp3` son audios
 del dataset de entrenamiento original (IDs 109 y 2273 del paper). `generated.mp3` es el
@@ -67,9 +72,9 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 | midi_llm | test1 | generado | 148.4s (2046 tokens, MPS) | 5 pistas, 682 notas |
 | midi_llm | test2 | generado | ~150s | ver prompt.txt |
 | midi_llm | test3 | generado | ~150s | ver prompt.txt |
-| amt | test1 | ✅ | carga 0.8s, inf 11.2s (CPU) | continuation 10s |
-| amt | test2 | ✅ | carga 0.7s, inf 11.5s (CPU) | accompaniment 10s |
-| amt | test3 | ✅ | carga 0.9s, inf 122.3s (CPU) | continuation 20s |
+| amt | test1 | ✅ | carga 0.8s, inf 229.5s (CPU) | continuation 10s, fixture=prompt oficial (73 notas) |
+| amt | test2 | ✅ | carga 0.8s, inf 9.2s (CPU) | accompaniment 10s, fixture=melody+drums oficial |
+| amt | test3 | ✅ | carga 0.7s, inf 8.9s (CPU) | accompaniment 15s, fixture jazz Bb mayor 100 BPM |
 | musecoco | test1 | ✅ (Modal) | ~2 min (A100-40GB) | jazz piano |
 | musecoco | test2 | ✅ (Modal) | ~2 min | ID 109 sax+drum |
 | musecoco | test3 | ✅ (Modal) | ~2 min | ID 2273 piano+bass |

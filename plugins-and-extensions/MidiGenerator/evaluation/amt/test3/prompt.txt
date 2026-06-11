@@ -1,10 +1,26 @@
 Model: Anticipatory Music Transformer (stanford-crfm/music-medium-800k)
 Source: https://crfm.stanford.edu/2023/06/16/anticipatory-music-transformer.html — Interactive melody accompaniment
-Mode: continuation (20s — generación extendida)
+Reference URL: https://musicanticipation.github.io/assets/interact/span5/0-clip-v0/ (Lakh MIDI test set)
+Mode: accompaniment  [CORREGIDO: era 'continuation' pero los reference files son melody+accompaniment]
+
 Reference files:
-  - reference_official_melody.mp3 — audio melodía (demos oficiales del sitio interact/)
-  - reference_official_accompaniment.mp3 — acompañamiento (demos interactivos)
-Input: input_fixture.mid (piano+bajo, 8 compases, 120 BPM)
-Our command: uv run research_amt.py --mode continuation --duration 20 --out generated.mid
-Timing: carga 0.9s, inferencia 122.3s en CPU (20s de música requiere 2000 tokens)
-Generated: generated.mid + generated.mp3
+  - reference_official_melody.mp3       — melodía de entrada del demo interactivo oficial
+  - reference_official_accompaniment.mp3 — acompañamiento generado por el modelo oficial
+
+Input fixture:
+  - input_fixture.mid — jazz swing en Bb mayor, 100 BPM, 4/4
+      * piano (prog=0): melodía jazz 6 compases (Bbmaj7-Cm7-F7 progression)
+      * bass  (prog=32): walking bass paralelo
+    (fixture distinto a test1/test2 — Bb mayor vs Lakh MIDI pieces)
+  - input_fixture.mp3 — audio del fixture
+
+Command:
+  uv run research_amt.py --mode accompaniment --input ../evaluation/amt/test3/input_fixture.mid \
+    --duration 15 --out ../evaluation/amt/test3/generated.mid
+
+Timing:
+  carga: 0.7s | inferencia: 8.9s | device: CPU float32
+
+Generated:
+  generated.mid — 46 notas, 15.0s (bass prog=32 + piano prog=0)
+  generated.mp3 — audio renderizado con MuseScore 4

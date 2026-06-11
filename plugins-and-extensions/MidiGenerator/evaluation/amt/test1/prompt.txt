@@ -1,12 +1,25 @@
 Model: Anticipatory Music Transformer (stanford-crfm/music-medium-800k)
 Source: https://crfm.stanford.edu/2023/06/16/anticipatory-music-transformer.html — Continuation/Prompt task
+Reference URL: https://musicanticipation.github.io/assets/prompt/system4/0-clip-v0/ (Lakh MIDI test set)
 Mode: continuation
+
 Reference files:
-  - reference_official_prompt.mp3 — audio del fragmento de entrada (demos oficiales)
+  - reference_official_prompt.mp3     — fragmento de entrada (prompt) del demo oficial
   - reference_official_continuation.mp3 — continuación generada por el modelo oficial
-  - reference_official_continuation.mid — MIDI de la continuación oficial
-Input: input_fixture.mid (piano+bajo, 8 compases, 120 BPM)
-Our command: uv run research_amt.py --mode continuation --duration 10 --out generated.mid
-Result: MIDI generado (10s), inferencia ~11s en CPU
-Timing: carga 0.8s, inferencia ~11s
-Generated: generated.mid + generated.mp3
+  - reference_official_continuation.mid — MIDI completo (prompt + continuation tracks)
+
+Input fixture:
+  - input_fixture.mid — extraído del track 'prompt' de reference_official_continuation.mid
+    (6.0s, 73 notas, piano poliphónico, 120 BPM — MISMO input que usó el modelo oficial)
+  - input_fixture.mp3 — audio del fixture
+
+Command:
+  uv run research_amt.py --mode continuation --input ../evaluation/amt/test1/input_fixture.mid \
+    --duration 10 --out ../evaluation/amt/test1/generated.mid
+
+Timing:
+  carga: 0.8s | inferencia: 229.5s | device: CPU float32
+
+Generated:
+  generated.mid — 248 notas, 15.6s (5s prompt + 10s continuation)
+  generated.mp3 — audio renderizado con MuseScore 4
