@@ -83,7 +83,7 @@ LAST_CALL_FILE = ".amt_last_call.json"
 # Container image — PyTorch CUDA 12.1 + anticipation desde GitHub
 # ---------------------------------------------------------------------------
 image = (
-    modal.Image.debian_slim(python_version="3.11")
+    modal.Image.debian_slim(python_version="3.12")
     .apt_install(["git"])  # requerido para pip install git+...
     .pip_install(
         "torch",
