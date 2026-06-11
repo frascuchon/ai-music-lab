@@ -77,6 +77,7 @@ WEIGHTS_MOUNT = "/vol/weights"
 HF_CACHE = f"{WEIGHTS_MOUNT}/hf_cache"
 
 DEFAULT_MODEL = "stanford-crfm/music-medium-800k"
+DEFAULT_GPU = os.environ.get("AMT_GPU", "A10G")
 LAST_CALL_FILE = ".amt_last_call.json"
 
 # ---------------------------------------------------------------------------
@@ -104,7 +105,7 @@ app = modal.App("amt-inference", image=image)
 
 
 # ---------------------------------------------------------------------------
-# Núcleo de inferencia — función regular (no Modal), llamada por las variantes GPU
+# Núcleo de inferencia — función regular (no Modal), llamada por run()
 # ---------------------------------------------------------------------------
 def _inference_impl(
     midi_bytes: bytes,
@@ -222,34 +223,19 @@ def _inference_impl(
 
 
 # ---------------------------------------------------------------------------
-# GPU variants — factory que registra la misma firma con distintos GPU specs.
-# Modal necesita funciones en scope de módulo con nombres distintos; se asignan
-# via __name__/__qualname__ antes de pasar a app.function().
+# GPU variant única — el tipo se fija vía DEFAULT_GPU (env var AMT_GPU) y se
+# puede sobreescribir en runtime con run.with_options(gpu=...) desde main().
 # ---------------------------------------------------------------------------
 _FN_KWARGS = dict(cpu=2, memory=6144, timeout=3600, volumes={WEIGHTS_MOUNT: weights_vol})
 
 
-def _make_gpu_fn(gpu_str: str):
-    fn_name = "run_" + gpu_str.lower().replace("-", "_")
-
-    def _wrapper(midi_bytes: bytes, model_name: str = DEFAULT_MODEL, mode: str = "accompaniment",
-                 duration: int = 10, prompt_length: int = 5, clip_length: int = 20,
-                 top_p: float = 0.95, melody_instrument: int = 0, seed: int = 0) -> bytes:
-        return _inference_impl(midi_bytes, model_name, mode, duration=duration,
-                               prompt_length=prompt_length, clip_length=clip_length,
-                               top_p=top_p, melody_instrument=melody_instrument, seed=seed)
-
-    _wrapper.__name__ = fn_name
-    _wrapper.__qualname__ = fn_name
-    return app.function(gpu=gpu_str, **_FN_KWARGS)(_wrapper)
-
-
-run_t4        = _make_gpu_fn("T4")
-run_l4        = _make_gpu_fn("L4")
-run_a10g      = _make_gpu_fn("A10G")
-run_a100_40gb = _make_gpu_fn("A100-40GB")
-
-_gpu_fns = {"T4": run_t4, "L4": run_l4, "A10G": run_a10g, "A100-40GB": run_a100_40gb}
+@app.function(gpu=DEFAULT_GPU, **_FN_KWARGS)
+def run(midi_bytes: bytes, model_name: str = DEFAULT_MODEL, mode: str = "accompaniment",
+        duration: int = 10, prompt_length: int = 5, clip_length: int = 20,
+        top_p: float = 0.95, melody_instrument: int = 0, seed: int = 0) -> bytes:
+    return _inference_impl(midi_bytes, model_name, mode, duration=duration,
+                           prompt_length=prompt_length, clip_length=clip_length,
+                           top_p=top_p, melody_instrument=melody_instrument, seed=seed)
 
 
 # ---------------------------------------------------------------------------
@@ -331,10 +317,10 @@ def main(
     """
     import time
 
+    _VALID_GPUS = {"T4", "L4", "A10G", "A100-40GB"}
     gpu_key = gpu.upper()
-    if gpu_key not in _gpu_fns:
-        valid = ", ".join(_gpu_fns.keys())
-        raise SystemExit(f"[error] GPU desconocida: {gpu!r}. Opciones: {valid}")
+    if gpu_key not in _VALID_GPUS:
+        raise SystemExit(f"[error] GPU desconocida: {gpu!r}. Opciones: {', '.join(sorted(_VALID_GPUS))}")
 
     if not input:
         raise SystemExit("[error] Debes especificar --input <path.mid>")
@@ -345,7 +331,7 @@ def main(
 
     out_path = Path(out)
     midi_bytes = input_path.read_bytes()
-    fn = _gpu_fns[gpu_key]
+    fn = run.with_options(gpu=gpu_key)
 
     mode_info = (
         f"prompt_length={prompt_length}s, clip_length={clip_length}s, "
