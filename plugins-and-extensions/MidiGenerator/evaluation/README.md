@@ -73,7 +73,7 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 | midi_llm | test2 | generado | ~150s | ver prompt.txt |
 | midi_llm | test3 | generado | ~150s | ver prompt.txt |
 | amt | test1 | ✅ | carga 1.0s, inf 896.5s (CPU) | continuation 20s, fixture=prompt oficial (73 notas) |
-| amt | test2 | ✅ | carga 0.7s, inf v0:73.9s v1:44.1s v2:32.6s (CPU) | accompaniment 20s, 3 candidatos (pipeline canónico) |
+| amt | test2 | ✅ | carga 0.9s, inf 991.4s (~16.5min, CPU) | accompaniment 20s, fixture canónico (852 notas: piano+drums+acomp) |
 | amt | test3 | ✅ | carga 0.7s, inf v0:8.5s v1:8.7s v2:8.7s (CPU) | accompaniment 15s, fixture jazz Bb, 3 candidatos |
 | musecoco | test1 | ✅ (Modal) | ~2 min (A100-40GB) | jazz piano |
 | musecoco | test2 | ✅ (Modal) | ~2 min | ID 109 sax+drum |
@@ -88,27 +88,32 @@ La continuación de 20s funciona bien. El resultado es coherente musicalmente co
 de entrada y puede considerarse de calidad aceptable para uso en producción. El modelo
 mantiene el estilo, la tonalidad y el ritmo del fragmento original.
 
-### Accompaniment (test2) 🔄 Re-generado con pipeline canónico (2026-06-11)
+### Accompaniment (test2) ✅ Re-generado con fixture canónico (2026-06-11)
 
-**Fix aplicado**: la implementación anterior usaba `start_time=0` en vez de `prompt_length=5`,
-causando que el modelo arrancase sin historia de acompañamiento. Según el upstream
-[issue #18](https://github.com/jthickstun/anticipation/issues/18) y el script oficial
-[`humaneval/accompany.py`](https://github.com/jthickstun/anticipation/blob/main/humaneval/accompany.py),
-el modelo requiere ≥5s de contexto de acompañamiento previo para generar resultados coherentes.
+**Dos bugs identificados y corregidos**:
 
-Pipeline corregido:
-- `prompt_length=5` (primeros 5s del acompañamiento como historia)
-- `top_p=0.95` (valor del paper, antes 0.98)
-- `clip(combine(...), 0, clip_length)` para recortar el output correctamente
-- `seed=0` para reproducibilidad determinista
+1. `start_time=0` → `prompt_length=5`: el modelo requiere ≥5s de contexto previo de
+   acompañamiento (confirmado por [issue #18](https://github.com/jthickstun/anticipation/issues/18)
+   y [`humaneval/accompany.py`](https://github.com/jthickstun/anticipation/blob/main/humaneval/accompany.py)).
 
-3 candidatos generados (generated_v{0,1,2}.{mid,mp3}):
-- v0 (canónico actual): piano + drums (4) + guitarra acústica prog=25 — 143 notas, 20s
-- v1: piano + drums (24, más densidad rítmica) — 129 notas, 20s
-- v2: piano + drums (16) + voz prog=53 — 123 notas, 20s
+2. **Fixture incorrecto**: el fixture original solo tenía piano (138 notas, melody) + 4 drum notes.
+   Le faltaban las 60 notas del track `continuation` en t=3.5-5s (acompañamiento histórico).
+   Sin este contexto rico, el modelo generaba output esparso (~2 notas/s). Con el fixture
+   canónico (35 notas piano + 18 drums + 60 acompañamiento = 113 eventos), genera ~46 notas/s.
 
-**Valoración**: pendiente de escucha manual. Sustituir `generated.*` por el candidato preferido.
-El archivo `generated_pre_fix.*` conserva el output del pipeline roto para comparación.
+Pipeline correcto (usando `input_fixture_paper.mid` = primeros 5s de todos los instrumentos):
+- `prompt_length=5`, `top_p=0.95`, `seed=0`
+- `clip(combine(...), 0, clip_length)` para recortar correctamente
+
+**Resultado**: `generated.mid` — 852 notas totales en 20s:
+  - ch=0 prog=0: 35 notas (melody/controls 0-5s)
+  - ch=9: 127 drum hits (batería densa durante todo el clip)
+  - ch=2 prog=1: 690 notas de acompañamiento
+
+**Valoración**: pendiente de escucha manual. Se espera calidad comparable al `reference_official_accompaniment.mp3`.
+El archivo `generated_pre_fix.*` conserva el output del pipeline roto (143 notas) para comparación.
+
+⚠️ **CPU: ~16.5min por clip de 20s** — Modal (GPU) es necesario para uso práctico en REAPER.
 
 ### Accompaniment (test3) 🔄 Re-generado con pipeline canónico (2026-06-11)
 

@@ -40,10 +40,10 @@ Nota de rendimiento CPU: con el fixture correcto el modelo genera ~50 notas/s en
 necesario para uso práctico: estimado 1-3min en A100.
 
 Timing (fixture correcto):
-  fixture_paper.mid + clip_length=20: ~45min (CPU) — en progreso / usar Modal
+  fixture_paper.mid + clip_length=20: 991.4s CPU (~16.5min) — 852 notas (35 melody + 127 drums + 690 accompaniment prog=1)
   fixture_paper.mid + clip_length=10 (5s): ~14min (CPU) — verificado, 309 notas generadas
 
 Generated:
-  generated_pre_canonical.{mid,mp3} — output antes del fix start_time (43 notas, sparse)
-  generated_pre_fix.{mid,mp3} — output con start_time=5 pero fixture incorrecto (143 notas)
-  [pendiente regenerar con fixture correcto]
+  generated.{mid,mp3}       — output canónico final (fixture correcto, 852 notas, 20s)
+  generated_pre_fix.{mid,mp3} — pipeline roto start_time=0, fixture incorrecto (143 notas)
+  generated_v{0,1,2}.{mid,mp3} — candidatos generados con fixture incorrecto (obsoletos)
