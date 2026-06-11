@@ -130,7 +130,6 @@ def _inference_impl(
     os.environ["HF_HOME"] = HF_CACHE
     os.environ["TRANSFORMERS_CACHE"] = HF_CACHE
     os.makedirs(HF_CACHE, exist_ok=True)
-    weights_vol.reload()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[info] device={device}  model={model_name}  mode={mode}")
