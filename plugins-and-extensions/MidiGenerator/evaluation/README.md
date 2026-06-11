@@ -110,10 +110,21 @@ Pipeline correcto (usando `input_fixture_paper.mid` = primeros 5s de todos los i
   - ch=9: 127 drum hits (batería densa durante todo el clip)
   - ch=2 prog=1: 690 notas de acompañamiento
 
-**Valoración**: pendiente de escucha manual. Se espera calidad comparable al `reference_official_accompaniment.mp3`.
-El archivo `generated_pre_fix.*` conserva el output del pipeline roto (143 notas) para comparación.
+**Valoración**: el acompañamiento (batería + prog=1) es denso y coherente, pero la melodía de piano
+solo está presente en t=0-5s (35 notas del fixture paper). El `reference_official_accompaniment.mid`
+incluye 138 notas de piano durante los 30s completos porque conserva el track `prompt` original.
 
-⚠️ **CPU: ~16.5min por clip de 20s** — Modal (GPU) es necesario para uso práctico en REAPER.
+⚠️ **Pendiente (requiere Modal)**: regenerar con `input_fixture.mid` (variante REAPER — piano
+completo 138 notas 0-29.3s como controles) para que la melodía esté presente durante todo el
+clip y la comparación con la referencia oficial sea justa. Comando:
+```
+uv run research_amt.py --mode accompaniment \
+  --input ../evaluation/amt/test2/input_fixture.mid \
+  --prompt-length 5 --clip-length 20 --top-p 0.95 --seed 0 \
+  --out ../evaluation/amt/test2/generated.mid
+```
+
+⚠️ **CPU: ~16.5min por clip de 20s** — Modal (GPU) necesario para este pendiente.
 
 ### Accompaniment (test3) 🔄 Re-generado con pipeline canónico (2026-06-11)
 
