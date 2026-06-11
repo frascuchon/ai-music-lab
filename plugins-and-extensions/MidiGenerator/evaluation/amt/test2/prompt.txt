@@ -15,13 +15,23 @@ Input fixture:
     (MISMO input que usó el modelo oficial para generar el acompañamiento de referencia)
   - input_fixture.mp3 — audio del fixture
 
-Command:
+Command (pipeline canónico — ver humaneval/accompany.py upstream):
   uv run research_amt.py --mode accompaniment --input ../evaluation/amt/test2/input_fixture.mid \
-    --duration 20 --out ../evaluation/amt/test2/generated.mid
+    --prompt-length 5 --clip-length 20 --top-p 0.95 --seed 0 --multiplicity 3 \
+    --out ../evaluation/amt/test2/generated.mid
+
+Pipeline fix (2026-06-11):
+  - start_time=5 (antes: 0) — requiere ≥5s de historial de acompañamiento según issue #18
+  - top_p=0.95 (antes: 0.98) — valor del paper humaneval
+  - clip(combine(...), 0, clip_length) — recorte correcto del output
+  - seed=0 determinista; seed+i para candidatos adicionales
 
 Timing:
-  carga: 0.7s | inferencia: 28.6s | device: CPU float32
+  carga: 0.7s | inferencia v0: 73.9s, v1: 44.1s, v2: 32.6s | device: CPU float32
 
-Generated:
-  generated.mid — 120 notas, 20.0s, 5 tracks (piano + acoustic bass + drums + acoustic guitar prog=24/25)
+Generated (3 candidatos — v0 elegido como canónico):
+  generated.mid    = generated_v0.mid — 143 notas, 20.0s, 3 tracks (piano+drums+guitar prog=25)
+  generated_v1.mid — 129 notas, 20.0s, 2 tracks (piano+drums con más densidad rítmica)
+  generated_v2.mid — 123 notas, 20.0s, 3 tracks (piano+drums+voz prog=53)
   generated.mp3 — audio renderizado con MuseScore 4
+  generated_pre_fix.{mid,mp3} — output del pipeline roto (start_time=0) para referencia

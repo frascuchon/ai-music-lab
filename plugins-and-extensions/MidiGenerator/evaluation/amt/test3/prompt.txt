@@ -14,13 +14,21 @@ Input fixture:
     (fixture distinto a test1/test2 — Bb mayor vs Lakh MIDI pieces)
   - input_fixture.mp3 — audio del fixture
 
-Command:
+Command (pipeline canónico — ver humaneval/accompany.py upstream):
   uv run research_amt.py --mode accompaniment --input ../evaluation/amt/test3/input_fixture.mid \
-    --duration 15 --out ../evaluation/amt/test3/generated.mid
+    --prompt-length 5 --clip-length 15 --top-p 0.95 --seed 0 --multiplicity 3 \
+    --out ../evaluation/amt/test3/generated.mid
+
+Pipeline fix (2026-06-11):
+  - start_time=5 (antes: 0); walking bass proporciona prompt de 5s
+  - top_p=0.95, seed=0 determinista
 
 Timing:
-  carga: 0.7s | inferencia: 8.9s | device: CPU float32
+  carga: 0.7s | inferencia v0: 8.5s, v1: 8.7s, v2: 8.7s | device: CPU float32
 
-Generated:
-  generated.mid — 46 notas, 15.0s (bass prog=32 + piano prog=0)
+Generated (3 candidatos — v0 elegido como canónico):
+  generated.mid    = generated_v0.mid — 46 notas, 15.0s, 2 tracks (bass+piano)
+  generated_v1.mid — 44 notas, 15.0s, 2 tracks (bass+piano)
+  generated_v2.mid — 46 notas, 15.0s, 2 tracks (bass+piano)
   generated.mp3 — audio renderizado con MuseScore 4
+  generated_pre_fix.{mid,mp3} — output del pipeline roto (start_time=0) para referencia

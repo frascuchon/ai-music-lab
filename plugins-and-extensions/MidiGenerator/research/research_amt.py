@@ -116,41 +116,72 @@ def run_continuation(model, input_midi_path: str, out_path: str, duration: int =
     return t_infer
 
 
-def run_accompaniment(model, input_midi_path: str, out_path: str, duration: int = 10):
+def run_accompaniment(
+    model,
+    input_midi_path: str,
+    out_path: str,
+    prompt_length: int = 5,
+    clip_length: int = 20,
+    top_p: float = 0.95,
+    melody_instrument: int = 0,
+    seed: int = 0,
+):
+    """Pipeline canónico de acompañamiento según humaneval/accompany.py del paper AMT.
+
+    Referencia upstream: https://github.com/jthickstun/anticipation/blob/main/humaneval/accompany.py
+    Issue #18 confirma que sin prompt_length≥5s la calidad es muy pobre.
+    """
+    import numpy as np
+    import torch
     from anticipation.convert import events_to_midi, midi_to_events
     from anticipation.ops import clip, combine
     from anticipation.sample import generate
     from anticipation.tokenize import extract_instruments
 
-    print("[accompaniment] cargando MIDI de entrada como melodía de control...")
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    print("[accompaniment] cargando MIDI de entrada...")
     events = midi_to_events(input_midi_path)
-    melody = clip(events, 0, duration)
+    # Separar melodía (controles de guía) del resto (historial de acompañamiento)
+    events, controls = extract_instruments(events, [melody_instrument])
 
-    # Piano (instr 0) → controles de guía; resto (bajo u otras voces) → historial
-    # de entrada. Sin historial, AMT arranca en frío y sólo genera REST tokens.
-    remaining, controls = extract_instruments(melody, [0])
-    if not remaining:
-        print("[warning] fixture mono-canal: no hay historial no-piano. "
-              "Regenerar el fixture o proporcionar un MIDI multi-track.")
+    if not events:
+        print("[warning] sin eventos non-melody — AMT generará REST tokens (fixture mono-track).")
 
-    print(f"[accompaniment] generando {duration}s de acompañamiento...")
+    # Primeros prompt_length segundos del acompañamiento como historia para el modelo
+    # clip_duration=False: preserva notas que cruzan el boundary del prompt
+    prompt = clip(events, 0, prompt_length, clip_duration=False)
+
+    gen_duration = clip_length - prompt_length
+    print(f"[accompaniment] generando {gen_duration}s (prompt={prompt_length}s, "
+          f"total={clip_length}s, top_p={top_p}, seed={seed})...")
     t0 = time.time()
-    accompaniment = generate(
+    generated = generate(
         model,
-        start_time=0,
-        end_time=duration,
-        inputs=remaining,   # historial: voces no-piano como contexto
-        controls=controls,  # guía: melodía de piano anticipada
-        top_p=0.98,
+        prompt_length,   # start_time: el modelo genera a partir del final del prompt
+        clip_length,     # end_time
+        inputs=prompt,
+        controls=controls,
+        top_p=top_p,
     )
     t_infer = time.time() - t0
     print(f"[timing] inferencia: {t_infer:.1f}s")
 
-    combined = combine(accompaniment, controls)
-    mid = events_to_midi(combined)
+    # Combinar con la melodía de control y recortar al clip_length total
+    output = clip(combine(generated, controls), 0, clip_length)
+    mid = events_to_midi(output)
     mid.save(out_path)
     print(f"[output] MIDI guardado en: {os.path.abspath(out_path)}")
     return t_infer
+
+
+def _versioned_path(base_path: str, idx: int, total: int) -> str:
+    """Retorna base_path si total==1, o base_path con sufijo _v{idx} si total>1."""
+    if total == 1:
+        return base_path
+    root, ext = os.path.splitext(base_path)
+    return f"{root}_v{idx}{ext}"
 
 
 def main():
@@ -160,8 +191,23 @@ def main():
     parser.add_argument("--input", default=FIXTURE_PATH)
     parser.add_argument("--out", default=None,
                         help="Ruta de salida. Si mode=both se ignora y usa nombres fijos.")
+    # continuation
     parser.add_argument("--duration", type=int, default=10,
-                        help="Segundos a generar (default: 10)")
+                        help="Segundos a generar en modo continuation (default: 10)")
+    # accompaniment
+    parser.add_argument("--prompt-length", type=int, default=5,
+                        help="Segundos de historia del acompañamiento usados como prompt (default: 5)")
+    parser.add_argument("--clip-length", type=int, default=20,
+                        help="Duración total del clip de acompañamiento en segundos (default: 20)")
+    parser.add_argument("--top-p", type=float, default=0.95,
+                        help="Nucleus sampling top_p para accompaniment (default: 0.95)")
+    parser.add_argument("--seed", type=int, default=0,
+                        help="Semilla aleatoria para reproducibilidad (default: 0)")
+    parser.add_argument("--melody-instrument", type=int, default=0,
+                        help="Programa MIDI del instrumento melodía en el modo accompaniment (default: 0 = piano)")
+    parser.add_argument("--multiplicity", type=int, default=1,
+                        help="Número de candidatos a generar en modo accompaniment (default: 1). "
+                             "Cada candidato usa seed+i. Salidas: out_acc_v0.mid, out_acc_v1.mid, ...")
     parser.add_argument("--no-half", action="store_true",
                         help="Desactivar float16 (más RAM, más preciso)")
     args = parser.parse_args()
@@ -206,23 +252,40 @@ def main():
     print(f"[timing] carga modelo: {t_load:.1f}s | RAM delta: {mem_load:.0f} MB")
 
     # --- inferencia ---
+    t_cont = None
+    t_acc_list = []
     with torch.no_grad():
         if args.mode in ("continuation", "both"):
             out = args.out or "out_cont.mid"
             t_cont = run_continuation(model, args.input, out, args.duration)
+
         if args.mode in ("accompaniment", "both"):
-            out = args.out or "out_acc.mid"
-            t_acc = run_accompaniment(model, args.input, out, args.duration)
+            base_out = args.out or "out_acc.mid"
+            for i in range(args.multiplicity):
+                out_i = _versioned_path(base_out, i, args.multiplicity)
+                t_i = run_accompaniment(
+                    model,
+                    args.input,
+                    out_i,
+                    prompt_length=args.prompt_length,
+                    clip_length=args.clip_length,
+                    top_p=args.top_p,
+                    melody_instrument=args.melody_instrument,
+                    seed=args.seed + i,
+                )
+                t_acc_list.append(t_i)
 
     # resumen para RESEARCH.md
     print("\n--- RESULTADOS (copiar en RESEARCH.md) ---")
     print(f"  modelo:          {MODEL_NAME}")
     print(f"  device:          {device}  (dtype: float32)")
     print(f"  carga (s):       {t_load:.1f}")
-    if args.mode in ("continuation", "both"):
+    if t_cont is not None:
         print(f"  inferencia cont (s): {t_cont:.1f}")
-    if args.mode in ("accompaniment", "both"):
-        print(f"  inferencia acc  (s): {t_acc:.1f}")
+    if t_acc_list:
+        for i, t in enumerate(t_acc_list):
+            label = f"v{i}" if len(t_acc_list) > 1 else "acc"
+            print(f"  inferencia {label}  (s): {t:.1f}")
     print(f"  RAM delta (MB):  {mem_load:.0f}")
 
 

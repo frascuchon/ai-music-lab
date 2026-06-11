@@ -26,7 +26,7 @@ evaluation/
 ├── amt/                   # Demos de https://crfm.stanford.edu/2023/06/16/...
 │   ├── test1/  Continuation (20s) — referencia del sitio: prompt/system4/0-clip-v0
 │   ├── test2/  Accompaniment (20s) — referencia del sitio: demos/system0/0-clip-v0
-│   └── test3/  [pendiente — fixture no representativo del prompt oficial]
+│   └── test3/  Accompaniment (15s) — fixture jazz Bb, piano+walking bass
 │
 └── musecoco/              # Demos del paper MuseCoco (AAAI 2024)
     ├── test1/  "jazz piano trio, 120 BPM" — sin referencia de audio directa
@@ -73,8 +73,8 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 | midi_llm | test2 | generado | ~150s | ver prompt.txt |
 | midi_llm | test3 | generado | ~150s | ver prompt.txt |
 | amt | test1 | ✅ | carga 1.0s, inf 896.5s (CPU) | continuation 20s, fixture=prompt oficial (73 notas) |
-| amt | test2 | ✅ | carga 0.7s, inf 28.6s (CPU) | accompaniment 20s, fixture=melody+drums oficial |
-| amt | test3 | ⏸ pendiente | — | fixture jazz Bb mayor no representativo del prompt |
+| amt | test2 | ✅ | carga 0.7s, inf v0:73.9s v1:44.1s v2:32.6s (CPU) | accompaniment 20s, 3 candidatos (pipeline canónico) |
+| amt | test3 | ✅ | carga 0.7s, inf v0:8.5s v1:8.7s v2:8.7s (CPU) | accompaniment 15s, fixture jazz Bb, 3 candidatos |
 | musecoco | test1 | ✅ (Modal) | ~2 min (A100-40GB) | jazz piano |
 | musecoco | test2 | ✅ (Modal) | ~2 min | ID 109 sax+drum |
 | musecoco | test3 | ✅ (Modal) | ~2 min | ID 2273 piano+bass |
@@ -88,16 +88,35 @@ La continuación de 20s funciona bien. El resultado es coherente musicalmente co
 de entrada y puede considerarse de calidad aceptable para uso en producción. El modelo
 mantiene el estilo, la tonalidad y el ritmo del fragmento original.
 
-### Accompaniment (test2) ⚠️ Calidad insuficiente
-El acompañamiento generado es pobre en calidad. Los problemas observados son:
-- Escasa densidad armónica y rítmica respecto a la melodía de entrada
-- Las voces generadas no dialogan con la melodía de forma convincente
-- Pendiente identificar causas y posibles mejoras en próxima sesión
+### Accompaniment (test2) 🔄 Re-generado con pipeline canónico (2026-06-11)
 
-### test3
-No ejecutado. El fixture jazz/Bb mayor creado no es representativo del prompt oficial
-de referencia (`interact/span5/0-clip-v0`). Requiere buscar un input fixture adecuado
-antes de repetir.
+**Fix aplicado**: la implementación anterior usaba `start_time=0` en vez de `prompt_length=5`,
+causando que el modelo arrancase sin historia de acompañamiento. Según el upstream
+[issue #18](https://github.com/jthickstun/anticipation/issues/18) y el script oficial
+[`humaneval/accompany.py`](https://github.com/jthickstun/anticipation/blob/main/humaneval/accompany.py),
+el modelo requiere ≥5s de contexto de acompañamiento previo para generar resultados coherentes.
+
+Pipeline corregido:
+- `prompt_length=5` (primeros 5s del acompañamiento como historia)
+- `top_p=0.95` (valor del paper, antes 0.98)
+- `clip(combine(...), 0, clip_length)` para recortar el output correctamente
+- `seed=0` para reproducibilidad determinista
+
+3 candidatos generados (generated_v{0,1,2}.{mid,mp3}):
+- v0 (canónico actual): piano + drums (4) + guitarra acústica prog=25 — 143 notas, 20s
+- v1: piano + drums (24, más densidad rítmica) — 129 notas, 20s
+- v2: piano + drums (16) + voz prog=53 — 123 notas, 20s
+
+**Valoración**: pendiente de escucha manual. Sustituir `generated.*` por el candidato preferido.
+El archivo `generated_pre_fix.*` conserva el output del pipeline roto para comparación.
+
+### Accompaniment (test3) 🔄 Re-generado con pipeline canónico (2026-06-11)
+
+Fixture jazz Bb mayor (piano + walking bass). Con `prompt_length=5` el walking bass proporciona
+contexto de 5s para el modelo. Tres candidatos con variaciones menores de seed.
+
+3 candidatos (generated_v{0,1,2}.{mid,mp3}), todos con ~46 notas en 2 tracks (bass+piano), 15s.
+**Valoración**: pendiente de escucha manual.
 
 ---
 
