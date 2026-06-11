@@ -4,25 +4,24 @@ Reference URL: https://musicanticipation.github.io/assets/demos/system0/0-clip-v
 Mode: accompaniment
 
 Reference files:
-  - reference_official_melody.mp3       — melodía de entrada del demo oficial
+  - reference_official_melody.mp3        — melodía de entrada del demo oficial
   - reference_official_accompaniment.mp3 — acompañamiento generado por el modelo oficial
   - reference_official_accompaniment.mid — MIDI completo (prompt + continuation + drums tracks)
 
 Input fixture:
   - input_fixture.mid — extraído de reference_official_accompaniment.mid:
       * track 'prompt' (prog=0, 138 notas, 0-29.3s) → melodía de control (piano)
-      * track 'prompt_drums' (is_drum=True, 4 notas, 2.6-3.1s) → historial de entrada
+      * track 'prompt_drums' (is_drum=True, 4 notas) → historial de entrada
     (MISMO input que usó el modelo oficial para generar el acompañamiento de referencia)
   - input_fixture.mp3 — audio del fixture
 
 Command:
   uv run research_amt.py --mode accompaniment --input ../evaluation/amt/test2/input_fixture.mid \
-    --duration 10 --out ../evaluation/amt/test2/generated.mid
+    --duration 20 --out ../evaluation/amt/test2/generated.mid
 
 Timing:
-  carga: 0.8s | inferencia: 9.2s | device: CPU float32
-  (accompaniment es ~25x más rápido que continuation: la melodía guía el sampling)
+  carga: 0.7s | inferencia: 28.6s | device: CPU float32
 
 Generated:
-  generated.mid — 69 notas, 10.0s (piano prog=0 + electric guitar prog=27 + drums)
+  generated.mid — 120 notas, 20.0s, 5 tracks (piano + acoustic bass + drums + acoustic guitar prog=24/25)
   generated.mp3 — audio renderizado con MuseScore 4

@@ -72,9 +72,9 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 | midi_llm | test1 | generado | 148.4s (2046 tokens, MPS) | 5 pistas, 682 notas |
 | midi_llm | test2 | generado | ~150s | ver prompt.txt |
 | midi_llm | test3 | generado | ~150s | ver prompt.txt |
-| amt | test1 | ✅ | carga 0.8s, inf 229.5s (CPU) | continuation 10s, fixture=prompt oficial (73 notas) |
-| amt | test2 | ✅ | carga 0.8s, inf 9.2s (CPU) | accompaniment 10s, fixture=melody+drums oficial |
-| amt | test3 | ✅ | carga 0.7s, inf 8.9s (CPU) | accompaniment 15s, fixture jazz Bb mayor 100 BPM |
+| amt | test1 | ✅ | carga 1.0s, inf 896.5s (CPU) | continuation 20s, fixture=prompt oficial (73 notas) |
+| amt | test2 | ✅ | carga 0.7s, inf 28.6s (CPU) | accompaniment 20s, fixture=melody+drums oficial |
+| amt | test3 | ⏸ pendiente | — | fixture jazz Bb mayor no representativo del prompt |
 | musecoco | test1 | ✅ (Modal) | ~2 min (A100-40GB) | jazz piano |
 | musecoco | test2 | ✅ (Modal) | ~2 min | ID 109 sax+drum |
 | musecoco | test3 | ✅ (Modal) | ~2 min | ID 2273 piano+bass |

@@ -4,7 +4,7 @@ Reference URL: https://musicanticipation.github.io/assets/prompt/system4/0-clip-
 Mode: continuation
 
 Reference files:
-  - reference_official_prompt.mp3     — fragmento de entrada (prompt) del demo oficial
+  - reference_official_prompt.mp3       — fragmento de entrada del demo oficial
   - reference_official_continuation.mp3 — continuación generada por el modelo oficial
   - reference_official_continuation.mid — MIDI completo (prompt + continuation tracks)
 
@@ -15,11 +15,11 @@ Input fixture:
 
 Command:
   uv run research_amt.py --mode continuation --input ../evaluation/amt/test1/input_fixture.mid \
-    --duration 10 --out ../evaluation/amt/test1/generated.mid
+    --duration 20 --out ../evaluation/amt/test1/generated.mid
 
 Timing:
-  carga: 0.8s | inferencia: 229.5s | device: CPU float32
+  carga: 1.0s | inferencia: 896.5s | device: CPU float32
 
 Generated:
-  generated.mid — 248 notas, 15.6s (5s prompt + 10s continuation)
+  generated.mid — 474 notas, 25.0s (5s prompt + 20s continuation), 1 track
   generated.mp3 — audio renderizado con MuseScore 4
