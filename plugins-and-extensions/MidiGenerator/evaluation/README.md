@@ -73,8 +73,8 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 | midi_llm | test2 | generado | ~150s | ver prompt.txt |
 | midi_llm | test3 | generado | ~150s | ver prompt.txt |
 | amt | test1 | ✅ | carga 1.0s, inf 896.5s (CPU) | continuation 20s, fixture=prompt oficial (73 notas) |
-| amt | test2 | ✅ | carga 0.9s, inf 991.4s (~16.5min, CPU) | accompaniment 20s, fixture canónico (852 notas: piano+drums+acomp) |
-| amt | test3 | ✅ | carga 0.7s, inf v0:8.5s v1:8.7s v2:8.7s (CPU) | accompaniment 15s, fixture jazz Bb, 3 candidatos |
+| amt | test2 | ✅ (Modal A10G) | inf v0:151s v1:127s v2:231s | accompaniment 20s, 3 candidatos, input_fixture.mid (138 notas piano completo) |
+| amt | test3 | ✅ (Modal A10G) | inf v0:1.4s v1:0.8s v2:0.7s | accompaniment 15s, 3 candidatos, fixture jazz Bb |
 | musecoco | test1 | ✅ (Modal) | ~2 min (A100-40GB) | jazz piano |
 | musecoco | test2 | ✅ (Modal) | ~2 min | ID 109 sax+drum |
 | musecoco | test3 | ✅ (Modal) | ~2 min | ID 2273 piano+bass |
@@ -88,7 +88,7 @@ La continuación de 20s funciona bien. El resultado es coherente musicalmente co
 de entrada y puede considerarse de calidad aceptable para uso en producción. El modelo
 mantiene el estilo, la tonalidad y el ritmo del fragmento original.
 
-### Accompaniment (test2) ✅ Re-generado con fixture canónico (2026-06-11)
+### Accompaniment (test2) ✅ Re-generado con Modal A10G (2026-06-11)
 
 **Dos bugs identificados y corregidos**:
 
@@ -96,43 +96,30 @@ mantiene el estilo, la tonalidad y el ritmo del fragmento original.
    acompañamiento (confirmado por [issue #18](https://github.com/jthickstun/anticipation/issues/18)
    y [`humaneval/accompany.py`](https://github.com/jthickstun/anticipation/blob/main/humaneval/accompany.py)).
 
-2. **Fixture incorrecto**: el fixture original solo tenía piano (138 notas, melody) + 4 drum notes.
-   Le faltaban las 60 notas del track `continuation` en t=3.5-5s (acompañamiento histórico).
-   Sin este contexto rico, el modelo generaba output esparso (~2 notas/s). Con el fixture
-   canónico (35 notas piano + 18 drums + 60 acompañamiento = 113 eventos), genera ~46 notas/s.
+2. **Fixture incorrecto (primera corrección)**: `input_fixture_paper.mid` solo tenía los primeros
+   5s de piano — la melodía desaparecía del output tras t=5s. Corregido usando `input_fixture.mid`
+   (variante REAPER, 138 notas de piano durante los 29.3s completos como controles de melodía).
 
-Pipeline correcto (usando `input_fixture_paper.mid` = primeros 5s de todos los instrumentos):
-- `prompt_length=5`, `top_p=0.95`, `seed=0`
-- `clip(combine(...), 0, clip_length)` para recortar correctamente
+**Resultados** (3 candidatos, `input_fixture.mid`, Modal A10G, `music-medium-800k`):
+- v0 (seed=0): 3 pistas | 748 notas | 20.0s | inferencia 151s
+- v1 (seed=1): 3 pistas | 672 notas | 20.0s | inferencia 127s
+- v2 (seed=2): 3 pistas | 1013 notas | 20.0s | inferencia 231s
 
-**Resultado**: `generated.mid` — 852 notas totales en 20s:
-  - ch=0 prog=0: 35 notas (melody/controls 0-5s)
-  - ch=9: 127 drum hits (batería densa durante todo el clip)
-  - ch=2 prog=1: 690 notas de acompañamiento
+**Valoración**: pendiente de escucha manual. Comparar `generated_v{0,1,2}.mp3` contra
+`reference_official_accompaniment.mp3`.
 
-**Valoración**: el acompañamiento (batería + prog=1) es denso y coherente, pero la melodía de piano
-solo está presente en t=0-5s (35 notas del fixture paper). El `reference_official_accompaniment.mid`
-incluye 138 notas de piano durante los 30s completos porque conserva el track `prompt` original.
-
-⚠️ **Pendiente (requiere Modal)**: regenerar con `input_fixture.mid` (variante REAPER — piano
-completo 138 notas 0-29.3s como controles) para que la melodía esté presente durante todo el
-clip y la comparación con la referencia oficial sea justa. Comando:
-```
-uv run research_amt.py --mode accompaniment \
-  --input ../evaluation/amt/test2/input_fixture.mid \
-  --prompt-length 5 --clip-length 20 --top-p 0.95 --seed 0 \
-  --out ../evaluation/amt/test2/generated.mid
-```
-
-⚠️ **CPU: ~16.5min por clip de 20s** — Modal (GPU) necesario para este pendiente.
-
-### Accompaniment (test3) 🔄 Re-generado con pipeline canónico (2026-06-11)
+### Accompaniment (test3) ✅ Re-generado con Modal A10G (2026-06-11)
 
 Fixture jazz Bb mayor (piano + walking bass). Con `prompt_length=5` el walking bass proporciona
-contexto de 5s para el modelo. Tres candidatos con variaciones menores de seed.
+contexto de 5s para el modelo.
 
-3 candidatos (generated_v{0,1,2}.{mid,mp3}), todos con ~46 notas en 2 tracks (bass+piano), 15s.
-**Valoración**: pendiente de escucha manual.
+**Resultados** (3 candidatos, `input_fixture.mid`, Modal A10G, `music-medium-800k`):
+- v0 (seed=0): 2 pistas | 45 notas | 15.0s | inferencia 1.4s
+- v1 (seed=1): 2 pistas | 44 notas | 15.0s | inferencia 0.8s
+- v2 (seed=2): 2 pistas | 45 notas | 15.0s | inferencia 0.7s
+
+**Valoración**: pendiente de escucha manual. Comparar `generated_v{0,1,2}.mp3` contra
+`reference_official_accompaniment.mp3` y el estilo jazz del fixture de entrada.
 
 ---
 
