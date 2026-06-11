@@ -202,8 +202,11 @@ def _inference_impl(
 
     midi_out.save(output_path)
 
-    # Persistir pesos descargados en el Volume para próximas ejecuciones
-    weights_vol.commit()
+    # Persistir pesos descargados (best-effort: xet puede tener log files abiertos)
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
 
     # Análisis rápido del output
     try:
