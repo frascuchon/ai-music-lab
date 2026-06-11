@@ -21,31 +21,34 @@ Coste estimado por clip de 20s (A10G):
   music-medium: ~60s  → ~$0.018
   music-large:  ~120s → ~$0.037
 
+IMPORTANTE: este script tiene múltiples local_entrypoints. Siempre especificar ::main
+para inferencia. modal run sin ::suffix falla cuando hay más de un entrypoint.
+
 Setup (pre-descarga de pesos al Volume, opcional):
     modal run research_amt_modal.py::setup
     modal run research_amt_modal.py::setup --model stanford-crfm/music-large-800k
 
 Inferencia (modo accompaniment):
-    modal run research_amt_modal.py \
+    modal run research_amt_modal.py::main \
         --input ../evaluation/amt/test2/input_fixture.mid \
         --mode accompaniment --prompt-length 5 --clip-length 20 \
         --out ../evaluation/amt/test2/generated.mid
 
     # con modelo grande y GPU T4:
-    modal run research_amt_modal.py \
+    modal run research_amt_modal.py::main \
         --model stanford-crfm/music-large-800k --gpu T4 \
         --input ../evaluation/amt/test2/input_fixture.mid \
         --mode accompaniment --clip-length 20 \
         --out /tmp/generated_large.mid
 
     # 3 candidatos (multiplicity):
-    modal run research_amt_modal.py \
+    modal run research_amt_modal.py::main \
         --input ../evaluation/amt/test2/input_fixture.mid \
         --mode accompaniment --multiplicity 3 \
         --out ../evaluation/amt/test2/generated.mid
 
 Inferencia (modo continuation):
-    modal run research_amt_modal.py \
+    modal run research_amt_modal.py::main \
         --input ../evaluation/amt/test1/input_fixture.mid \
         --mode continuation --duration 20 \
         --out ../evaluation/amt/test1/generated.mid
