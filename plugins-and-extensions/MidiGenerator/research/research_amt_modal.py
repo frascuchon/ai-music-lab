@@ -220,54 +220,50 @@ def _inference_impl(
 
 
 # ---------------------------------------------------------------------------
-# GPU variants — un Modal Function por tipo de instancia
-# Se usa una factory function para capturar correctamente el GPU spec en el closure.
+# GPU variants — una Modal Function por tipo de instancia, definidas en scope global.
+# Modal requiere que las funciones decoradas con @app.function estén en scope de módulo
+# (serialized=True falla si el módulo no está disponible en el contenedor remoto).
 # ---------------------------------------------------------------------------
-_GPU_TIERS: dict[str, str] = {
-    "T4": "T4",
-    "L4": "L4",
-    "A10G": "A10G",
-    "A100-40GB": "A100-40GB",
-}
+_FN_KWARGS = dict(cpu=2, memory=6144, timeout=3600, volumes={WEIGHTS_MOUNT: weights_vol})
 
 
-def _make_gpu_fn(gpu_label: str, gpu_spec: object):
-    @app.function(
-        name=f"run_{gpu_label.replace('-', '_').lower()}",
-        gpu=gpu_spec,
-        cpu=2,
-        memory=6144,
-        timeout=3600,
-        volumes={WEIGHTS_MOUNT: weights_vol},
-        serialized=True,
-    )
-    def fn(
-        midi_bytes: bytes,
-        model_name: str = DEFAULT_MODEL,
-        mode: str = "accompaniment",
-        duration: int = 10,
-        prompt_length: int = 5,
-        clip_length: int = 20,
-        top_p: float = 0.95,
-        melody_instrument: int = 0,
-        seed: int = 0,
-    ) -> bytes:
-        return _inference_impl(
-            midi_bytes,
-            model_name,
-            mode,
-            duration=duration,
-            prompt_length=prompt_length,
-            clip_length=clip_length,
-            top_p=top_p,
-            melody_instrument=melody_instrument,
-            seed=seed,
-        )
-
-    return fn
+@app.function(gpu="T4", **_FN_KWARGS)
+def run_t4(midi_bytes: bytes, model_name: str = DEFAULT_MODEL, mode: str = "accompaniment",
+           duration: int = 10, prompt_length: int = 5, clip_length: int = 20,
+           top_p: float = 0.95, melody_instrument: int = 0, seed: int = 0) -> bytes:
+    return _inference_impl(midi_bytes, model_name, mode, duration=duration,
+                           prompt_length=prompt_length, clip_length=clip_length,
+                           top_p=top_p, melody_instrument=melody_instrument, seed=seed)
 
 
-_gpu_fns = {label: _make_gpu_fn(label, spec) for label, spec in _GPU_TIERS.items()}
+@app.function(gpu="L4", **_FN_KWARGS)
+def run_l4(midi_bytes: bytes, model_name: str = DEFAULT_MODEL, mode: str = "accompaniment",
+           duration: int = 10, prompt_length: int = 5, clip_length: int = 20,
+           top_p: float = 0.95, melody_instrument: int = 0, seed: int = 0) -> bytes:
+    return _inference_impl(midi_bytes, model_name, mode, duration=duration,
+                           prompt_length=prompt_length, clip_length=clip_length,
+                           top_p=top_p, melody_instrument=melody_instrument, seed=seed)
+
+
+@app.function(gpu="A10G", **_FN_KWARGS)
+def run_a10g(midi_bytes: bytes, model_name: str = DEFAULT_MODEL, mode: str = "accompaniment",
+             duration: int = 10, prompt_length: int = 5, clip_length: int = 20,
+             top_p: float = 0.95, melody_instrument: int = 0, seed: int = 0) -> bytes:
+    return _inference_impl(midi_bytes, model_name, mode, duration=duration,
+                           prompt_length=prompt_length, clip_length=clip_length,
+                           top_p=top_p, melody_instrument=melody_instrument, seed=seed)
+
+
+@app.function(gpu="A100-40GB", **_FN_KWARGS)
+def run_a100_40gb(midi_bytes: bytes, model_name: str = DEFAULT_MODEL, mode: str = "accompaniment",
+                  duration: int = 10, prompt_length: int = 5, clip_length: int = 20,
+                  top_p: float = 0.95, melody_instrument: int = 0, seed: int = 0) -> bytes:
+    return _inference_impl(midi_bytes, model_name, mode, duration=duration,
+                           prompt_length=prompt_length, clip_length=clip_length,
+                           top_p=top_p, melody_instrument=melody_instrument, seed=seed)
+
+
+_gpu_fns = {"T4": run_t4, "L4": run_l4, "A10G": run_a10g, "A100-40GB": run_a100_40gb}
 
 
 # ---------------------------------------------------------------------------
