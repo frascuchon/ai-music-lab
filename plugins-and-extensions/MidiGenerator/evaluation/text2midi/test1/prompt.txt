@@ -1,5 +1,8 @@
 Model: Text2midi (amaai-lab/text2midi)
 Source: https://amaai-lab.github.io/Text2midi/ — Demo D
 Prompt: "A sad pop song with a strong piano presence."
-Reference: reference_official.mid (MIDI generado por la implementación oficial)
-Our command: uv run research_text2midi.py --prompt "A sad pop song with a strong piano presence." --out generated.mid
+Reference: reference_official.mid/.mp3 — MIDI generado por la implementación oficial del paper
+Our command: uv run research_text2midi.py --prompt "A sad pop song with a strong piano presence." --max_len 2000 --out generated.mid
+Device: mps, fp16
+Result: 3 pistas, 433 notas, 49.3s, instrumentos [0 piano, 0 piano, 1 bright piano]
+Notes: Piano dominante ✓. Timing afectado por contención MPS (MIDI-LLM corriendo en paralelo).
