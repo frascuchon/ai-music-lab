@@ -8,30 +8,42 @@ Reference files:
   - reference_official_accompaniment.mp3 — acompañamiento generado por el modelo oficial
   - reference_official_accompaniment.mid — MIDI completo (prompt + continuation + drums tracks)
 
-Input fixture:
-  - input_fixture.mid — extraído de reference_official_accompaniment.mid:
-      * track 'prompt' (prog=0, 138 notas, 0-29.3s) → melodía de control (piano)
-      * track 'prompt_drums' (is_drum=True, 4 notas) → historial de entrada
-    (MISMO input que usó el modelo oficial para generar el acompañamiento de referencia)
-  - input_fixture.mp3 — audio del fixture
+Input fixture (reconstruido correctamente 2026-06-11):
+  - input_fixture.mid (variante REAPER — piano completo + historia de 5s):
+      * piano (prog=0, 138 notas, 0-29.3s) → melodía completa como controles
+      * drums (prog=0, ch=9, 18 notas, 0-5s) → historial de batería
+      * accompaniment (prog=1, 60 notas, 3.5-5s) → historial de acompañamiento
+    Ventaja: controles de melodía completos para que el acompañamiento sea coherente en 20s
 
-Command (pipeline canónico — ver humaneval/accompany.py upstream):
+  - input_fixture_paper.mid (variante paper-fiel — primeros 5s de todos los instrumentos):
+      * piano (prog=0, 35 notas, 0-5s) → solo 5s de melodía como controles
+      * drums (18 notas, 0-5s) y accompaniment (60 notas, 3.5-5s)
+    Esta es la variante que usó el demo oficial (clip-select.py → conditional.mid)
+
+  BUG IDENTIFICADO (2026-06-11): el fixture original solo tenía piano+4drums. Le faltaban
+  las 60 notas del track 'continuation' en t=0-5s (el acompañamiento histórico que le
+  da al modelo el contexto para continuar). Sin esto, el modelo generaba ~34 notas en 15s.
+  Con el fixture correcto, genera ~310 notas en solo 5s.
+
+Command (variante REAPER — melodía completa como control):
   uv run research_amt.py --mode accompaniment --input ../evaluation/amt/test2/input_fixture.mid \
-    --prompt-length 5 --clip-length 20 --top-p 0.95 --seed 0 --multiplicity 3 \
+    --prompt-length 5 --clip-length 20 --top-p 0.95 --seed 0 \
     --out ../evaluation/amt/test2/generated.mid
 
-Pipeline fix (2026-06-11):
-  - start_time=5 (antes: 0) — requiere ≥5s de historial de acompañamiento según issue #18
-  - top_p=0.95 (antes: 0.98) — valor del paper humaneval
-  - clip(combine(...), 0, clip_length) — recorte correcto del output
-  - seed=0 determinista; seed+i para candidatos adicionales
+Command (variante paper-fiel):
+  uv run research_amt.py --mode accompaniment --input ../evaluation/amt/test2/input_fixture_paper.mid \
+    --prompt-length 5 --clip-length 20 --top-p 0.95 --seed 0 \
+    --out /tmp/test2_paper.mid
 
-Timing:
-  carga: 0.7s | inferencia v0: 73.9s, v1: 44.1s, v2: 32.6s | device: CPU float32
+Nota de rendimiento CPU: con el fixture correcto el modelo genera ~50 notas/s en vez de
+~2 notas/s (antes). Esto eleva el tiempo de inferencia a ~45min en CPU. Modal (GPU) es
+necesario para uso práctico: estimado 1-3min en A100.
 
-Generated (3 candidatos — v0 elegido como canónico):
-  generated.mid    = generated_v0.mid — 143 notas, 20.0s, 3 tracks (piano+drums+guitar prog=25)
-  generated_v1.mid — 129 notas, 20.0s, 2 tracks (piano+drums con más densidad rítmica)
-  generated_v2.mid — 123 notas, 20.0s, 3 tracks (piano+drums+voz prog=53)
-  generated.mp3 — audio renderizado con MuseScore 4
-  generated_pre_fix.{mid,mp3} — output del pipeline roto (start_time=0) para referencia
+Timing (fixture correcto):
+  fixture_paper.mid + clip_length=20: ~45min (CPU) — en progreso / usar Modal
+  fixture_paper.mid + clip_length=10 (5s): ~14min (CPU) — verificado, 309 notas generadas
+
+Generated:
+  generated_pre_canonical.{mid,mp3} — output antes del fix start_time (43 notas, sparse)
+  generated_pre_fix.{mid,mp3} — output con start_time=5 pero fixture incorrecto (143 notas)
+  [pendiente regenerar con fixture correcto]
