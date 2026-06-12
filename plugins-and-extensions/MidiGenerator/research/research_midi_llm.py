@@ -63,34 +63,6 @@ def _mem_mb():
     return psutil.Process().memory_info().rss / 1024 / 1024
 
 
-def _make_midi_logits_processor(llama_vocab_size: int, midi_vocab_size: int):
-    """
-    Returns a LogitsProcessor that restricts sampling to MIDI tokens only.
-
-    MIDI tokens occupy positions [llama_vocab_size, llama_vocab_size+midi_vocab_size).
-    All Llama text tokens are set to -inf at each decoding step, matching vLLM's
-    allowed_token_ids behaviour and preventing probability mass from leaking into
-    invalid (non-MIDI) tokens.
-    """
-    from transformers import LogitsProcessor
-
-    class MidiOnlyLogitsProcessor(LogitsProcessor):
-        def __init__(self, start: int, end: int):
-            self._start = start  # first valid MIDI token index
-            self._end = end      # one past last valid MIDI token index
-
-        def __call__(self, input_ids, scores):
-            # Zero out text tokens (0..start-1)
-            scores[:, : self._start] = float("-inf")
-            # Zero out anything beyond MIDI range (shouldn't exist, defensive)
-            if scores.shape[-1] > self._end:
-                scores[:, self._end :] = float("-inf")
-            return scores
-
-    return MidiOnlyLogitsProcessor(
-        start=llama_vocab_size,
-        end=llama_vocab_size + midi_vocab_size,
-    )
 
 
 def generate(
@@ -150,10 +122,6 @@ def generate(
     midi_bos = torch.tensor([[AMT_GPT2_BOS_ID + LLAMA_VOCAB_SIZE]])
     input_ids_base = torch.cat([input_ids_base, midi_bos], dim=1).to(device)
 
-    logits_processor = [
-        _make_midi_logits_processor(LLAMA_VOCAB_SIZE, AMT_GPT2_BOS_ID)
-    ]
-
     # --- output paths ---
     p = Path(out_path)
     stem_clean = p.stem
@@ -181,7 +149,6 @@ def generate(
                 top_p=top_p,
                 num_return_sequences=1,
                 pad_token_id=tokenizer.pad_token_id,
-                logits_processor=logits_processor,
             )
 
         t_infer = time.time() - t1
