@@ -14,9 +14,15 @@ Cada subcarpeta contiene:
 ```
 evaluation/
 ├── text2midi/             # MIDI demos de https://amaai-lab.github.io/Text2midi/
-│   ├── test1/  "A sad pop song with a strong piano presence."        [Demo D]
-│   ├── test2/  "A rock song with strong drums and electric guitar."  [Demo E]
-│   └── test3/  "A soft love song on piano."                         [Demo C]
+│   ├── test1/  "A sad pop song with a strong piano presence."           [output_D.mid]
+│   ├── test2/  "A rock song with strong drums and electric guitar."     [output_E.mid]
+│   ├── test3/  "A soft love song on piano."                            [output_C.mid]
+│   ├── test4/  "An energetic electronic trance track... 138 BPM A min" [output_A.mid]
+│   ├── test5/  "A cheerful christmas song suitable for children."      [output_B.mid]
+│   ├── test6/  "This short electronic song in C minor..."              [output_4.mid]
+│   ├── test7/  "A heavy metal song with strong drums and guitar."      [output_F.mid]
+│   ├── regenerate_all.sh   genera MIDIs locales vía research_text2midi.py (MPS, n=2)
+│   └── research_text2midi_modal.py  genera en Modal A10G (float32, CUDA, n=2)
 │
 ├── midi_llm/              # 12 samples del demo oficial https://midi-llm-demo.vercel.app
 │   ├── comparison_1..12/  prompts + refs oficiales + generated_cuda_v{0..3} + generated_local_mps_v{0..3}
@@ -42,9 +48,17 @@ evaluation/
 
 ## Cómo comparar
 
-**text2midi (test1-3)**: escuchar `reference_official.mp3` (generado por la implementación
-oficial) y `generated.mp3` (nuestro script). Ambos derivan del mismo MIDI-to-audio pipeline
-(MuseScore), por lo que la comparación es directa en estructura melódica y armónica.
+**text2midi (test1-7)**: escuchar `reference_official.mp3` (MIDI oficial del demo branch) y
+`generated_cuda_v*.mp3` (nuestras generaciones en Modal A10G, float32, temperature=0.9).
+La comparación mide si nuestro pipeline reproduce fielmente el comportamiento del modelo oficial.
+- Las referencias son los ficheros `output_{A,B,C,D,E,F,4}.mid` del demo branch del repositorio
+  (https://github.com/AMAAI-Lab/Text2midi, rama `demo`, carpeta `samples/`)
+- Parámetros oficiales (HuggingFace Space app.py): `temperature=0.9`, `max_len=500–2000`, float32, CUDA
+
+**Bugs corregidos en research_text2midi.py** (descubiertos durante setup del benchmark):
+1. `temperature=1.0` → corregido a `0.9` (default de la app oficial)
+2. `max_len=512` → corregido a `2000` (default razonable para piezas completas)
+3. `half_precision=True` → corregido a `False` (la app oficial no usa half; fp16 en MPS causa deriva)
 
 **MIDI-LLM (comparison_1-12)**: cada carpeta tiene 3 capas de audio:
 - `reference_official_bf16.mp3` — generación del demo oficial (referencia principal)
@@ -75,9 +89,13 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 
 | Script | Test | Estado | Timing | Notas |
 |--------|------|--------|--------|-------|
-| text2midi | test1 | generado | ~400s (2000 tokens, MPS) | ver prompt.txt |
-| text2midi | test2 | generado | ~400s | ver prompt.txt |
-| text2midi | test3 | generado | ~400s | ver prompt.txt |
+| text2midi | test1 | ⚠️ regenerar | ~400s (MPS fp16, temp=1.0) | script tenía bugs: temp=1.0, fp16, max_len=512 |
+| text2midi | test2 | ⚠️ regenerar | ~400s | ídem |
+| text2midi | test3 | ⚠️ regenerar | ~400s | ídem |
+| text2midi | test4 | ⏳ pendiente | — | output_A.mid: trance electrónico 138 BPM |
+| text2midi | test5 | ⏳ pendiente | — | output_B.mid: christmas song |
+| text2midi | test6 | ⏳ pendiente | — | output_4.mid: C minor electrónico (prompt detallado) |
+| text2midi | test7 | ⏳ pendiente | — | output_F.mid: heavy metal |
 | midi_llm | comparison_1..12 | ✅ CUDA A10G | ~20s/prompt×4 (414s total) | 48 MIDIs, pipeline idéntico al demo |
 | midi_llm | comparison_1..12 | ✅ MPS (ref) | ~120-180s/gen | generaciones locales para contraste |
 | midi_llm | _orphan_sunday_picnic | archivado | — | sin ref oficial — jazz Sunday picnic |

@@ -59,8 +59,8 @@ def _mem_mb():
     return psutil.Process().memory_info().rss / 1024 / 1024
 
 
-def generate(prompt: str, out_path: str, temperature: float = 1.0, max_len: int = 512,
-             device_override: str | None = None, half_precision: bool = True):
+def generate(prompt: str, out_path: str, temperature: float = 0.9, max_len: int = 2000,
+             device_override: str | None = None, half_precision: bool = False):
     _clone_repo_if_needed()
 
     # el model/ del repo text2midi debe estar en el path
@@ -139,18 +139,25 @@ def generate(prompt: str, out_path: str, temperature: float = 1.0, max_len: int 
 def main():
     parser = argparse.ArgumentParser(description="PoC Text2midi en Mac")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
-    parser.add_argument("--out", default="out_t2m.mid")
-    parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--max_len", type=int, default=512,
-                        help="Tokens a generar (default 512; 2000 para piezas largas)")
+    parser.add_argument("--out", default="out_t2m.mid",
+                        help="Path de salida. Con --n_outputs > 1 se numera: out_v0.mid, out_v1.mid, ...")
+    parser.add_argument("--temperature", type=float, default=0.9)
+    parser.add_argument("--max_len", type=int, default=2000,
+                        help="Tokens a generar (default 2000; coincide con la app oficial)")
     parser.add_argument("--device", default=None,
                         help="Forzar dispositivo: cpu, mps, cuda (auto si se omite)")
     parser.add_argument("--no-half", action="store_true",
-                        help="Desactivar float16 (más RAM, más preciso)")
+                        help="Desactivar float16 (más RAM, más preciso). Recomendado para reproducibilidad.")
+    parser.add_argument("--n_outputs", type=int, default=1,
+                        help="Número de variantes a generar. Con n>1, out se convierte en prefijo _v{i}.mid")
     args = parser.parse_args()
 
-    generate(args.prompt, args.out, args.temperature, args.max_len,
-             device_override=args.device, half_precision=not args.no_half)
+    base, ext = os.path.splitext(args.out)
+    ext = ext or ".mid"
+    for i in range(args.n_outputs):
+        out = f"{base}_v{i}{ext}" if args.n_outputs > 1 else args.out
+        generate(args.prompt, out, args.temperature, args.max_len,
+                 device_override=args.device, half_precision=not args.no_half)
 
 
 if __name__ == "__main__":

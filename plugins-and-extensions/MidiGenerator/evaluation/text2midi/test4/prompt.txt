@@ -1,0 +1,7 @@
+Model: Text2midi (amaai-lab/text2midi)
+Source: https://amaai-lab.github.io/Text2midi/ — Demo A (output_A.mid)
+Prompt: "An energetic and melodic electronic trance track with a space and retro vibe, featuring drums, distortion guitar, flute, synth bass, and slap bass. Set in A minor with a fast tempo of 138 BPM, the song maintains a 4/4 time signature throughout its duration."
+Reference: reference_official.mid/.mp3 — MIDI generado por la implementación oficial (demo branch)
+Our command: uv run research_text2midi.py --prompt "An energetic and melodic electronic trance track with a space and retro vibe, featuring drums, distortion guitar, flute, synth bass, and slap bass. Set in A minor with a fast tempo of 138 BPM, the song maintains a 4/4 time signature throughout its duration." --max_len 2000 --temperature 0.9 --no-half --out generated.mid
+Device: cuda (Modal A10G) — see research_text2midi_modal.py
+Notes: Trance/electrónica con retro. Debe tener drums, guitarra con distorsión, flauta, synth bass, slap bass. 138 BPM, A minor, 4/4.

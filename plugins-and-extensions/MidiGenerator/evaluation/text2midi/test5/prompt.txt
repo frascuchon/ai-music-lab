@@ -1,0 +1,7 @@
+Model: Text2midi (amaai-lab/text2midi)
+Source: https://amaai-lab.github.io/Text2midi/ — Demo B (output_B.mid)
+Prompt: "A cheerful christmas song suitable for children."
+Reference: reference_official.mid/.mp3 — MIDI generado por la implementación oficial (demo branch)
+Our command: uv run research_text2midi.py --prompt "A cheerful christmas song suitable for children." --max_len 2000 --temperature 0.9 --no-half --out generated.mid
+Device: cuda (Modal A10G) — see research_text2midi_modal.py
+Notes: Canción navideña alegre para niños. Prompt corto/abstracto — el modelo elige instrumentación y estilo.
