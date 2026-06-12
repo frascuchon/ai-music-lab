@@ -1,0 +1,7 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: https://github.com/lingyu123-su/Amadeus — demo/Amadeus_app_EN.py Example #3
+Prompt: "A soothing pop song that evokes feelings of love and relaxation, featuring a gentle blend of piano, flute, violin, and acoustic guitar. Set in the key of C major with a 4/4 time signature, the piece moves at an Andante tempo, creating a meditative and emotional atmosphere. The chord progression of G, C, F, G, and C adds to the song's calming ambiance."
+Category: official-example — soothing-pop
+Parameters: temperature=1.25, threshold=0.99, generation_length=1024, sampling_method=top_p
+Our command: modal run research/research_amadeus_modal.py::main --prompt "A soothing pop song that evokes feelings of love and relaxation, featuring a gentle blend of piano, flute, violin, and acoustic guitar. Set in the key of C major with a 4/4 time signature, the piece moves at an Andante tempo, creating a meditative and emotional atmosphere. The chord progression of G, C, F, G, and C adds to the song's calming ambiance." --out-dir evaluation/amadeus/test03
+Notes: Prompt oficial del demo. Instrumentos: piano, flute, violin, acoustic guitar. C major, 4/4, Andante. Acordes G-C-F-G-C. Mood: love, relaxation, meditative.

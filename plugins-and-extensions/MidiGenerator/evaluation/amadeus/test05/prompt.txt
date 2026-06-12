@@ -1,0 +1,8 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/text2midi/test4 — comparativa cross-model
+Prompt: "An energetic and melodic electronic trance track with a space and retro vibe, featuring drums, distortion guitar, flute, synth bass, and slap bass. Set in A minor with a fast tempo of 138 BPM, the song maintains a 4/4 time signature throughout its duration."
+Category: cross-model — trance-detailed
+Parameters: temperature=1.25, threshold=0.99, generation_length=1024, sampling_method=top_p
+Our command: modal run research/research_amadeus_modal.py::main --prompt "An energetic and melodic electronic trance track with a space and retro vibe, featuring drums, distortion guitar, flute, synth bass, and slap bass. Set in A minor with a fast tempo of 138 BPM, the song maintains a 4/4 time signature throughout its duration." --out-dir evaluation/amadeus/test05
+Reference cross-model: evaluation/text2midi/test4/generated.mid (calidad 2/5)
+Notes: Prompt estructurado (BPM, tonalidad, 4/4) — coincide con el estilo esperado por Amadeus (entrenado en MidiCaps). Test clave para comparar Amadeus vs text2midi con el mismo prompt.

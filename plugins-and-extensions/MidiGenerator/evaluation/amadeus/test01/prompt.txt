@@ -1,0 +1,7 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: https://github.com/lingyu123-su/Amadeus — demo/Amadeus_app_EN.py Example #1
+Prompt: "A melodic electronic ambient song with a touch of darkness, set in the key of E major and a 4/4 time signature. Tubular bells, electric guitar, synth effects, synth pad, and oboe weave together to create an epic, space-like atmosphere. The tempo is a steady Andante, and the chord progression of A, B, and E forms the harmonic backbone of this captivating piece."
+Category: official-example — electronic-ambient
+Parameters: temperature=1.25, threshold=0.99, generation_length=1024, sampling_method=top_p
+Our command: modal run research/research_amadeus_modal.py::main --prompt "A melodic electronic ambient song with a touch of darkness, set in the key of E major and a 4/4 time signature. Tubular bells, electric guitar, synth effects, synth pad, and oboe weave together to create an epic, space-like atmosphere. The tempo is a steady Andante, and the chord progression of A, B, and E forms the harmonic backbone of this captivating piece." --out-dir evaluation/amadeus/test01
+Notes: Prompt oficial del demo. Instrumentos: tubular bells, electric guitar, synth effects, synth pad, oboe. Tonalidad E major, 4/4, Andante, acordes A-B-E.

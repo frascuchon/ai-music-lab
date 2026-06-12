@@ -1,0 +1,8 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/text2midi/test6 — comparativa cross-model
+Prompt: "This short electronic song in C minor features a brass section, string ensemble, tenor saxophone, clean electric guitar, and slap bass, creating a melodic and slightly dark atmosphere. With a tempo of 124 BPM (Allegro) and a 4/4 time signature, the track incorporates a chord progression of C7/E, Eb6, and Bbm6, adding a touch of corporate and motivational vibes to the overall composition."
+Category: cross-model — electronic-detailed-chords
+Parameters: temperature=1.25, threshold=0.99, generation_length=1024, sampling_method=top_p
+Our command: modal run research/research_amadeus_modal.py::main --prompt "This short electronic song in C minor features a brass section, string ensemble, tenor saxophone, clean electric guitar, and slap bass, creating a melodic and slightly dark atmosphere. With a tempo of 124 BPM (Allegro) and a 4/4 time signature, the track incorporates a chord progression of C7/E, Eb6, and Bbm6, adding a touch of corporate and motivational vibes to the overall composition." --out-dir evaluation/amadeus/test06
+Reference cross-model: evaluation/text2midi/test6/generated.mid (calidad 2/5)
+Notes: El más detallado de los prompts de comparación — chord progression específica (C7/E, Eb6, Bbm6). Buen test para seguimiento de atributos armónicos. Amadeus debería manejar mejor este nivel de detalle que text2midi.

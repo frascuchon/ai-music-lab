@@ -244,7 +244,7 @@ Modelo de 2018, piano solo (mono-track). La rama activa de Magenta (RealTime, 20
 | **Anticipatory MT** | Variaciones/acompañamiento | ✅ Evaluado (3 tests) | ⚠️ Viable para flujo 2, latencia aceptable en CPU |
 | **MuseCoco** | Text→MIDI atributos | ✅ Evaluado (3 tests, Modal) | ⚠️ Control explícito pero interfaz rígida (atributos, no texto libre) |
 | **ChatMusician** | Text→ABC notation | ✅ Evaluado (12 tests, CUDA A10G) | ⚠️ **CERRADO** — 7.5/12 (62%), mono-staff; nota fine-tuning de autor pendiente |
-| **Amadeus** (AMAAI-Lab 2025) | Text→MIDI | ⏳ Sin repo público | 🔍 Candidato futuro cuando se publique |
+| **Amadeus** | Text→MIDI | ⏳ Script Modal listo, benchmark pendiente | 🔍 Candidato activo — paper ago 2025, repo público, script evaluation/amadeus/ |
 
 ### Situación actual del flujo 1 (Text→MIDI)
 
@@ -337,12 +337,59 @@ Lo que capturaría: estilo superficial (tonalidad, ritmo, fraseo). Lo que no: l�
 
 **Para explorar en una iteración futura**: `research_chatmusician_lora.py` — script Modal con QLoRA (rank=8, 4-bit), entrenado sobre las piezas del autor convertidas a ABC.
 
-### Próxima iteración
+---
 
-Decidir si:
-- Explorar **fine-tuning de estilo** sobre ChatMusician-Base con piezas propias (ver nota arriba)
-- Evaluar **Amadeus** cuando tenga repositorio público
-- Pivotar el flujo 1 hacia audio-first (MusicGen local) + transcripción MIDI
+### Amadeus — Flujo 1 candidato: Text→MIDI con difusión bidireccional
+
+- **Repositorio**: https://github.com/lingyu123-su/Amadeus
+- **Modelo HF**: `longyu1315/Amadeus-S` (~2.5 GB checkpoint + vocab JSON)
+- **Paper**: arXiv 2508.20665 (ago 2025), "Amadeus: Autoregressive Model with Bidirectional Attribute Modelling for Symbolic Music"
+- **Arquitectura**: transformer autoregresivo para secuencias de notas + decoder de difusión bidireccional para atributos intra-nota (NB encoding). T5-base como encoder de texto.
+  - **NB encoding**: los atributos de cada nota (pitch, duración, velocidad, instrumento, etc.) se modelan como un conjunto no ordenado — contrastando con el encoding secuencial de REMI/CP
+  - **MLSDES**: contrastive learning para mejorar la calidad de representaciones intermedias
+  - **CIEM**: módulo de atención para enriquecer el vector de latente de nota
+- **Dataset de entrenamiento**: LakhALLFined (subconjunto filtrado del Lakh MIDI Dataset)
+- **Ventaja clave**: 4× más rápido que modelos puramente autoregresivos (según el paper) con mejor calidad
+- **Soporte GPU**: CUDA (A10G cómodo con ~2.5 GB del checkpoint)
+- **Parámetros de generación** (verbatim de `demo/Amadeus_app_EN.py`):
+  ```python
+  threshold=0.99, temperature=1.25, generation_length=1024, sampling_method='top_p'
+  text_encoder='google/flan-t5-base'  # Amadeus-S
+  ```
+- **Limitaciones conocidas**: el modelo liberado (Amadeus-S) podría no ser el más robusto del paper; los modelos M y L no están disponibles en HuggingFace Hub aún
+
+#### Implementación Modal (`research_amadeus_modal.py`)
+- **Image**: `debian_slim(python=3.10)` + `apt install fluidsynth fluid-soundfont-gm` + `git clone https://github.com/lingyu123-su/Amadeus /amadeus` + dependencias
+- **Patch**: `midi2audio.py` parchado en build para apuntar a `/usr/share/sounds/sf2/FluidR3_GM.sf2` (soundfont de sistema) en lugar del path hardcodeado del autor
+- **Volume**: `amadeus-weights` — checkpoint + vocab + T5 encoder cacheados
+- **Setup (una vez)**: `modal run research/research_amadeus_modal.py::setup`
+- **Inferencia**: `modal run research/research_amadeus_modal.py::main --prompt "..."`
+
+#### Benchmark (8 tests en `evaluation/amadeus/`)
+
+| Test | Categoría | Prompt |
+|------|-----------|--------|
+| test01 | official-example | Electronic ambient, E major, tubular bells, Andante |
+| test02 | official-example | Electronic dreamy, B minor, drums, piano, brass, sax |
+| test03 | official-example | Soothing pop, C major, piano, flute, violin |
+| test04 | official-example | Rock/pop, A minor, pizzicato strings, 148 BPM |
+| test05 | cross-model | = text2midi/test4: trance 138 BPM, A minor (structured) |
+| test06 | cross-model | = text2midi/test6: C minor, 124 BPM, chord C7/E-Eb6-Bbm6 |
+| test07 | cross-model | = text2midi/test1: "A sad pop song with a strong piano presence." |
+| test08 | cross-model | = text2midi/test5: "A cheerful christmas song suitable for children." |
+
+#### Resultados PoC (pendiente ejecución)
+
+| Métrica | Valor |
+|---|---|
+| device | Modal A10G GPU |
+| tiempo setup (s) | pendiente |
+| tiempo inferencia (s/output) | pendiente |
+| pistas | pendiente |
+| notas | pendiente |
+| duración (s) | pendiente |
+| Calidad subjetiva (0-5) | pendiente |
+| Seguimiento de prompt | pendiente |
 
 ---
 

@@ -1,0 +1,8 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/text2midi/test1 — comparativa cross-model (prompt corto)
+Prompt: "A sad pop song with a strong piano presence."
+Category: cross-model — short-prompt
+Parameters: temperature=1.25, threshold=0.99, generation_length=1024, sampling_method=top_p
+Our command: modal run research/research_amadeus_modal.py::main --prompt "A sad pop song with a strong piano presence." --out-dir evaluation/amadeus/test07
+Reference cross-model: evaluation/text2midi/test1/generated.mid (calidad 2/5, piano presente pero progresión mecánica)
+Notes: Prompt corto/abstracto — contrasta con los prompts estructurados para los que Amadeus fue diseñado. Test de robustez ante prompts informales. Compara si Amadeus maneja mejor los prompts cortos que text2midi.
