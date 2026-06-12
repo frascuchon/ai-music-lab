@@ -243,7 +243,7 @@ Modelo de 2018, piano solo (mono-track). La rama activa de Magenta (RealTime, 20
 | **MIDI-LLM** | Text→MIDI | ✅ Evaluado (12 comparisons, CUDA A10G) | ⚠️ Mejor que text2midi pero insuficiente para producción sin postproceso |
 | **Anticipatory MT** | Variaciones/acompañamiento | ✅ Evaluado (3 tests) | ⚠️ Viable para flujo 2, latencia aceptable en CPU |
 | **MuseCoco** | Text→MIDI atributos | ✅ Evaluado (3 tests, Modal) | ⚠️ Control explícito pero interfaz rígida (atributos, no texto libre) |
-| **ChatMusician** | Text→ABC notation | ✅ Evaluado (12 tests, CUDA A10G) | ⚠️ **LIMITADO** — 7.5/12 tests (62%), mono-staff, prompts sensibles |
+| **ChatMusician** | Text→ABC notation | ✅ Evaluado (12 tests, CUDA A10G) | ⚠️ **CERRADO** — 7.5/12 (62%), mono-staff; nota fine-tuning de autor pendiente |
 | **Amadeus** (AMAAI-Lab 2025) | Text→MIDI | ⏳ Sin repo público | 🔍 Candidato futuro cuando se publique |
 
 ### Situación actual del flujo 1 (Text→MIDI)
@@ -311,7 +311,7 @@ que continuation y accompaniment funcionan con calidad aceptable (2.5/5) para us
 
 6. **ABC es mono-staff**: los outputs son melodía + anotaciones de acordes en una sola línea. No hay multi-track MIDI. Para un plugin DAW multi-instrumento, esto es una limitación fundamental.
 
-#### Veredicto: ⚠️ CANDIDATO LIMITADO
+#### Veredicto: ⚠️ CERRADO — CANDIDATO LIMITADO
 
 ChatMusician supera a text2midi y MIDI-LLM en seguimiento de estructura musical (acordes, forma) pero su salida mono-staff y la sensibilidad al phrasing lo hacen inadecuado para generación de canción completa multi-track en un contexto DAW. **Caso de uso real: generación de melodías/frases cortas con armonización condicionada** (lead sheet style), no canciones completas.
 
@@ -327,10 +327,20 @@ top_k=40, top_p=0.9, do_sample=True,
 num_beams=1, repetition_penalty=1.1, max_new_tokens=1536
 ```
 
+#### Nota pendiente: fine-tuning de estilo por autor
+
+ChatMusician-Base admite LoRA/QLoRA con muy pocas piezas propias (~20-50) por una razón estructural: el modelo ya domina la sintaxis ABC por completo, así que el fine-tuning solo necesita desplazar la distribución hacia los patrones estilísticos del autor — tonalidades frecuentes, contornos melódicos, densidad armónica, patrones rítmicos. No requiere crear un dataset de pares instrucción/respuesta: los propios ficheros ABC del autor son el texto de entrenamiento (objetivo: causal LM).
+
+El pipeline ya está casi completo: `tools/midi_abc.py` convierte las piezas del autor de MIDI a ABC, el script Modal del fine-tuning añadiría LoRA sobre `m-a-p/ChatMusician-Base`, y la inferencia usaría `research_chatmusician_modal.py` sin cambios. Coste estimado: < $1 en Modal A10G para 3-5 epochs sobre 50 piezas.
+
+Lo que capturaría: estilo superficial (tonalidad, ritmo, fraseo). Lo que no: lógica compositiva profunda ni multi-track. Suficiente para generar "ideas en el estilo de X" como punto de partida en el DAW.
+
+**Para explorar en una iteración futura**: `research_chatmusician_lora.py` — script Modal con QLoRA (rank=8, 4-bit), entrenado sobre las piezas del autor convertidas a ABC.
+
 ### Próxima iteración
 
 Decidir si:
-- **ChatMusician como herramienta parcial**: usar solo para chord-conditioned lead sheets (melodía + acordes mono-staff), no canciones completas
+- Explorar **fine-tuning de estilo** sobre ChatMusician-Base con piezas propias (ver nota arriba)
 - Evaluar **Amadeus** cuando tenga repositorio público
 - Pivotar el flujo 1 hacia audio-first (MusicGen local) + transcripción MIDI
 
@@ -412,4 +422,4 @@ uv run research_amt.py --mode both
 
 ---
 
-*Documento generado: 2026-06-01. PoC Text2midi+AMT: 2026-06-02. MIDI-LLM evaluado: 2026-06-12. MuseCoco evaluado: 2026-06-12. Text2midi evaluado y DESCARTADO: 2026-06-12. ChatMusician evaluado: 2026-06-12 (7.5/12, LIMITADO, mono-staff). Próxima iteración: ChatMusician lead-sheet parcial o pivote audio-first.*
+*Documento generado: 2026-06-01. PoC Text2midi+AMT: 2026-06-02. MIDI-LLM evaluado: 2026-06-12. MuseCoco evaluado: 2026-06-12. Text2midi evaluado y DESCARTADO: 2026-06-12. ChatMusician evaluado y CERRADO: 2026-06-12 (7.5/12, mono-staff; nota fine-tuning de autor pendiente). Próxima iteración: fine-tuning de estilo, Amadeus, o pivote audio-first.*
