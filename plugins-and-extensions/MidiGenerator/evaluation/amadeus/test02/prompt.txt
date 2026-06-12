@@ -5,3 +5,8 @@ Category: official-example — electronic-dreamy
 Parameters: temperature=1.25, threshold=0.99, generation_length=1024, sampling_method=top_p
 Our command: modal run research/research_amadeus_modal.py::main --prompt "A melodic electronic song with a moderate tempo, featuring a blend of drums, piano, brass section, alto saxophone, and synth bass. The piece is set in B minor and follows a chord progression of C#m, B, A, and B. With a duration of 252 seconds, it evokes a dreamy and relaxing atmosphere, perfect for corporate settings." --out-dir evaluation/amadeus/test02
 Notes: Prompt oficial del demo. Instrumentos: drums, piano, brass, alto sax, synth bass. B minor, C#m-B-A-B. Duración objetivo: 252s (larga). Atmosphere: dreamy, corporate.
+---
+v0: 47.6s  7 tracks  1022 notes — synth-bass, alto-sax, lead-synth, piano, tuba, brasses, soprano-sax.
+v1: 20.8s  6 tracks  1022 notes — piano, synth-bass, drums, alto-sax, brasses, synth-strings.
+Calidad: v0=3/5 (sax, bass, brass presentes; tuba inesperado; sin drums explícitos), v1=3/5 (piano, bass, drums, sax, brass todos presentes ✓)
+Instrumentación vs prompt: drums ✓(v1), piano ✓, brass ✓, alto-sax ✓, synth-bass ✓. Tono dreamy: razonable.

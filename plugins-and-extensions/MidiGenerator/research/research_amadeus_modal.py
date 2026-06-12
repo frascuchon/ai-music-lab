@@ -326,16 +326,33 @@ def _infer_one(
         )
 
     # --- Decodificar a MIDI ---
-    with tempfile.TemporaryDirectory() as tmpdir:
-        mid_path = Path(tmpdir) / "generated.mid"
-        # El decoder también intenta generar audio via FluidSynth (puede fallar sin soundfont)
-        try:
-            decoder(generated_sample, output_path=str(mid_path))
-        except Exception as e:
-            print(f"[warn] decoder error (audio?): {e}")
+    # El decoder llama a FluidSynth para audio vía subprocess.call (sin timeout).
+    # En MIDIs complejos (muchas notas/canales) FluidSynth se cuelga → monkey-patch
+    # para forzar un timeout de 30s por render (el MIDI ya habrá sido guardado antes).
+    import subprocess as _subprocess
+    _orig_call = _subprocess.call
 
-        if mid_path.exists():
-            return mid_path.read_bytes()
+    def _call_with_timeout(args, **kwargs):
+        try:
+            return _orig_call(args, timeout=30, **kwargs)
+        except _subprocess.TimeoutExpired:
+            print("[warn] FluidSynth timeout (>30s) — descartando audio")
+            return -1
+
+    _subprocess.call = _call_with_timeout
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mid_path = Path(tmpdir) / "generated.mid"
+            try:
+                decoder(generated_sample, output_path=str(mid_path))
+            except Exception as e:
+                print(f"[warn] decoder error: {e}")
+
+            if mid_path.exists():
+                return mid_path.read_bytes()
+    finally:
+        _subprocess.call = _orig_call  # restaurar tras cada inferencia
 
     return b""
 
@@ -345,7 +362,7 @@ def _infer_one(
 # ---------------------------------------------------------------------------
 @app.function(
     volumes={WEIGHTS_MOUNT: weights_vol},
-    timeout=3600,
+    timeout=7200,  # 2h: 16 outputs × ~60s gen + overhead
     gpu=DEFAULT_GPU,
 )
 def generate(

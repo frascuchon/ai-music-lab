@@ -6,3 +6,9 @@ Parameters: temperature=1.25, threshold=0.99, generation_length=1024, sampling_m
 Our command: modal run research/research_amadeus_modal.py::main --prompt "A sad pop song with a strong piano presence." --out-dir evaluation/amadeus/test07
 Reference cross-model: evaluation/text2midi/test1/generated.mid (calidad 2/5, piano presente pero progresión mecánica)
 Notes: Prompt corto/abstracto — contrasta con los prompts estructurados para los que Amadeus fue diseñado. Test de robustez ante prompts informales. Compara si Amadeus maneja mejor los prompts cortos que text2midi.
+---
+v0: 128.4s  1 track  1022 notes — solo piano (1022 notas).
+v1: 136.6s  1 track  1022 notes — solo piano (1022 notas).
+Calidad: v0=3.5/5 (solo piano ✓✓, larga duración ✓; "sad" requiere escucha subjetiva), v1=3.5/5 (idem)
+Comparativa text2midi/test1: Amadeus (3.5/5) > text2midi (2/5). El modelo siguió "strong piano presence" de forma PERFECTA — solo piano en ambas variantes.
+Nota: prompt corto/abstracto funciona bien. Amadeus es robusto ante prompts informales.

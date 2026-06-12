@@ -244,7 +244,7 @@ Modelo de 2018, piano solo (mono-track). La rama activa de Magenta (RealTime, 20
 | **Anticipatory MT** | Variaciones/acompañamiento | ✅ Evaluado (3 tests) | ⚠️ Viable para flujo 2, latencia aceptable en CPU |
 | **MuseCoco** | Text→MIDI atributos | ✅ Evaluado (3 tests, Modal) | ⚠️ Control explícito pero interfaz rígida (atributos, no texto libre) |
 | **ChatMusician** | Text→ABC notation | ✅ Evaluado (12 tests, CUDA A10G) | ⚠️ **CERRADO** — 7.5/12 (62%), mono-staff; nota fine-tuning de autor pendiente |
-| **Amadeus** | Text→MIDI | ⏳ Script Modal listo, benchmark pendiente | 🔍 Candidato activo — paper ago 2025, repo público, script evaluation/amadeus/ |
+| **Amadeus** | Text→MIDI | ✅ Evaluado (8 tests, 16 MIDIs, CUDA A10G) | ⚠️ Instrumentación superior a text2midi/MIDI-LLM pero duración inconsistente; modelo-S limitado |
 
 ### Situación actual del flujo 1 (Text→MIDI)
 
@@ -378,18 +378,55 @@ Lo que capturaría: estilo superficial (tonalidad, ritmo, fraseo). Lo que no: l�
 | test07 | cross-model | = text2midi/test1: "A sad pop song with a strong piano presence." |
 | test08 | cross-model | = text2midi/test5: "A cheerful christmas song suitable for children." |
 
-#### Resultados PoC (pendiente ejecución)
+#### Resultados evaluación completa (2026-06-12, 8 tests × 2 variantes, CUDA A10G) ⚠️ EVALUADO
 
-| Métrica | Valor |
-|---|---|
-| device | Modal A10G GPU |
-| tiempo setup (s) | pendiente |
-| tiempo inferencia (s/output) | pendiente |
-| pistas | pendiente |
-| notas | pendiente |
-| duración (s) | pendiente |
-| Calidad subjetiva (0-5) | pendiente |
-| Seguimiento de prompt | pendiente |
+| Test | Prompt | Calidad v0 | Calidad v1 | Observaciones |
+|------|--------|-----------|-----------|---------------|
+| test01 | electronic ambient, E major, tubular bells | 1.5/5 | 2.5/5 | oboe overwhelm (v0=8.7s corto); v1 textura ambient razonable |
+| test02 | electronic dreamy, B minor, drums, piano, brass, sax | 3/5 | 3/5 | brass+sax+bass presentes; v1 drums+piano+sax+brass ✓ |
+| test03 | soothing pop, piano, flute, violin, guitar | **4/5** | 2.5/5 | v0 MATCH PERFECTO (todos los instrumentos); v1 sax inesperado |
+| test04 | rock/pop, pizzicato strings, 148 BPM | 1/5 | 1.5/5 | FALLO: piccolo + organ, sin rock context |
+| test05 | trance 138 BPM, drums, distortion guitar, flute, synth | 1.5/5 | 3/5 | v0 extremadamente corto (5.5s); v1 synth+bass+flute razonable |
+| test06 | C minor, 124 BPM, brass, strings, tenor-sax, guitar, slap | **3.5/5** | 2.5/5 | v0 MATCH MUY BUENO — 9 instrumentos correctos |
+| test07 | "A sad pop song with a strong piano presence." | **3.5/5** | **3.5/5** | Solo piano en ambas variantes — seguimiento perfecto |
+| test08 | "A cheerful christmas song suitable for children." | 3/5 | 3/5 | Orquestal festivo con brass+strings+voices — apropiado |
+
+**Métricas generales:**
+- Velocidad: 18-19 tok/s en A10G → ~59s/output de 1024 tokens
+- Notas por MIDI: exactamente 1022 notas (fijo, de 1024 tokens)
+- Duración: **muy variable** (5.5s a 136.6s) — el modelo no controla duración por prompt
+- Tracks por MIDI: 1 a 13 pistas (promedio ~6)
+
+**Hallazgos clave:**
+
+1. **Seguimiento de instrumentación sustancialmente mejor que text2midi y MIDI-LLM**: test03/v0 y test06/v0 son los mejores resultados vistos en toda la evaluación de modelos MIDI. La arquitectura NB con difusión bidireccional parece mejorar la distribución de instrumentos.
+
+2. **Duración completamente inconsistente**: El modelo genera siempre ~1022 notas pero el spacing temporal varía enormemente (5.5s a 136s). El prompt "duration of 252 seconds" (test02) produjo 47s y 20s — el modelo ignora las referencias de duración.
+
+3. **Prompts cortos funcionan bien**: test07 ("A sad pop song with a strong piano presence.") → solo piano en ambas variantes. Más robusto que text2midi ante prompts informales.
+
+4. **"Rock" no se traduce a instrumentación eléctrica**: test04 (rock/pizzicato) → piccolo y organ. El dataset LakhALLFined probablemente subrepresenta el rock.
+
+5. **Comparativa cross-model**: Amadeus supera a text2midi en 3 de 4 tests comparativos (test05 v1, test06 v0, test07). Es el mejor modelo evaluado para flujo 1 (text→MIDI) en términos de seguimiento de instrumentación.
+
+6. **Limitación del modelo-S**: El modelo liberado (Amadeus-S, 280M params) es la variante más pequeña. Los modelos M y L del paper no están disponibles públicamente. La calidad mediocre en algunos tests puede ser consecuencia del tamaño reducido.
+
+**Comparativa cross-model (mismos prompts):**
+
+| Prompt estilo | text2midi | MIDI-LLM | Amadeus |
+|---|---|---|---|
+| Trance 138BPM (test05) | 2/5 | — | 3/5 (v1) |
+| C minor 124BPM chords (test06) | 2/5 | — | 3.5/5 (v0) |
+| "Sad pop + piano" (test07) | 2/5 | — | 3.5/5 |
+| "Christmas for children" (test08) | 2.5/5 | — | 3/5 |
+
+**Veredicto: ⚠️ MEJOR CANDIDATO PARA FLUJO 1 (entre los evaluados), pero insuficiente para producción**
+
+Amadeus-S supera a text2midi y MIDI-LLM en seguimiento de instrumentación — la adición del decoder de difusión bidireccional marca la diferencia. Sin embargo, la inconsistencia en duración, los fallos en géneros eléctricos/percusivos (rock, EDM con drums reales), y el hecho de que sea el modelo más pequeño (sin los modelos M/L disponibles) lo hacen inadecuado para producción sin postproceso.
+
+**Para explorar en futuras iteraciones:**
+- Cuando los modelos Amadeus-M o Amadeus-L estén disponibles (esperados con más instrumentos y mayor coherencia)
+- Postproceso de duración: ajustar el tempo MIDI para alcanzar duraciones objetivo
 
 ---
 

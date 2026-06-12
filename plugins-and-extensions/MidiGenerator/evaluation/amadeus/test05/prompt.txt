@@ -6,3 +6,8 @@ Parameters: temperature=1.25, threshold=0.99, generation_length=1024, sampling_m
 Our command: modal run research/research_amadeus_modal.py::main --prompt "An energetic and melodic electronic trance track with a space and retro vibe, featuring drums, distortion guitar, flute, synth bass, and slap bass. Set in A minor with a fast tempo of 138 BPM, the song maintains a 4/4 time signature throughout its duration." --out-dir evaluation/amadeus/test05
 Reference cross-model: evaluation/text2midi/test4/generated.mid (calidad 2/5)
 Notes: Prompt estructurado (BPM, tonalidad, 4/4) — coincide con el estilo esperado por Amadeus (entrenado en MidiCaps). Test clave para comparar Amadeus vs text2midi con el mismo prompt.
+---
+v0: 5.5s  10 tracks  1022 notes — synth-brasses dominante (865 notas), flute, horn, leads. Extremadamente corto.
+v1: 53.4s  3 tracks  1022 notes — lead-synth, synth-bass, flute.
+Calidad: v0=1.5/5 (5.5s inutilizable, aunque synth/lead presentes), v1=3/5 (synth+bass+flute razonable para trance; sin drums ni distortion-guitar)
+Comparativa text2midi/test4: Amadeus v1 (3/5) > text2midi (2/5). Synth-bass coherente para trance.
