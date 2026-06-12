@@ -81,8 +81,8 @@ image = (
         extra_index_url="https://download.pytorch.org/whl/cu121",
     )
     .pip_install(
-        # MoE layer used by the decoder
-        "st-moe-pytorch>=0.2.4",
+        # MoE layer used by the decoder (latest available is 0.1.x)
+        "st-moe-pytorch",
         "einops>=0.8",
     )
     .run_commands(
