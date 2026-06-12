@@ -1,0 +1,8 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/midi_llm/comparison_4 — comparativa cross-model
+Prompt: "A slow and relaxing classical piece featuring a church organ and French horn, likely to be used as a soundtrack in a dramatic or emotional film. Written in A minor and 4/4 time, it's quite lengthy at 361 seconds. The chord progression of E7, Am, and E contributes to the piece's sentimental atmosphere."
+Category: cross-model/midi_llm — comparison_4
+---
+v0: 214.7s  1 track  1022 notes — church-organ (1022 notas). Solo órgano.
+Calidad: 4/5 — church-organ ✓✓, A minor: probable, 4/4: sin verificar, duración 214s (prompt pedía 361s pero es la más larga generada). Mood dramático: coherente.
+Nota: mejor seguimiento de duración de toda la evaluación (214s vs 361s pedido).

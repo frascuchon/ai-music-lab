@@ -1,0 +1,7 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/midi_llm/comparison_1 — comparativa cross-model
+Prompt: "A soothing pop song with a touch of rock influence, featuring a blend of piano, pan flute, acoustic guitar, clean electric guitar, and synth strings. Set in the key of A minor with a moderate tempo, this melodic piece evokes a sense of relaxation and emotional depth, making it perfect for moments of introspection and love."
+Category: cross-model/midi_llm — comparison_1
+---
+v0: 62.3s  10 tracks  1022 notes — piano, steel-guitar (514), bass, synth-strings, trombone, voices, electric-guitar.
+Calidad: 3/5 — piano ✓, guitar ✓, strings ✓, voices ✓. Trombone inesperado, pan flute ausente. A minor razonable.

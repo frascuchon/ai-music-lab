@@ -1,0 +1,7 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/midi_llm/comparison_12 — comparativa cross-model
+Prompt: "A festive classical piece with a pop flair, this Christmas song radiates joy and motivation. The piano and string ensemble intertwine to create a melodic tapestry, set in the key of Eb major. With a lively 2/4 time signature and a brisk tempo of 122 beats per minute, the composition is characterized by the recurring chord progression of Eb and Ab throughout."
+Category: cross-model/midi_llm — comparison_12
+---
+v0: 34.0s  7 tracks  1022 notes — piano (172), bass, trumpet (104), brasses (250), drums (238), trombone (110), strings (89).
+Calidad: 3.5/5 — piano ✓, strings ✓, brass/trumpet ✓, drums (festivo). Eb major: probable. Mood festivo navideño: ✓. 2/4 y 122 BPM: sin verificar.

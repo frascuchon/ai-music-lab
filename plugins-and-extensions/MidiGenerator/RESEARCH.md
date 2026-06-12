@@ -424,6 +424,40 @@ Lo que capturaría: estilo superficial (tonalidad, ritmo, fraseo). Lo que no: l�
 
 Amadeus-S supera a text2midi y MIDI-LLM en seguimiento de instrumentación — la adición del decoder de difusión bidireccional marca la diferencia. Sin embargo, la inconsistencia en duración, los fallos en géneros eléctricos/percusivos (rock, EDM con drums reales), y el hecho de que sea el modelo más pequeño (sin los modelos M/L disponibles) lo hacen inadecuado para producción sin postproceso.
 
+**Segunda batería — cross-model completo (2026-06-12, tests 09-23):**
+
+| Test | Fuente | Prompt (resumen) | Calidad | Highlight |
+|------|--------|-----------------|---------|-----------|
+| test09 | t2m/test2 | Rock, drums, electric guitar, fast | 3/5 | electric-guitar+bass+drums ✓ |
+| test10 | t2m/test3 | Soft love song on piano | 3.5/5 | solo piano, 291s, densidad baja |
+| test11 | t2m/test7 | Heavy metal, drums, guitar | 2.5/5 | drums+distortion-guitar pero sin carácter metal |
+| test12 | mllm/c1 | Soothing pop+rock, piano, pan flute, guitar, A minor | 3/5 | piano+guitar+strings+voices |
+| test13 | mllm/c2 | Electronic rock, strings, voice, overdriven guitar, drums | 2/5 | strings+voices+drums; sax inesperado; 20s corto |
+| test14 | mllm/c3 | Cinematic, viola+violin+cello, Andante, C major | 3.5/5 | **cuerdas perfectas** (viola+violin+cello) pero 12.7s corto |
+| test15 | mllm/c4 | Classical, church organ + French horn, A minor, 361s | **4/5** | **church-organ solo, 214s** — mejor seguimiento de duración |
+| test16 | mllm/c5 | Lively pop, strings+brass+choir+piano, D major, 129 BPM | 3/5 | brass+strings+drums+voices todos presentes |
+| test17 | mllm/c6 | Rock/pop, pizzicato strings, 148 BPM, A minor | 1.5/5 | piano+strings+oboe — confirma fallo consistente de "rock" |
+| test18 | mllm/c7 | Orchestral, piano+strings+guitar+voice+electric guitar, F major | 2.5/5 | strings+guitar+bass pero voices overwhelm |
+| test19 | mllm/c8 | Electronic dark, electric guitar+tremolo strings+synth brass+drums, Eb minor | 3/5 | guitar+synth-brass+strings razonables |
+| test20 | mllm/c9 | Electronic, synth lead+strings+bass+guitar+synth brass, C minor | 2.5/5 | strings dominant; sin synth-lead claro |
+| test21 | mllm/c10 | Rock/pop, piano+distortion guitar+synth strings+drums, A minor | **3.5/5** | piano+drums+distortion-guitar ✓ — mejor rock de la evaluación |
+| test22 | mllm/c11 | Instrumental rock, Bb minor, distorted guitar+synth pads+cello+choir | 2.5/5 | distortion-guitar+drums+bass; voices > choir |
+| test23 | mllm/c12 | Christmas, Eb major, 122 BPM, piano+strings ensemble | 3.5/5 | piano+brass+drums festivo ✓ |
+
+**Conclusiones consolidadas (31 MIDIs en total):**
+
+1. **Instrumentación vs texto**: Amadeus-S supera a text2midi y MIDI-LLM en seguimiento de instrumentación. Funciona mejor con prompts MidiCaps-style que incluyen tonalidad, BPM y chord progression.
+
+2. **Cuerdas y viento maderas**: El modelo tiene especial afinidad por violin/viola/cello, oboe, y flute — probablemente sobrerrepresentados en LakhALLFined.
+
+3. **Rock/metal: punto débil consistente**: En 3 tests con contexto "rock/metal/heavy" (test09 siendo el mejor con 3/5), el modelo nunca genera guitarras distorsionadas con suficiente carácter. "Pizzicato strings" + "rock" → piano+strings (test04, test17: 1.5/5). Distortion guitar sí aparece (test11, test21) pero el ambiente es pop, no rock.
+
+4. **Duración más larga cuando la densidad es baja**: test10 (291s) y test15 (214s) son los más largos — el modelo genera notas más separadas para prompts suaves/lentos. Coherente con el concepto musical.
+
+5. **Test15 (church organ, 214s) y test14 (cuerdas, 3 instrumentos perfectos)**: los mejores resultados de la segunda batería.
+
+6. **Voices/soprano-sax overrepresented**: En varios tests aparecen como instrumentos dominantes sin estar en el prompt — posible sesgo del dataset.
+
 **Para explorar en futuras iteraciones:**
 - Cuando los modelos Amadeus-M o Amadeus-L estén disponibles (esperados con más instrumentos y mayor coherencia)
 - Postproceso de duración: ajustar el tempo MIDI para alcanzar duraciones objetivo
