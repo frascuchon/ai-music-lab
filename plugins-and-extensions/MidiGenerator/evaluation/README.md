@@ -19,11 +19,13 @@ evaluation/
 │   └── test3/  "A soft love song on piano."                         [Demo C]
 │
 ├── midi_llm/              # 12 samples del demo oficial https://midi-llm-demo.vercel.app
-│   ├── comparison_1..12/  prompts + 3 refs de audio oficiales por carpeta (bf16/fp8/text2midi)
+│   ├── comparison_1..12/  prompts + refs oficiales + generated_cuda_v{0..3} + generated_local_mps_v{0..3}
 │   ├── _orphan_sunday_picnic/  test3 anterior (jazz Sunday picnic) — sin ref oficial
 │   ├── download_demo_references.sh  descarga los 12 sets desde Vercel
 │   ├── build_prompts.py             genera prompt.txt canónico en cada carpeta
-│   └── regenerate_all.sh            regenera MIDIs locales vía research_midi_llm.py
+│   ├── regenerate_all.sh            regenera MIDIs locales vía research_midi_llm.py (MPS)
+│   ├── render_cuda_mp3.sh           renderiza generated_cuda_v*.mid → mp3 con MuseScore
+│   └── research_midi_llm_modal.py   genera en Modal A10G vía vLLM (pipeline idéntico al demo)
 │
 ├── amt/                   # Demos de https://crfm.stanford.edu/2023/06/16/...
 │   ├── test1/  Continuation (20s) — referencia del sitio: prompt/system4/0-clip-v0
@@ -44,12 +46,14 @@ evaluation/
 oficial) y `generated.mp3` (nuestro script). Ambos derivan del mismo MIDI-to-audio pipeline
 (MuseScore), por lo que la comparación es directa en estructura melódica y armónica.
 
-**MIDI-LLM (comparison_1-12)**: el demo oficial Vercel expone 3 audios de referencia por
-prompt: `reference_official_bf16.mp3` (referencia principal), `reference_official_fp8.mp3`
-(cuantizado FP8) y `reference_text2midi_competitor.mp3` (comparador text2midi). No hay
-MIDI ground-truth descargable (solo el backend ngrok de la API). Comparar los mp3 generados
-localmente (`generated_local_mps_v0.mp3`) contra `reference_official_bf16.mp3`.
-Mapeo histórico: test1 → comparison_10, test2 → comparison_4, test3 → `_orphan_sunday_picnic/`.
+**MIDI-LLM (comparison_1-12)**: cada carpeta tiene 3 capas de audio:
+- `reference_official_bf16.mp3` — generación del demo oficial (referencia principal)
+- `generated_cuda_v{0..3}.mp3` — nuestras generaciones en Modal A10G vía vLLM (pipeline idéntico al demo)
+- `generated_local_mps_v{0..3}.mp3` — generaciones en MPS bfloat16 (calidad inferior, para contraste)
+
+La comparación relevante es `reference_official_bf16` vs `generated_cuda_v*`.
+Las versiones MPS presentan colapso a percusión (drums solistas) por diferencias numéricas
+entre bfloat16 CUDA y bfloat16 MPS — documentado en el diagnóstico de `research_midi_llm_modal.py`.
 
 **AMT (test1-3)**: el sitio oficial publica audio de demos con el modelo real. Comparar
 `reference_official_continuation.mp3` / `reference_official_accompaniment.mp3` contra
@@ -74,25 +78,54 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 | text2midi | test1 | generado | ~400s (2000 tokens, MPS) | ver prompt.txt |
 | text2midi | test2 | generado | ~400s | ver prompt.txt |
 | text2midi | test3 | generado | ~400s | ver prompt.txt |
-| midi_llm | comparison_1  | ✅ MPS | inf 124s | 6 pistas, 669 notas, 20.0s — pop/rock soothing A minor |
-| midi_llm | comparison_2  | ✅ MPS | inf 121s | 6 pistas, 682 notas, 21.9s — electronic rock corporate A minor |
-| midi_llm | comparison_3  | ✅ MPS | inf 118s | 4 pistas, 682 notas, 26.8s — classical cinematic strings C major |
-| midi_llm | comparison_4  | ✅ MPS | inf ~150s | 5 pistas — classical organ+horn A minor (ex-test2) |
-| midi_llm | comparison_5  | ✅ MPS | inf 117s | 5 pistas, 679 notas, 41.8s — lively pop D major 129 BPM |
-| midi_llm | comparison_6  | ✅ MPS | inf 118s | 5 pistas, 682 notas, 26.8s — rock/pop pizzicato A minor 148 BPM |
-| midi_llm | comparison_7  | ✅ MPS | inf 117s | 6 pistas, 682 notas, 8.3s — orchestral soundtrack F major |
-| midi_llm | comparison_8  | ✅ MPS | inf 119s | 3 pistas, 639 notas, 20.3s — dark cinematic electronic Eb minor |
-| midi_llm | comparison_9  | ✅ MPS | inf 117s | 6 pistas, 682 notas, 17.4s — electronic space C minor |
-| midi_llm | comparison_10 | ✅ MPS | inf 148s | 5 pistas, 682 notas — rock A minor (ex-test1) |
-| midi_llm | comparison_11 | ✅ MPS | inf 114s | 3 pistas, 509 notas, 20.5s — slow rock Bb minor epic |
-| midi_llm | comparison_12 | ✅ MPS | inf 115s | 4 pistas, 588 notas, 21.4s — Christmas classical Eb major |
-| midi_llm | _orphan_sunday_picnic | archivado | ~150s | sin ref oficial — jazz Sunday picnic |
+| midi_llm | comparison_1..12 | ✅ CUDA A10G | ~20s/prompt×4 (414s total) | 48 MIDIs, pipeline idéntico al demo |
+| midi_llm | comparison_1..12 | ✅ MPS (ref) | ~120-180s/gen | generaciones locales para contraste |
+| midi_llm | _orphan_sunday_picnic | archivado | — | sin ref oficial — jazz Sunday picnic |
 | amt | test1 | ✅ | carga 1.0s, inf 896.5s (CPU) | continuation 20s, fixture=prompt oficial (73 notas) |
 | amt | test2 | ✅ (Modal A10G) | inf v0:151s v1:127s v2:231s | accompaniment 20s, 3 candidatos, input_fixture.mid (138 notas piano completo) |
 | amt | test3 | ✅ (Modal A10G) | inf v0:1.4s v1:0.8s v2:0.7s | accompaniment 15s, 3 candidatos, fixture jazz Bb |
 | musecoco | test1 | ✅ (Modal) | ~2 min (A100-40GB) | jazz piano |
 | musecoco | test2 | ✅ (Modal) | ~2 min | ID 109 sax+drum |
 | musecoco | test3 | ✅ (Modal) | ~2 min | ID 2273 piano+bass |
+
+---
+
+## Evaluación cualitativa — MIDI-LLM ✅ Completada (2026-06-12)
+
+### Pipeline correcto: vLLM + CUDA BF16 (Modal A10G)
+
+Las generaciones CUDA (`generated_cuda_v*`) son comparables en calidad compositiva a
+las referencias del demo (`reference_official_bf16.mp3`): instrumentación variada, coherencia
+rítmica, y seguimiento del prompt (género, tonalidad, estado de ánimo).
+
+### Diagnóstico: MPS bfloat16 vs CUDA bfloat16
+
+Las generaciones MPS (`generated_local_mps_v*`) presentan colapso a percusión (drums
+solistas repetidos) porque MPS implementa las operaciones bfloat16 de forma numéricamente
+distinta a CUDA. El modelo fue entrenado en CUDA BF16 — las diferencias se acumulan en las
+16 capas de atención y colapsan la distribución de probabilidad hacia los tokens de percusión.
+
+El problema **no se resuelve** cambiando a float16 o float32 en MPS (ambos empeoran el resultado).
+La única solución viable es CUDA, implementada vía Modal.
+
+### Pipeline de referencia confirmado
+
+```
+vLLM 0.11.0 + torch 2.8.0 + CUDA BF16
+temperature=1.0  top_p=0.98  max_tokens=2046  n=4
+allowed_token_ids=[128256..183281]  (tokens MIDI únicamente)
+```
+
+### Valoración general del modelo
+
+- Buena respuesta a prompts detallados (tonalidad, instrumentos, mood, tempo)
+- La instrumentación específica (pizzicato strings, church organ, etc.) se refleja
+  con fiabilidad cuando el pipeline es correcto (CUDA)
+- Tempo "slow/relaxing" mejora notablemente respecto a MPS: duraciones más largas,
+  notas más espaciadas
+- Límite estructural: máx 682 tripletes (2046 tokens) → 20-100s según densidad.
+  Piezas "361 seconds" del prompt son imposibles con el modelo actual
+- No hay modelo más grande disponible públicamente (solo 1B)
 
 ---
 
@@ -144,5 +177,7 @@ contexto de 5s para el modelo.
   → Instalados via `uv pip install`. La centinela `.deps_installed` se había creado antes
   de instalar todas las deps; en producción habrá que incluirlas en `pyproject.toml`.
 - `amt`: sin issues (CPU, float32, funciona en Mac)
-- `midi_llm`: sin issues (MPS, bfloat16, funciona en M1+)
+- `midi_llm`: MPS bfloat16 produce colapso a percusión por diferencias numéricas con CUDA BF16
+  (entorno de entrenamiento). Solución: Modal A10G vía `research_midi_llm_modal.py`.
+  vLLM 0.6.4 incompatible con el tokenizer extendido (183K vocab) → usar vLLM 0.11.0.
 - `musecoco`: requiere Modal (CUDA, fairseq) — no ejecutable en Mac local
