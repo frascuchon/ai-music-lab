@@ -20,9 +20,11 @@ Notas de compatibilidad Mac:
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 REPO_DIR = os.path.join(os.path.dirname(__file__), "midi_llm_repo")
 REPO_URL = "https://github.com/slSeanWU/MIDI-LLM.git"
@@ -61,17 +63,54 @@ def _mem_mb():
     return psutil.Process().memory_info().rss / 1024 / 1024
 
 
+def _make_midi_logits_processor(llama_vocab_size: int, midi_vocab_size: int):
+    """
+    Returns a LogitsProcessor that restricts sampling to MIDI tokens only.
+
+    MIDI tokens occupy positions [llama_vocab_size, llama_vocab_size+midi_vocab_size).
+    All Llama text tokens are set to -inf at each decoding step, matching vLLM's
+    allowed_token_ids behaviour and preventing probability mass from leaking into
+    invalid (non-MIDI) tokens.
+    """
+    from transformers import LogitsProcessor
+
+    class MidiOnlyLogitsProcessor(LogitsProcessor):
+        def __init__(self, start: int, end: int):
+            self._start = start  # first valid MIDI token index
+            self._end = end      # one past last valid MIDI token index
+
+        def __call__(self, input_ids, scores):
+            # Zero out text tokens (0..start-1)
+            scores[:, : self._start] = float("-inf")
+            # Zero out anything beyond MIDI range (shouldn't exist, defensive)
+            if scores.shape[-1] > self._end:
+                scores[:, self._end :] = float("-inf")
+            return scores
+
+    return MidiOnlyLogitsProcessor(
+        start=llama_vocab_size,
+        end=llama_vocab_size + midi_vocab_size,
+    )
+
+
 def generate(
     prompt: str,
     out_path: str,
-    temperature: float = 0.95,
+    temperature: float = 1.0,
     top_p: float = 0.98,
-    max_tokens: int = 1024,
+    max_tokens: int = 2046,
+    n_outputs: int = 4,
     device_override: str | None = None,
 ):
+    """
+    Generate n_outputs MIDI files from a single prompt.
+
+    If n_outputs == 1, writes exactly to out_path.
+    If n_outputs > 1, writes to out_path (v0) and out_path_v1/v2/... siblings,
+    replacing any existing _vN suffix so the naming stays clean.
+    """
     _clone_repo_if_needed()
 
-    # exponer midi_llm/ al path
     if REPO_DIR not in sys.path:
         sys.path.insert(0, REPO_DIR)
 
@@ -82,14 +121,13 @@ def generate(
         LLAMA_VOCAB_SIZE,
         save_generation,
     )
-    from pathlib import Path
 
     device = device_override if device_override else _device()
-    dtype = torch.bfloat16  # soportado en MPS y CUDA; float32 en CPU puro si falla
+    dtype = torch.bfloat16
 
     print(f"[info] device={device}  dtype={dtype}  model={MODEL_ID}")
 
-    # --- carga del modelo ---
+    # --- carga del modelo (una sola vez) ---
     t0 = time.time()
     mem_before = _mem_mb()
 
@@ -104,93 +142,106 @@ def generate(
     mem_load = _mem_mb() - mem_before
     print(f"[timing] carga modelo: {t_load:.1f}s | RAM delta: {mem_load:.0f} MB")
 
-    # --- preparar input ---
+    # --- preparar input ids (solo una vez) ---
     full_prompt = SYSTEM_PROMPT + prompt + " "
     llama_input = tokenizer(full_prompt, return_tensors="pt", padding=False)
-    input_ids = llama_input["input_ids"]
+    input_ids_base = llama_input["input_ids"]
 
-    # añadir token BOS de MIDI (igual que en el script original)
     midi_bos = torch.tensor([[AMT_GPT2_BOS_ID + LLAMA_VOCAB_SIZE]])
-    input_ids = torch.cat([input_ids, midi_bos], dim=1).to(device)
+    input_ids_base = torch.cat([input_ids_base, midi_bos], dim=1).to(device)
 
-    # --- inferencia ---
-    t1 = time.time()
+    logits_processor = [
+        _make_midi_logits_processor(LLAMA_VOCAB_SIZE, AMT_GPT2_BOS_ID)
+    ]
 
-    with torch.no_grad():
-        outputs = model.generate(
-            input_ids=input_ids,
-            do_sample=True,
-            max_new_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            num_return_sequences=1,
-            pad_token_id=tokenizer.pad_token_id,
+    # --- output paths ---
+    p = Path(out_path)
+    stem_clean = p.stem
+    # strip existing _vN suffix so we can re-run cleanly
+    import re
+    stem_clean = re.sub(r"_v\d+$", "", stem_clean)
+
+    def nth_path(i: int) -> Path:
+        if n_outputs == 1:
+            return p
+        return p.parent / f"{stem_clean}_v{i}{p.suffix}"
+
+    # --- generación secuencial (evita x4 KV-cache en MPS) ---
+    saved = []
+    for i in range(n_outputs):
+        t1 = time.time()
+        print(f"\n[gen {i+1}/{n_outputs}] generating...")
+
+        with torch.no_grad():
+            outputs = model.generate(
+                input_ids=input_ids_base,
+                do_sample=True,
+                max_new_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                num_return_sequences=1,
+                pad_token_id=tokenizer.pad_token_id,
+                logits_processor=logits_processor,
+            )
+
+        t_infer = time.time() - t1
+        print(f"[timing] inferencia: {t_infer:.1f}s")
+
+        prompt_len = input_ids_base.shape[1]
+        generated = outputs[0, prompt_len:]
+        midi_tokens = (generated - LLAMA_VOCAB_SIZE).cpu().tolist()
+
+        out_dir = p.parent / "_mllm_tmp"
+        ok = save_generation(
+            tokens=midi_tokens,
+            prompt=prompt,
+            output_dir=out_dir,
+            generation_idx=1,
+            synthesize=False,
+            validate=True,
         )
 
-    t_infer = time.time() - t1
-    print(f"[timing] inferencia: {t_infer:.1f}s")
+        if ok:
+            tmp_mid = out_dir / "gen_1.mid"
+            dest = nth_path(i)
+            shutil.move(str(tmp_mid), str(dest))
+            for f in out_dir.iterdir():
+                f.unlink(missing_ok=True)
+            out_dir.rmdir()
+            print(f"[output] MIDI guardado en: {dest.absolute()}")
+            saved.append(dest)
 
-    # --- convertir tokens → MIDI ---
-    prompt_len = input_ids.shape[1]
-    generated = outputs[0, prompt_len:]
-    midi_tokens = (generated - LLAMA_VOCAB_SIZE).cpu().tolist()
+            try:
+                import pretty_midi
+                midi_obj = pretty_midi.PrettyMIDI(str(dest))
+                n_inst = len(midi_obj.instruments)
+                n_notes = sum(len(ins.notes) for ins in midi_obj.instruments)
+                instrs = [ins.program for ins in midi_obj.instruments]
+                dur = midi_obj.get_end_time()
+                print(f"[midi]   {n_inst} pistas | {n_notes} notas | {dur:.1f}s | instrumentos: {instrs}")
+            except Exception as e:
+                print(f"[midi]   no se pudo inspeccionar: {e}")
+        else:
+            print(f"[warn] generación {i+1} falló validación — omitida")
 
-    # save_generation espera un directorio; usamos un tmp subdir
-    out_dir = Path(out_path).parent / "_mllm_tmp"
-    ok = save_generation(
-        tokens=midi_tokens,
-        prompt=prompt,
-        output_dir=out_dir,
-        generation_idx=1,
-        synthesize=False,
-        validate=True,
-    )
-
-    if ok:
-        import shutil
-        tmp_mid = out_dir / "gen_1.mid"
-        shutil.move(str(tmp_mid), out_path)
-        # limpiar archivos auxiliares del tmp dir
-        for f in out_dir.iterdir():
-            f.unlink(missing_ok=True)
-        out_dir.rmdir()
-        print(f"[output] MIDI guardado en: {os.path.abspath(out_path)}")
-    else:
-        print("[error] save_generation falló — los tokens generados no pasaron validación.")
-        print("        Prueba con --temperature 0.9 o --max_tokens 2046")
-        sys.exit(1)
-
-    # inspeccionar MIDI generado
-    try:
-        import pretty_midi
-        midi_obj = pretty_midi.PrettyMIDI(out_path)
-        n_instruments = len(midi_obj.instruments)
-        n_notes = sum(len(i.notes) for i in midi_obj.instruments)
-        instrs = [i.program for i in midi_obj.instruments]
-        duration = midi_obj.get_end_time()
-        print(f"[midi]   {n_instruments} pistas | {n_notes} notas | {duration:.1f}s | instrumentos: {instrs}")
-    except Exception as e:
-        print(f"[midi]   no se pudo inspeccionar: {e}")
-
-    # resumen para RESEARCH.md
-    print("\n--- RESULTADOS (copiar en RESEARCH.md) ---")
-    print(f"  prompt:          {prompt}")
-    print(f"  device:          {device}")
-    print(f"  carga (s):       {t_load:.1f}")
-    print(f"  inferencia (s):  {t_infer:.1f}")
-    print(f"  RAM delta (MB):  {mem_load:.0f}")
-    print(f"  output:          {os.path.abspath(out_path)}")
+    print(f"\n[done] {len(saved)}/{n_outputs} outputs guardados")
+    print(f"  prompt: {prompt[:100]}...")
+    print(f"  device: {device} | temperatura: {temperature} | top_p: {top_p}")
+    print(f"  outputs: {[str(s) for s in saved]}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="PoC MIDI-LLM en Mac")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
-    parser.add_argument("--out", default="out_mllm.mid")
-    parser.add_argument("--temperature", type=float, default=0.95,
-                        help="Temperatura de muestreo (default 0.95; probar 0.8-1.0)")
+    parser.add_argument("--out", default="out_mllm_v0.mid",
+                        help="Ruta del primer output (v0); los siguientes se numeran _v1, _v2...")
+    parser.add_argument("--temperature", type=float, default=1.0,
+                        help="Temperatura de muestreo (default 1.0 — igual que el script oficial)")
     parser.add_argument("--top_p", type=float, default=0.98)
-    parser.add_argument("--max_tokens", type=int, default=1024,
-                        help="Tokens MIDI a generar (default 1024; max 2046)")
+    parser.add_argument("--max_tokens", type=int, default=2046,
+                        help="Tokens MIDI a generar (default 2046)")
+    parser.add_argument("--n_outputs", type=int, default=4,
+                        help="Número de MIDIs a generar (default 4)")
     parser.add_argument("--device", default=None,
                         help="Forzar dispositivo: cpu, mps, cuda (auto si se omite)")
     args = parser.parse_args()
@@ -201,6 +252,7 @@ def main():
         temperature=args.temperature,
         top_p=args.top_p,
         max_tokens=args.max_tokens,
+        n_outputs=args.n_outputs,
         device_override=args.device,
     )
 
