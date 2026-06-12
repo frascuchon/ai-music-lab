@@ -5,5 +5,5 @@ Reference: reference_demo.png — output renderizado del demo oficial (solo visu
 Category: form-conditioning
 Our command: modal run research/research_chatmusician_modal.py::main --prompt "Craft a musical work that incorporates the given musical pattern as a central element. Binary, Sectional: Verse/Chorus" --out-dir evaluation/chatmusician/test04
 Device: CUDA A10G, fp16
-Result: pendiente
-Notes: Forma binaria con estructura Verso/Estribillo. Evaluar si el ABC tiene secciones A/B claramente diferenciadas con part markers [Part "Verse"] / [Part "Chorus"] o equivalente.
+Result: ✅ 2 MIDIs generados (v0: 4531B, v1: 4599B). Estructura binaria con :: separador.
+Notes: Dos secciones claramente diferenciadas (:: doble barra de repetición). Chords D/G/Em/A7/Bm. Es la generación más larga y estructurada (314/319 chars ABC). Calidad: 3.5/5

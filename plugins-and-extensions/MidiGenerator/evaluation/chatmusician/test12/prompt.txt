@@ -6,5 +6,5 @@ Input: input_abc.txt — melodía en G mayor con acordes parciales, reel (6/8) �
 Category: melody-harmonization
 Our command: modal run research/research_chatmusician_modal.py::main --prompt "Develop a series of chord pairings that amplify the harmonious elements in the given music piece." --input-abc-file evaluation/chatmusician/test12/input_abc.txt --out-dir evaluation/chatmusician/test12
 Device: CUDA A10G, fp16
-Result: pendiente
-Notes: La melodía ya tiene acordes esporádicos ("^(C)", "^(D7)"). La instrucción pide amplificar/completar la armonización. Ejemplo exacto del HF model card de ChatMusician.
+Result: ❌ 0 MIDIs. Modelo genera fragmentos de ABC de la melodía input sin X: header completo.
+Notes: La melodía con acordes parciales preexistentes confunde al modelo. En lugar de ampliar la armonización, genera continuaciones del fragmento input. Posiblemente el input más largo (16 compases + acordes) excede la ventana de atención efectiva.

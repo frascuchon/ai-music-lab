@@ -196,15 +196,48 @@ def _abc_to_midi_bytes(abc_text: str) -> bytes:
         return midi_path.read_bytes()
 
 
-def _infer_one(model, tokenizer, instruction: str) -> tuple[bytes, str]:
+def _extract_abc(response: str) -> str:
+    """
+    Extrae la primera sección ABC de la respuesta del modelo.
+
+    Estrategia en dos pasos:
+    1. Regex oficial del web demo (X:\\d+\\n...): captura la mayoría de casos.
+    2. Fallback: el modelo a veces omite el encabezado X: pero genera los
+       demás campos (M:, L:, K:). Se captura el bloque y se antepone X:1.
+       El bloque debe contener al menos M: o K: para ser ABC válido.
+    """
+    # 1. Regex oficial (verbatim de chatmusician_web_demo.py)
+    matches = re.findall(r"(X:\d+\n(?:[^\n]*\n)+)", response + "\n")
+    if matches:
+        return matches[0]
+
+    # 2. Fallback: bloque con headers ABC reconocidos pero sin X:
+    #    Busca la primera línea con patrón "Letra: contenido" (campo ABC)
+    m = re.search(
+        r"^([TMKLQRBCGSPFHZONU]:[^\n]*(?:\n[^\n]*)*)",
+        response + "\n",
+        re.MULTILINE,
+    )
+    if m:
+        candidate = m.group(0) + "\n"
+        if re.search(r"^[MK]:", candidate, re.MULTILINE):
+            return "X:1\n" + candidate
+
+    raise ValueError(f"No ABC notation found in response:\n{response[:500]}")
+
+
+def _infer_one(model, tokenizer, instruction: str, temperature: float = 0.2) -> tuple[bytes, str]:
     """
     Genera MIDI para una instrucción y devuelve (midi_bytes, abc_text).
 
     Prompt template (verbatim de predict.py):
         "Human: {instruction} </s> Assistant: "
 
-    ABC regex (verbatim de chatmusician_web_demo.py):
-        r'(X:\\d+\\n(?:[^\\n]*\\n)+)'
+    GenerationConfig (verbatim del model card):
+        temperature=0.2 (default), top_k=40, top_p=0.9, repetition_penalty=1.1
+
+    Para prompts que producen respuestas en modo ensayo (teoría musical en lugar de ABC),
+    incrementar temperature a 0.5-0.7 mejora la tasa de éxito.
     """
     import torch
     from transformers import GenerationConfig
@@ -214,7 +247,7 @@ def _infer_one(model, tokenizer, instruction: str) -> tuple[bytes, str]:
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
     generation_config = GenerationConfig(
-        temperature=0.2,
+        temperature=temperature,
         top_k=40,
         top_p=0.9,
         do_sample=True,
@@ -239,13 +272,7 @@ def _infer_one(model, tokenizer, instruction: str) -> tuple[bytes, str]:
         skip_special_tokens=True,
     )
 
-    # Extraer ABC notation (verbatim de chatmusician_web_demo.py)
-    abc_pattern = r"(X:\d+\n(?:[^\n]*\n)+)"
-    matches = re.findall(abc_pattern, response + "\n")
-    if not matches:
-        raise ValueError(f"No ABC notation found in response:\n{response[:500]}")
-
-    abc_text = matches[0]
+    abc_text = _extract_abc(response)
     midi_bytes = _abc_to_midi_bytes(abc_text)
     return midi_bytes, abc_text
 
@@ -261,16 +288,20 @@ def _infer_one(model, tokenizer, instruction: str) -> tuple[bytes, str]:
 def generate(
     prompts: list[str],
     n_outputs: int = 2,
+    temperature: float = 0.2,
 ) -> list[list[tuple[bytes, str]]]:
     """
     Genera n_outputs variantes para cada prompt.
+
+    temperature: 0.2 (default, verbatim model card) — subir a 0.5-0.7 para
+    prompts abstractos que producen respuestas en modo ensayo.
 
     Returns: list[prompt] → list[output] → (midi_bytes, abc_text)
     """
     import time
 
     model, tokenizer = _load_model()
-    print(f"[modal] n_prompts={len(prompts)}  n_outputs={n_outputs}")
+    print(f"[modal] n_prompts={len(prompts)}  n_outputs={n_outputs}  temperature={temperature}")
 
     results = []
     for i, prompt in enumerate(prompts):
@@ -278,7 +309,7 @@ def generate(
         for v in range(n_outputs):
             t0 = time.time()
             try:
-                midi_bytes, abc_text = _infer_one(model, tokenizer, prompt)
+                midi_bytes, abc_text = _infer_one(model, tokenizer, prompt, temperature)
                 elapsed = time.time() - t0
                 print(
                     f"[modal] [{i+1}/{len(prompts)}] v{v}: {len(midi_bytes)} bytes MIDI  "
@@ -303,6 +334,7 @@ def main(
     input_file: str = "",
     out_dir: str = ".",
     n_outputs: int = 2,
+    temperature: float = 0.2,
     force: bool = False,
 ):
     """
@@ -342,7 +374,7 @@ def main(
     print(f"[main] n_outputs={n_outputs}")
     print(f"[main] Instruction (primeros 200 chars): {instruction[:200]}")
 
-    results = generate.remote([instruction], n_outputs=n_outputs)
+    results = generate.remote([instruction], n_outputs=n_outputs, temperature=temperature)
     output_list = results[0]
 
     for v, (midi_bytes, abc_text) in enumerate(output_list):
@@ -366,6 +398,7 @@ def main(
 def eval_all(
     eval_dir: str = "../evaluation/chatmusician",
     n_outputs: int = 2,
+    temperature: float = 0.2,
     force: bool = False,
     only: str = "",
 ):
@@ -440,9 +473,9 @@ def eval_all(
         return
 
     print(f"[eval_all] {len(instructions)} tests a generar: {[d.name for d in valid_dirs]}")
-    print(f"[eval_all] n_outputs={n_outputs}")
+    print(f"[eval_all] n_outputs={n_outputs}  temperature={temperature}")
 
-    results = generate.remote(instructions, n_outputs=n_outputs)
+    results = generate.remote(instructions, n_outputs=n_outputs, temperature=temperature)
 
     for td, output_list in zip(valid_dirs, results):
         for v, (midi_bytes, abc_text) in enumerate(output_list):

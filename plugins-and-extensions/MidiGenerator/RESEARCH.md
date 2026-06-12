@@ -243,7 +243,7 @@ Modelo de 2018, piano solo (mono-track). La rama activa de Magenta (RealTime, 20
 | **MIDI-LLM** | Text→MIDI | ✅ Evaluado (12 comparisons, CUDA A10G) | ⚠️ Mejor que text2midi pero insuficiente para producción sin postproceso |
 | **Anticipatory MT** | Variaciones/acompañamiento | ✅ Evaluado (3 tests) | ⚠️ Viable para flujo 2, latencia aceptable en CPU |
 | **MuseCoco** | Text→MIDI atributos | ✅ Evaluado (3 tests, Modal) | ⚠️ Control explícito pero interfaz rígida (atributos, no texto libre) |
-| **ChatMusician** | Text→ABC notation | 🔄 Benchmark preparado (12 tests, pendiente ejecución Modal) | 🔍 Candidato en evaluación |
+| **ChatMusician** | Text→ABC notation | ✅ Evaluado (12 tests, CUDA A10G) | ⚠️ **LIMITADO** — 7.5/12 tests (62%), mono-staff, prompts sensibles |
 | **Amadeus** (AMAAI-Lab 2025) | Text→MIDI | ⏳ Sin repo público | 🔍 Candidato futuro cuando se publique |
 
 ### Situación actual del flujo 1 (Text→MIDI)
@@ -266,38 +266,71 @@ Las alternativas son:
 **Anticipatory MT** sigue siendo la opción para flujo 2. La evaluación (test1-3) confirma
 que continuation y accompaniment funcionan con calidad aceptable (2.5/5) para uso exploratorio.
 
-### ChatMusician — Flujo 1 alternativo via ABC notation
+### ChatMusician — Flujo 1 alternativo via ABC notation ✅ EVALUADO (2026-06-12)
 
 - **Repositorio**: https://github.com/hf-lin/ChatMusician
 - **Modelo HF**: `m-a-p/ChatMusician` (LLaMA 2 7B, ~13 GB safetensors fp16)
 - **Paper**: ISMIR 2024, "ChatMusician: Understanding and Generating Music Intrinsically with LLM"
 - **Arquitectura**: continual pretraining + SFT de LLaMA 2 7B sobre corpus MusicPile (4B tokens de ABC notation + teoría musical)
 - **Output**: ABC notation → conversión a MIDI via `abc2midi` (herramienta `abcmidi`)
-- **Capacidades únicas**: condicionamiento por acordes, formas musicales (Verse/Chorus/Bridge), motivos, armonización de melodías
-- **Limitación conocida**: ABC notation es mono-staff (una sola pista); multi-track limitado a voz+acordes en el mismo staff
+- **Capacidades únicas**: condicionamiento por acordes, formas musicales, motivos, armonización de melodías
+- **Limitación estructural**: ABC notation es mono-staff (una sola pista); no multi-track
 
-**Benchmark preparado** (2026-06-12):
-- 12 tests en `evaluation/chatmusician/` cubriendo 4 categorías: chord-conditioning, form-conditioning, motif-form, melody-harmonization
-- Script Modal: `research/research_chatmusician_modal.py` (A10G, fp16, abcmidi incluido)
-- Herramienta MIDI↔ABC: `research/tools/midi_abc.py`
-- Referencias visuales (PNG) del demo oficial; no hay MIDIs oficiales descargables
-- **Próximo paso**: ejecutar `modal run research/research_chatmusician_modal.py::eval_all --eval-dir evaluation/chatmusician --n-outputs 2`
+**Benchmark ejecutado** (12 tests, Modal A10G fp16, 2 outputs por test):
+
+| Test | Categoría | Resultado | Calidad |
+|------|-----------|-----------|---------|
+| test01 | chord Am-F-C-G | ✅ 2/2 MIDIs | 2.5/5 — Am/G/Em (F ignorado) |
+| test02 | chord Dm-C | ✅ 2/2 MIDIs | 3/5 — Dm/C/Gm/A7 (coherente) |
+| test03 | chord D-G-C-B | ✅ 2/2 MIDIs | 3/5 — D/G/C (B ignorado, Dmix) |
+| test04 | form Binary v1 | ✅ 2/2 MIDIs | 3.5/5 — Mejor output: binario real con :: |
+| test05 | form Ternary | ❌ 0/2 | Modo ensayo (persistente a temp=0.5) |
+| test06 | form Binary v2 | ✅ 2/2 MIDIs | 3/5 — Requirió temp=0.5 |
+| test07 | motif AB + motivo | ⚠️ 1/2 MIDIs | 2/5 — Motivo reconocible, sin contraste A/B |
+| test08 | motif Bin+motivo 3/4 | ✅ 2/2 MIDIs | 3/5 — Motivo presente, armonía densa |
+| test09 | motif Only One Section | ❌ 0/2 | "Only One Section" → respuesta de décadas |
+| test10 | harmonize G major | ❌ 0/2 | Output mínimo (1 barra sin X:) |
+| test11 | harmonize D major | ✅ 2/2 MIDIs | 3/5 — v1: melodía original + D/Em/A7 |
+| test12 | harmonize G+chords | ❌ 0/2 | Fragmento continuado del input |
+
+**Score global: 7.5/12 (62.5%)**
+
+**Calidad media de los exitosos: 2.9/5** — mejor que text2midi (1.5-2/5) para tareas estructuradas.
+
+#### Hallazgos clave
+
+1. **Chord conditioning funciona bien**: el modelo sigue los acordes del prompt con buena coherencia armónica. Los acordes generados son siempre musicalmente válidos aunque no idénticos al prompt.
+
+2. **Form conditioning: sensible al phrasing**: "Binary + Verse/Chorus" con el verbo correcto genera piezas binarias reales (test04 ✅). Variantes abstractas o "Ternary" disparan modo ensayo — el MusicPile contiene muchos artículos de teoría musical y con `temperature=0.2` el modelo prefiere respuestas académicas.
+
+3. **Motif conditioning: mixto**: el motivo musical es reproducible en algunas condiciones (test08 ✅) pero el modelo no garantiza contraste de secciones. "Only One Section" como modificador confunde el model (test09 ❌).
+
+4. **Harmonization: funcionó parcialmente**: test11 v1 muestra armonización genuina (melodía preservada + acordes añadidos). test10 y test12 fallan — posiblemente la tonalidad G con pickup bar o los inputs más largos exceden la atención efectiva.
+
+5. **temperature=0.2 demasiado baja para prompts abstractos**: subir a 0.5 convierte test06 de fallo en éxito. La configuración oficial del model card es conservadora para tareas creativas.
+
+6. **ABC es mono-staff**: los outputs son melodía + anotaciones de acordes en una sola línea. No hay multi-track MIDI. Para un plugin DAW multi-instrumento, esto es una limitación fundamental.
+
+#### Veredicto: ⚠️ CANDIDATO LIMITADO
+
+ChatMusician supera a text2midi y MIDI-LLM en seguimiento de estructura musical (acordes, forma) pero su salida mono-staff y la sensibilidad al phrasing lo hacen inadecuado para generación de canción completa multi-track en un contexto DAW. **Caso de uso real: generación de melodías/frases cortas con armonización condicionada** (lead sheet style), no canciones completas.
 
 **Prompt template** (verbatim de `model/infer/predict.py`):
 ```
 Human: {instruction} </s> Assistant:
 ```
 
-**GenerationConfig** (verbatim del model card):
+**GenerationConfig recomendado** (ajustado tras evaluación):
 ```python
-temperature=0.2, top_k=40, top_p=0.9, do_sample=True,
+temperature=0.5,  # 0.2 original es demasiado conservador para prompts abstractos
+top_k=40, top_p=0.9, do_sample=True,
 num_beams=1, repetition_penalty=1.1, max_new_tokens=1536
 ```
 
 ### Próxima iteración
 
 Decidir si:
-- Ejecutar benchmark **ChatMusician** en Modal y evaluar calidad (ver `evaluation/chatmusician/`)
+- **ChatMusician como herramienta parcial**: usar solo para chord-conditioned lead sheets (melodía + acordes mono-staff), no canciones completas
 - Evaluar **Amadeus** cuando tenga repositorio público
 - Pivotar el flujo 1 hacia audio-first (MusicGen local) + transcripción MIDI
 
@@ -379,4 +412,4 @@ uv run research_amt.py --mode both
 
 ---
 
-*Documento generado: 2026-06-01. PoC Text2midi+AMT: 2026-06-02. MIDI-LLM evaluado: 2026-06-12. MuseCoco evaluado: 2026-06-12. Text2midi evaluado y DESCARTADO: 2026-06-12. Próxima iteración: ChatMusician o pivote audio-first.*
+*Documento generado: 2026-06-01. PoC Text2midi+AMT: 2026-06-02. MIDI-LLM evaluado: 2026-06-12. MuseCoco evaluado: 2026-06-12. Text2midi evaluado y DESCARTADO: 2026-06-12. ChatMusician evaluado: 2026-06-12 (7.5/12, LIMITADO, mono-staff). Próxima iteración: ChatMusician lead-sheet parcial o pivote audio-first.*

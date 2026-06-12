@@ -6,5 +6,5 @@ Input: input_abc.txt — motivo musical de 2 compases (C mayor, 4/4)
 Category: motif-form
 Our command: modal run research/research_chatmusician_modal.py::main --prompt "Create music by incorporating the assigned motif into the predetermined musical arrangement. Only One Section" --input-abc-file evaluation/chatmusician/test09/input_abc.txt --out-dir evaluation/chatmusician/test09
 Device: CUDA A10G, fp16
-Result: pendiente
-Notes: Pieza de una sola sección (sin contraste formal). Evaluar si el motivo se desarrolla coherentemente.
+Result: ❌ 0 MIDIs. Modelo responde con contenido incoherente (décadas, series numéricas).
+Notes: Fallo estructural: 'Only One Section' confunde al modelo — interpreta como solicitud de lista/cronología en lugar de instrucción musical. Posible colisión de patrones en el SFT.

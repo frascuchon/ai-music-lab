@@ -5,5 +5,5 @@ Reference: reference_demo.png — output renderizado del demo oficial (solo visu
 Category: form-conditioning
 Our command: modal run research/research_chatmusician_modal.py::main --prompt "Follow the successive musical design to mold your composition. Binary, Sectional: Verse/Chorus" --out-dir evaluation/chatmusician/test06
 Device: CUDA A10G, fp16
-Result: pendiente
-Notes: Misma categoría que test04 pero prompt diferente — permite comparar robustez ante paráfrasis del mismo concepto.
+Result: ✅ 2 MIDIs generados (v0: 818B, v1: 1751B). Estructura binaria || en Gm/Dm. temperature=0.5
+Notes: Éxito con temperature=0.5 (falló con 0.2). Dos secciones visibles. v1 más elaborado (1751B, sección B con movimiento melódico rico). Calidad: 3/5
