@@ -1,0 +1,6 @@
+X:1
+T:Melody
+M:4/4
+L:1/8
+K:D
+|: A2 | d2 cA F2 AF | E2 FG A4 | d2 cA FEDF | E4 E2 :|

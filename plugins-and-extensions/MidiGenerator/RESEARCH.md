@@ -243,7 +243,7 @@ Modelo de 2018, piano solo (mono-track). La rama activa de Magenta (RealTime, 20
 | **MIDI-LLM** | Text→MIDI | ✅ Evaluado (12 comparisons, CUDA A10G) | ⚠️ Mejor que text2midi pero insuficiente para producción sin postproceso |
 | **Anticipatory MT** | Variaciones/acompañamiento | ✅ Evaluado (3 tests) | ⚠️ Viable para flujo 2, latencia aceptable en CPU |
 | **MuseCoco** | Text→MIDI atributos | ✅ Evaluado (3 tests, Modal) | ⚠️ Control explícito pero interfaz rígida (atributos, no texto libre) |
-| **ChatMusician** | Text→ABC notation | ⏳ No evaluado | 🔍 Candidato — mejor arquitectura pero ABC limita multi-track |
+| **ChatMusician** | Text→ABC notation | 🔄 Benchmark preparado (12 tests, pendiente ejecución Modal) | 🔍 Candidato en evaluación |
 | **Amadeus** (AMAAI-Lab 2025) | Text→MIDI | ⏳ Sin repo público | 🔍 Candidato futuro cuando se publique |
 
 ### Situación actual del flujo 1 (Text→MIDI)
@@ -266,10 +266,38 @@ Las alternativas son:
 **Anticipatory MT** sigue siendo la opción para flujo 2. La evaluación (test1-3) confirma
 que continuation y accompaniment funcionan con calidad aceptable (2.5/5) para uso exploratorio.
 
+### ChatMusician — Flujo 1 alternativo via ABC notation
+
+- **Repositorio**: https://github.com/hf-lin/ChatMusician
+- **Modelo HF**: `m-a-p/ChatMusician` (LLaMA 2 7B, ~13 GB safetensors fp16)
+- **Paper**: ISMIR 2024, "ChatMusician: Understanding and Generating Music Intrinsically with LLM"
+- **Arquitectura**: continual pretraining + SFT de LLaMA 2 7B sobre corpus MusicPile (4B tokens de ABC notation + teoría musical)
+- **Output**: ABC notation → conversión a MIDI via `abc2midi` (herramienta `abcmidi`)
+- **Capacidades únicas**: condicionamiento por acordes, formas musicales (Verse/Chorus/Bridge), motivos, armonización de melodías
+- **Limitación conocida**: ABC notation es mono-staff (una sola pista); multi-track limitado a voz+acordes en el mismo staff
+
+**Benchmark preparado** (2026-06-12):
+- 12 tests en `evaluation/chatmusician/` cubriendo 4 categorías: chord-conditioning, form-conditioning, motif-form, melody-harmonization
+- Script Modal: `research/research_chatmusician_modal.py` (A10G, fp16, abcmidi incluido)
+- Herramienta MIDI↔ABC: `research/tools/midi_abc.py`
+- Referencias visuales (PNG) del demo oficial; no hay MIDIs oficiales descargables
+- **Próximo paso**: ejecutar `modal run research/research_chatmusician_modal.py::eval_all --eval-dir evaluation/chatmusician --n-outputs 2`
+
+**Prompt template** (verbatim de `model/infer/predict.py`):
+```
+Human: {instruction} </s> Assistant:
+```
+
+**GenerationConfig** (verbatim del model card):
+```python
+temperature=0.2, top_k=40, top_p=0.9, do_sample=True,
+num_beams=1, repetition_penalty=1.1, max_new_tokens=1536
+```
+
 ### Próxima iteración
 
 Decidir si:
-- Evaluar **ChatMusician** como candidato para flujo 1 (ABC notation → MIDI con librería music21)
+- Ejecutar benchmark **ChatMusician** en Modal y evaluar calidad (ver `evaluation/chatmusician/`)
 - Evaluar **Amadeus** cuando tenga repositorio público
 - Pivotar el flujo 1 hacia audio-first (MusicGen local) + transcripción MIDI
 

@@ -1,0 +1,9 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Chord Conditioning #1
+Prompt: "Craft musical works that follow the given chord alterations. 'Am', 'F', 'C', 'G'"
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Category: chord-conditioning
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Craft musical works that follow the given chord alterations. 'Am', 'F', 'C', 'G'" --out-dir evaluation/chatmusician/test01
+Device: CUDA A10G, fp16
+Result: pendiente
+Notes: Progresión Am-F-C-G (pop/rock muy común). Evaluar si el modelo respeta los acordes en el ABC generado.

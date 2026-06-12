@@ -38,10 +38,23 @@ evaluation/
 │   ├── test2/  Accompaniment (20s) — referencia del sitio: demos/system0/0-clip-v0
 │   └── test3/  Accompaniment (15s) — fixture jazz Bb, piano+walking bass
 │
-└── musecoco/              # Demos del paper MuseCoco (AAAI 2024)
-    ├── test1/  "jazz piano trio, 120 BPM" — sin referencia de audio directa
-    ├── test2/  ID 109 sax+drum+trombone — reference_official_109_v*.mp3
-    └── test3/  ID 2273 piano+drum+bass  — reference_official_2273_v*.mp3
+├── musecoco/              # Demos del paper MuseCoco (AAAI 2024)
+│   ├── test1/  "jazz piano trio, 120 BPM" — sin referencia de audio directa
+│   ├── test2/  ID 109 sax+drum+trombone — reference_official_109_v*.mp3
+│   └── test3/  ID 2273 piano+drum+bass  — reference_official_2273_v*.mp3
+│
+└── chatmusician/          # Demo oficial https://ezmonyi.github.io/ChatMusician/
+    ├── test01-03/  Chord conditioning — progresiones Am-F-C-G, Dm-C, D-G-C-B
+    ├── test04-06/  Form conditioning — Binary/Ternary + Verse/Chorus/Bridge
+    ├── test07-09/  Motif + form — desarrollo de motivos con estructura formal
+    ├── test10-12/  Melody harmonization — armonización de melodías dadas
+    ├── test*/input_abc.txt   ABC notation de entrada (solo tests 07-12)
+    ├── test*/reference_demo.png        PNG del output del demo oficial (sin audio)
+    ├── test*/reference_demo_input.png  PNG del input del demo (tests 07-12)
+    ├── regenerate_all.sh   genera vía Modal A10G (abc2midi incluido en container)
+    └── README.md           documentación detallada + criterios de evaluación
+    NOTA: No hay MIDIs/MP3s de referencia descargables — solo PNGs visuales.
+          El modelo genera ABC notation; conversión a MIDI via abc2midi (abcmidi).
 ```
 
 ---

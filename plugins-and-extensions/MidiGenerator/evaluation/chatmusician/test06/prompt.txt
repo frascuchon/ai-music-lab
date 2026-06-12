@@ -1,0 +1,9 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Form Conditioning #3
+Prompt: "Follow the successive musical design to mold your composition. Binary, Sectional: Verse/Chorus"
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Category: form-conditioning
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Follow the successive musical design to mold your composition. Binary, Sectional: Verse/Chorus" --out-dir evaluation/chatmusician/test06
+Device: CUDA A10G, fp16
+Result: pendiente
+Notes: Misma categoría que test04 pero prompt diferente — permite comparar robustez ante paráfrasis del mismo concepto.

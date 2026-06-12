@@ -1,0 +1,9 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Form Conditioning #2
+Prompt: "Develop a composition by incorporating elements from the given melodic structure. Ternary, Sectional: Verse/Chorus/Bridge"
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Category: form-conditioning
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Develop a composition by incorporating elements from the given melodic structure. Ternary, Sectional: Verse/Chorus/Bridge" --out-dir evaluation/chatmusician/test05
+Device: CUDA A10G, fp16
+Result: pendiente
+Notes: Forma ternaria con Bridge — estructura más compleja (ABA' o AABA). Verifica si el modelo genera 3 secciones distintas.

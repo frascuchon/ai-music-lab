@@ -1,0 +1,9 @@
+X:1
+T:Reel
+M:4/4
+L:1/8
+K:G
+|: BA | G2 g2"^(C)" edeg | B2 BA"^(D7)" BcBA | G2 g2 edeg | dBAG A2 BA |
+G2 g2"^(C)" edeg | B2 BA B2 d2 | e2 ef e2 (3def | gedB A2 :: BA | G2 BG dGBe |
+dBBA"^(D7)" B3 A | G2 BG dGBe | dBAG A4 | G2 BG dGBe | dBBA B3 d |
+e2 ef e2 (3def | gedB A2 :|

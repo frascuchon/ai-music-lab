@@ -1,0 +1,9 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Chord Conditioning #2
+Prompt: "Develop a musical piece using the given chord progression. 'Dm', 'C', 'Dm', 'Dm', 'C', 'Dm', 'C', 'Dm'"
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Category: chord-conditioning
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Develop a musical piece using the given chord progression. 'Dm', 'C', 'Dm', 'Dm', 'C', 'Dm', 'C', 'Dm'" --out-dir evaluation/chatmusician/test02
+Device: CUDA A10G, fp16
+Result: pendiente
+Notes: Ejemplo de modelo card (HuggingFace). Progresión modal en Dm con alternancia Dm-C.

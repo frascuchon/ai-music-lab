@@ -1,0 +1,10 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Melody Harmonization #2
+Prompt: "Design a fitting succession of chords that blend well with the provided musical score."
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Input: input_abc.txt — melodía en D mayor (4/4)
+Category: melody-harmonization
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Design a fitting succession of chords that blend well with the provided musical score." --input-abc-file evaluation/chatmusician/test11/input_abc.txt --out-dir evaluation/chatmusician/test11
+Device: CUDA A10G, fp16
+Result: pendiente
+Notes: Armonización en D mayor. Comparar con test10 para ver coherencia de la estrategia de armonización entre melodías de tonalidades distintas.

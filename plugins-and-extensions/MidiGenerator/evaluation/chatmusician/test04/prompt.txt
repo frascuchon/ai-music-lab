@@ -1,0 +1,9 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Form Conditioning #1
+Prompt: "Craft a musical work that incorporates the given musical pattern as a central element. Binary, Sectional: Verse/Chorus"
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Category: form-conditioning
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Craft a musical work that incorporates the given musical pattern as a central element. Binary, Sectional: Verse/Chorus" --out-dir evaluation/chatmusician/test04
+Device: CUDA A10G, fp16
+Result: pendiente
+Notes: Forma binaria con estructura Verso/Estribillo. Evaluar si el ABC tiene secciones A/B claramente diferenciadas con part markers [Part "Verse"] / [Part "Chorus"] o equivalente.
