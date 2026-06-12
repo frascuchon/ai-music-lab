@@ -77,14 +77,22 @@ modal run research_chatmusician_modal.py::main \
     --out-dir ../evaluation/chatmusician/test02
 ```
 
-### Con input ABC (tests 07-12)
+### Con input condicional (tests 07-12) — auto-detecta .abc o .mid
 
 ```bash
 cd MidiGenerator/research
+
+# Desde un fichero ABC:
 modal run research_chatmusician_modal.py::main \
     --prompt "Formulate chord combinations to increase the harmonic complexity of the specified musical excerpt." \
-    --input-abc-file ../evaluation/chatmusician/test10/input_abc.txt \
+    --input-file ../evaluation/chatmusician/test10/input_abc.txt \
     --out-dir ../evaluation/chatmusician/test10
+
+# Desde un fichero MIDI (se convierte automáticamente a ABC antes de enviar al modelo):
+modal run research_chatmusician_modal.py::main \
+    --prompt "Formulate chord combinations to increase the harmonic complexity of the specified musical excerpt." \
+    --input-file ../evaluation/text2midi/test1/reference_official.mid \
+    --out-dir /tmp/cm_harmonize_t2m
 ```
 
 ### Script bash (test a test, con render MP3)
@@ -98,14 +106,19 @@ ONLY=1,4,10 bash evaluation/chatmusician/regenerate_all.sh
 ### Herramientas MIDI↔ABC locales
 
 ```bash
-brew install abcmidi   # instalar una vez
+brew install abcmidi   # instalar una vez (provee abc2midi y midi2abc)
 
-# MIDI → ABC (para preparar prompts desde MIDI existente)
+# CLI:
 python research/tools/midi_abc.py midi-to-abc input.mid output.abc
-
-# ABC → MIDI (para convertir generaciones localmente)
 python research/tools/midi_abc.py abc-to-midi generated.abc generated.mid
+
+# O como librería Python:
+from tools.midi_abc import midi_to_abc_text, abc_to_midi_bytes
+abc_str   = midi_to_abc_text("input.mid")   # → string ABC
+mid_bytes = abc_to_midi_bytes(abc_str)       # → bytes MIDI
 ```
+
+**Nota**: el pipeline integra estas conversiones automáticamente — pasar `--input-file input.mid` y el pipeline convierte MIDI→ABC antes de enviar al modelo.
 
 ---
 

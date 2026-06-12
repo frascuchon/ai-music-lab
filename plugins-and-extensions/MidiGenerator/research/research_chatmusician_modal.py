@@ -5,7 +5,24 @@ ChatMusician es un LLaMA 2 7B continually pretrained + SFT sobre ABC notation.
 Genera ABC notation (representación textual de partitura), que se convierte a
 MIDI mediante abc2midi (herramienta oficial del web demo).
 
-Pipeline: instrucción texto → (+ input ABC opcional) → modelo → ABC regex → abc2midi → .mid
+Pipeline completo (bidireccional MIDI ↔ ABC integrado):
+
+    [MIDI input]  ─→ midi2abc ─→ ABC text ─┐
+    [ABC input]   ─────────────────────────┤
+    [sin input]   ─────────────────────────┤
+                                           ↓
+                    "Human: {prompt}\\n{abc} </s> Assistant: "
+                                           ↓
+                               ChatMusician LLM (CUDA A10G)
+                                           ↓
+                    regex r'(X:\\d+\\n(?:[^\\n]*\\n)+)'
+                                           ↓
+                               abc2midi  (en container)
+                                           ↓
+                    generated_cuda_v0.mid + generated_cuda_v0.abc
+
+La conversión MIDI→ABC usa tools/midi_abc.py (localmente, antes de enviar a Modal).
+La conversión ABC→MIDI usa abc2midi dentro del container Modal (apt install abcmidi).
 
 Modelo: m-a-p/ChatMusician (~13 GB safetensors, fp16 en CUDA A10G 24GB)
 Repo:   https://github.com/hf-lin/ChatMusician
@@ -26,21 +43,29 @@ Post-procesado (verbatim de chatmusician_web_demo.py):
 Setup (pre-descarga de pesos al Volume, ejecutar una vez):
     modal run research/research_chatmusician_modal.py::setup
 
-Inferencia (un prompt):
+Inferencia libre:
     modal run research/research_chatmusician_modal.py::main \\
         --prompt "Develop a tune influenced by Bach's compositions." \\
         --out-dir evaluation/chatmusician/smoke
 
-Inferencia con condicionante ABC:
+Inferencia con condicionante — auto-detecta .abc o .mid:
     modal run research/research_chatmusician_modal.py::main \\
         --prompt "Construct smooth-flowing chord progressions for the supplied music." \\
-        --input-abc-file evaluation/chatmusician/test10/input_abc.txt \\
+        --input-file evaluation/chatmusician/test10/input_abc.txt \\
         --out-dir evaluation/chatmusician/test10
+
+    modal run research/research_chatmusician_modal.py::main \\
+        --prompt "Formulate chord combinations to increase the harmonic complexity." \\
+        --input-file evaluation/text2midi/test1/reference_official.mid \\
+        --out-dir /tmp/cm_harmonize
 
 Benchmark completo:
     modal run research/research_chatmusician_modal.py::eval_all \\
         --eval-dir evaluation/chatmusician \\
         --n-outputs 2
+
+Prerequisitos locales (para conversión MIDI→ABC):
+    brew install abcmidi   # provee midi2abc y abc2midi
 
 GPUs disponibles (--gpu, por defecto A10G):
     A10G     24 GB, ~$1.10/hr  (default) — margen cómodo para LLaMA2 7B fp16 (~14 GB)
@@ -146,13 +171,19 @@ def _load_model():
 
 
 def _abc_to_midi_bytes(abc_text: str) -> bytes:
-    """Convierte ABC notation a bytes MIDI usando abc2midi (herramienta oficial)."""
+    """
+    Convierte ABC notation a bytes MIDI usando abc2midi.
+
+    Corre dentro del container Modal (abcmidi instalado via apt).
+    Para uso local importa tools.midi_abc.abc_to_midi_bytes.
+    """
+    import subprocess
+
     with tempfile.TemporaryDirectory() as tmpdir:
         abc_path = Path(tmpdir) / "score.abc"
         midi_path = Path(tmpdir) / "score.mid"
         abc_path.write_text(abc_text, encoding="utf-8")
 
-        import subprocess
         result = subprocess.run(
             ["abc2midi", str(abc_path), "-o", str(midi_path)],
             capture_output=True, text=True,
@@ -269,7 +300,7 @@ def generate(
 @app.local_entrypoint()
 def main(
     prompt: str = "",
-    input_abc_file: str = "",
+    input_file: str = "",
     out_dir: str = ".",
     n_outputs: int = 2,
     force: bool = False,
@@ -277,15 +308,22 @@ def main(
     """
     Genera MIDI para un prompt y guarda .mid y .abc en out-dir.
 
+    --input-file acepta tanto .abc (ABC notation) como .mid (MIDI auto-convertido a ABC).
+
     Ejemplos:
         modal run research/research_chatmusician_modal.py::main \\
             --prompt "Develop a tune influenced by Bach's compositions." \\
             --out-dir /tmp/cm_smoke
 
         modal run research/research_chatmusician_modal.py::main \\
-            --prompt "Construct smooth-flowing chord progressions for the supplied music." \\
-            --input-abc-file evaluation/chatmusician/test10/input_abc.txt \\
+            --prompt "Construct smooth-flowing chord progressions." \\
+            --input-file evaluation/chatmusician/test10/input_abc.txt \\
             --out-dir evaluation/chatmusician/test10
+
+        modal run research/research_chatmusician_modal.py::main \\
+            --prompt "Formulate chord combinations to increase the harmonic complexity." \\
+            --input-file evaluation/text2midi/test1/reference_official.mid \\
+            --out-dir /tmp/cm_harmonize
     """
     if not prompt:
         print("ERROR: --prompt es obligatorio")
@@ -299,7 +337,7 @@ def main(
         print(f"[skip] Ya existen {len(existing)} ficheros en {out_dir}. Usa --force para sobreescribir.")
         return
 
-    instruction = _build_instruction(prompt, input_abc_file)
+    instruction = _build_instruction(prompt, input_file)
 
     print(f"[main] n_outputs={n_outputs}")
     print(f"[main] Instruction (primeros 200 chars): {instruction[:200]}")
@@ -335,8 +373,9 @@ def eval_all(
     Genera MIDI para todos los tests del directorio de evaluación.
 
     Cada carpeta test*/ debe contener:
-      - prompt.txt  con línea  Prompt: "..."
+      - prompt.txt   con línea  Prompt: "..."
       - input_abc.txt (opcional) — ABC notation concatenada al prompt
+      - input_midi.mid (opcional) — MIDI convertido a ABC automáticamente
 
     Ejemplo:
         modal run research/research_chatmusician_modal.py::eval_all \\
@@ -384,8 +423,14 @@ def eval_all(
             print(f"[skip] {td.name}: ya tiene {len(existing)} outputs (usa --force)")
             continue
 
-        input_abc_file = str(td / "input_abc.txt") if (td / "input_abc.txt").exists() else ""
-        instruction = _build_instruction(prompt, input_abc_file)
+        # Detectar input: MIDI tiene prioridad sobre ABC si ambos existen
+        if (td / "input_midi.mid").exists():
+            input_file = str(td / "input_midi.mid")
+        elif (td / "input_abc.txt").exists():
+            input_file = str(td / "input_abc.txt")
+        else:
+            input_file = ""
+        instruction = _build_instruction(prompt, input_file)
 
         instructions.append(instruction)
         valid_dirs.append(td)
@@ -414,23 +459,45 @@ def eval_all(
 
 
 # ---------------------------------------------------------------------------
-# Helper local — construye la instrucción completa (prompt + ABC opcional)
+# Helper local — construye la instrucción completa (prompt + condicionante)
 # ---------------------------------------------------------------------------
-def _build_instruction(prompt: str, input_abc_file: str) -> str:
+def _build_instruction(prompt: str, input_file: str = "") -> str:
     """
     Construye la instrucción que va dentro de "Human: {instruction} </s> Assistant: ".
 
-    Para prompts sin condicionante: devuelve el prompt tal cual.
-    Para prompts con condicionante ABC: concatena el ABC después del prompt,
-    siguiendo el mismo patrón que el web demo (sin separador especial).
+    input_file puede ser:
+      - vacío   → devuelve el prompt tal cual
+      - .abc    → lee el ABC y lo concatena al prompt
+      - .mid    → convierte MIDI→ABC (via tools.midi_abc.midi_to_abc_text) y concatena
+
+    La detección es automática por extensión del fichero.
     """
-    if not input_abc_file:
+    if not input_file:
         return prompt
 
-    abc_path = Path(input_abc_file)
-    if not abc_path.exists():
-        print(f"[warn] input_abc_file no existe: {input_abc_file}")
+    in_p = Path(input_file)
+    if not in_p.exists():
+        print(f"[warn] input_file no existe: {input_file}")
         return prompt
 
-    abc_text = abc_path.read_text(encoding="utf-8").strip()
+    suffix = in_p.suffix.lower()
+
+    if suffix in (".abc", ".txt"):
+        abc_text = in_p.read_text(encoding="utf-8").strip()
+
+    elif suffix in (".mid", ".midi"):
+        # Importación lazy — sólo en entrypoints locales, no dentro del container
+        sys.path.insert(0, str(Path(__file__).parent))
+        from tools.midi_abc import midi_to_abc_text
+        print(f"[build_instruction] Convirtiendo MIDI→ABC: {in_p.name}")
+        try:
+            abc_text = midi_to_abc_text(str(in_p)).strip()
+        except RuntimeError as e:
+            print(f"[warn] {e}\n  Falling back: usando prompt sin condicionante")
+            return prompt
+
+    else:
+        print(f"[warn] Extensión no reconocida en input_file: {suffix}. Ignorando.")
+        return prompt
+
     return f"{prompt}\n{abc_text}"

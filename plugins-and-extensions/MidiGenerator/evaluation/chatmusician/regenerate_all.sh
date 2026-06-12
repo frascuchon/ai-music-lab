@@ -71,16 +71,20 @@ for n in "${TESTS[@]}"; do
   echo "[test${n}] Generando 2 outputs..."
   echo "           Prompt: ${prompt:0:120}"
 
-  input_abc_flag=""
-  if [[ -f "$dir/input_abc.txt" ]]; then
-    input_abc_flag="--input-abc-file $dir/input_abc.txt"
+  # Detectar condicionante: MIDI tiene prioridad sobre ABC si ambos existen
+  input_flag=""
+  if [[ -f "$dir/input_midi.mid" ]]; then
+    input_flag="--input-file $dir/input_midi.mid"
+    echo "           + input_midi.mid (auto-convert MIDI→ABC)"
+  elif [[ -f "$dir/input_abc.txt" ]]; then
+    input_flag="--input-file $dir/input_abc.txt"
     echo "           + input_abc.txt"
   fi
 
   start="$(date +%s)"
   (cd "$RESEARCH_DIR" && modal run research_chatmusician_modal.py::main \
       --prompt "$prompt" \
-      $input_abc_flag \
+      $input_flag \
       --out-dir "$dir" \
       --n-outputs 2 \
       $FORCE_FLAG)
