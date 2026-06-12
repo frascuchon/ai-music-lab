@@ -244,7 +244,7 @@ Modelo de 2018, piano solo (mono-track). La rama activa de Magenta (RealTime, 20
 | **Anticipatory MT** | Variaciones/acompañamiento | ✅ Evaluado (3 tests) | ⚠️ Viable para flujo 2, latencia aceptable en CPU |
 | **MuseCoco** | Text→MIDI atributos | ✅ Evaluado (3 tests, Modal) | ⚠️ Control explícito pero interfaz rígida (atributos, no texto libre) |
 | **ChatMusician** | Text→ABC notation | ✅ Evaluado (12 tests, CUDA A10G) | ⚠️ **CERRADO** — 7.5/12 (62%), mono-staff; nota fine-tuning de autor pendiente |
-| **Amadeus** | Text→MIDI | ✅ Evaluado (8 tests, 16 MIDIs, CUDA A10G) | ⚠️ Instrumentación superior a text2midi/MIDI-LLM pero duración inconsistente; modelo-S limitado |
+| **Amadeus** | Text→MIDI | ✅ Evaluado (23 tests, 31 MIDIs, CUDA A10G) | ✅ **CERRADO** — mejor modelo evaluado (~2.8/5 global); duración inconsistente, rock débil; fine-tuning de estilo viable |
 
 ### Situación actual del flujo 1 (Text→MIDI)
 
@@ -420,7 +420,7 @@ Lo que capturaría: estilo superficial (tonalidad, ritmo, fraseo). Lo que no: l�
 | "Sad pop + piano" (test07) | 2/5 | — | 3.5/5 |
 | "Christmas for children" (test08) | 2.5/5 | — | 3/5 |
 
-**Veredicto: ⚠️ MEJOR CANDIDATO PARA FLUJO 1 (entre los evaluados), pero insuficiente para producción**
+**Veredicto parcial (primera batería): ⚠️ MEJOR CANDIDATO PARA FLUJO 1 (entre los evaluados)**
 
 Amadeus-S supera a text2midi y MIDI-LLM en seguimiento de instrumentación — la adición del decoder de difusión bidireccional marca la diferencia. Sin embargo, la inconsistencia en duración, los fallos en géneros eléctricos/percusivos (rock, EDM con drums reales), y el hecho de que sea el modelo más pequeño (sin los modelos M/L disponibles) lo hacen inadecuado para producción sin postproceso.
 
@@ -458,9 +458,66 @@ Amadeus-S supera a text2midi y MIDI-LLM en seguimiento de instrumentación — l
 
 6. **Voices/soprano-sax overrepresented**: En varios tests aparecen como instrumentos dominantes sin estar en el prompt — posible sesgo del dataset.
 
-**Para explorar en futuras iteraciones:**
-- Cuando los modelos Amadeus-M o Amadeus-L estén disponibles (esperados con más instrumentos y mayor coherencia)
-- Postproceso de duración: ajustar el tempo MIDI para alcanzar duraciones objetivo
+#### Veredicto global: ✅ CERRADO — MEJOR MODELO EVALUADO PARA FLUJO 1 (2026-06-12)
+
+**31 MIDIs generados** (23 tests, A10G CUDA, ~59s/output). Calidad media global: **~2.8/5** (mejor variante por test: ~3.2/5).
+
+Amadeus-S es el modelo más capaz de todos los evaluados para texto→MIDI multi-track. La arquitectura NB con difusión bidireccional produce una distribución de instrumentación significativamente más coherente con el prompt que los modelos autoregresivos puros (text2midi, MIDI-LLM). Los mejores resultados se dan en prompts orquestales/acústicos estructurados al estilo MidiCaps.
+
+**Fortalezas confirmadas:**
+- Seguimiento de instrumentos acústicos (cuerdas, maderas, piano, brass): consistentemente bueno
+- Prompts cortos/abstractos: robusto (test07 solo piano, test10 soft piano — ambos perfectos)
+- Prompts orquestales/cinemáticos: excelente (test14, test15: 3.5-4/5)
+- Multi-track nativo: genera 1-13 pistas con coherencia instrumental entre ellas
+
+**Limitaciones estructurales:**
+- Duración no controlable por prompt (5.5s a 291s para 1024 tokens) — requiere postproceso de tempo
+- Rock/metal/electronic percusivo: fallo consistente por sesgo del dataset LakhALLFined
+- Batería usa `bank=128 prog=114` (no GM estándar) → soundfonts básicos sustituyen por kit incorrecto
+- Modelo-S (280M params) es la variante más pequeña disponible — modelos M y L del paper no publicados
+
+**Comparativa final con todos los modelos evaluados (flujo 1, text→MIDI):**
+
+| Modelo | Calidad media | Fortaleza | Limitación principal |
+|---|---|---|---|
+| **Amadeus-S** | **~2.8/5** | Instrumentación multi-track | Duración, rock, dataset bias |
+| MIDI-LLM | ~2.5/5 | Seguimiento de género pop | Jazz/rock insuficiente, sin multi-track coherente |
+| ChatMusician | ~2.9/5 (exitosos) | Estructura armónica, armonización | Mono-staff, phrasing-sensitive |
+| MuseCoco | ~2.5/5 | Control explícito de atributos | Interfaz rígida, no texto libre |
+| Text2midi | ~2/5 | Baseline académico | Calidad insuficiente en todos los ejes |
+
+**Caso de uso real validado**: generación de piezas instrumentales multi-track con instrumentación explícita (orquestal, acústica, electrónica estructurada). El modelo funciona mejor cuanto más detallado sea el prompt: tonalidad, BPM, instrumentos concretos, chord progression, mood.
+
+**Cuando estén disponibles Amadeus-M o -L**: reevaluar con los mismos 23 prompts — la arquitectura es claramente superior al baseline, el límite actual es el tamaño del modelo.
+
+---
+
+#### Nota: fine-tuning para compositores y mejora de géneros
+
+Amadeus-S admite fine-tuning sobre sus pesos existentes sin reentrenar desde cero. Hay dos casos de uso de interés:
+
+**A — Adaptación de estilo por compositor**
+
+Un compositor puede especializar el modelo hacia sus propias piezas con un dataset muy pequeño (~100-300 MIDIs propios). La razón estructural: el modelo ya domina la sintaxis NB y la distribución general de instrumentación; el fine-tuning solo necesita desplazar la distribución hacia los patrones estilísticos del autor — densidad armónica típica, progresiones favoritas, equilibrio de instrumentos, densidad rítmica, rango tonal habitual.
+
+El pipeline ya existe en el repo:
+```
+MIDIs propios → data_representation/step1-step4 (NB encoding) → fine-tune sobre Amadeus-S → misma inferencia
+```
+
+No requiere crear captions manualmente: las captions pueden generarse automáticamente extrayendo metadata MIDI (instrumentos, BPM, tonalidad estimada via `pretty_midi`, chord progression) y pasándolos a una LLM para generar texto estilo MidiCaps. Coste estimado: ~$5-15 en generación de captions + ~$10-20 en cómputo Modal A10G para 5-10 epochs sobre 200 piezas.
+
+Lo que capturaría: vocabulario instrumental habitual del autor, densidad típica, tendencias armónicas. Lo que no: lógica compositiva profunda ni coherencia narrativa a largo plazo. Suficiente para generar "bocetos en el estilo de X" como punto de partida en el DAW.
+
+**B — Mejora de géneros subrepresentados (rock, metal, electronic)**
+
+LakhALLFined subrepresenta el rock porque el filtrado de calidad descarta MIDIs de guitarra eléctrica sin velocidad humanizada. Un fine-tuning con 200-500 MIDIs de rock bien estructurados (Guitar Hero / Rock Band archives, Lakh MIDI filtrado por genre tag) mejoraría sustancialmente los patrones de batería y el contexto eléctrico.
+
+Alternativa de menor coste de ingeniería: **fine-tuning de MIDI-LLM con LoRA** — el ecosistema HuggingFace (peft, transformers) está completamente soportado para Llama 3.2 1B, sin necesidad de adaptar el pipeline de datos personalizado de Amadeus. El coste es similar pero la barrera técnica es mucho menor.
+
+**Para explorar en una iteración futura:**
+- `research_amadeus_finetune_modal.py` — script Modal con fine-tuning sobre checkpoint existente, datos propios en NB encoding
+- Si los modelos Amadeus-M o -L se publican: reevaluar los 23 prompts antes de cualquier fine-tuning (la arquitectura base podría ser ya suficiente en talla mayor)
 
 ---
 
