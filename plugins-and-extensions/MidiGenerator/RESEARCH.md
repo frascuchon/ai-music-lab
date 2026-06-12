@@ -13,7 +13,7 @@
 
 | Modelo | Flujo soportado | MIDI nativo | Mac (MPS/CPU) | Licencia | Multi-track | Madurez | Veredicto |
 |---|---|---|---|---|---|---|---|
-| **Text2midi** (AMAAI-Lab) | Text→MIDI | ✅ sí | ✅ MPS oficial | MIT | ✅ sí | ✅ AAAI 2025, HF | Evaluado: calidad 2/5 |
+| **Text2midi** (AMAAI-Lab) | Text→MIDI | ✅ sí | ✅ MPS oficial | MIT | ✅ sí | ✅ AAAI 2025, HF | ❌ DESCARTADO: calidad 2/5, baseline académico |
 | **MIDI-LLM** (slSeanWU) | Text→MIDI | ✅ sí | ✅ MPS (bfloat16) | MIT | ✅ sí | ✅ NeurIPS AI4Music 2025 | **NUEVO candidato flujo 1** |
 | **Aria** (EleutherAI) | Continuación piano | ✅ sí | ✅ MLX optimizado | Apache 2.0 | ❌ piano solo | ✅ ISMIR 2025, 60k h datos | **Candidato flujo 2 (piano)** |
 | **Anticipatory MT** (Stanford) | Variaciones/infilling | ✅ sí | ⚠️ CPU (lento) | Apache 2.0 | ✅ sí | ✅ ICLR 2024, pesos abiertos | Evaluado: calidad 2/5 |
@@ -41,17 +41,35 @@
 - **Limitaciones conocidas**: pendiente verificación de si genera multi-track o solo piano; max 2000 tokens (~30-60s de música según densidad de notas)
 - **Puntos fuertes**: MIT, MPS, end-to-end desde texto natural (no requiere atributos estructurados), HuggingFace Hub
 
-#### Resultados PoC (ejecutado 2026-06-02, revisión manual 2026-06-02)
+#### Resultados evaluación completa (2026-06-12) ❌ DESCARTADO
 
-| Métrica | Valor |
-|---|---|
-| device | mps |
-| tiempo carga (s) | 3.7 |
-| tiempo inferencia (s) | 98.0 |
-| RAM delta (MB) | 780 |
-| MIDI válido | ✅ (6 pistas, 117 notas, instrumentos [0,1,28,33,35]) |
-| Calidad subjetiva (0-5) | 2 — caótico pero guarda coherencia parcial |
-| Notas | Multi-track confirmado (5 instrumentos). Resultado mejorable bajando temperatura (default 1.0) o aumentando max_len. Viable para el plugin. |
+Benchmark de 7 tests ejecutado en Modal A10G (CUDA float32, temperature=0.9, max_len=2000).
+Referencias oficiales extraídas del demo branch del repositorio (output_A/B/C/D/E/F/4.mid).
+
+| Test | Prompt | Seguimiento del prompt | Calidad |
+|---|---|---|---|
+| test1 | "A sad pop song with a strong piano presence." | ✅ parcial | 2/5 — Piano presente, progresión mecánica |
+| test2 | "A rock song with strong drums and electric guitar." | ⚠️ débil | 1.5/5 — Sin drums reconocibles |
+| test3 | "A soft love song on piano." | ❌ ignorado | 1.5/5 — Genera sax + armónica + bajo, no "solo piano" |
+| test4 | "...trance... 138 BPM... A minor..." | ⚠️ parcial | 2/5 — Instrumentación aproximada |
+| test5 | "A cheerful christmas song suitable for children." | ✅ aceptable | 2.5/5 — El más exitoso |
+| test6 | "...C minor... brass... sax... 124 BPM... C7/E Eb6 Bbm6..." | ⚠️ parcial | 2/5 — Prompt detallado no produce pieza más larga |
+| test7 | "A heavy metal song with strong drums and guitar." | ❌ débil | 1.5/5 — Sin agresividad del género |
+
+**Limitaciones estructurales confirmadas**:
+- 2000 tokens REMI = límite duro de ~30-60s independientemente del prompt
+- Atributos específicos (BPM, tonalidad, acordes) raramente se reflejan con precisión
+- Multi-track autoregresivo sin coherencia garantizada entre pistas
+- Las referencias oficiales del paper también son decepcionantes — no es un problema de nuestro pipeline
+
+**Contexto**: text2midi es un baseline académico cuya contribución real es el dataset MidiCaps
+(168k pares MIDI-caption). El modelo existe para demostrar que el dataset es útil, no como
+herramienta de producción. El listening study del paper reporta 4.62/7 en Musical Quality.
+
+**Nota sobre ChatMusician**: arquitectónicamente más sólido (fine-tune LLaMA + ABC notation,
+hereda comprensión semántica LLM real), pero ABC notation limita la polifonía y el multi-track —
+no es el formato adecuado para integración DAW. El problema texto→MIDI multi-track coherente
+sigue abierto a fecha de junio 2026.
 
 ---
 
@@ -217,22 +235,43 @@ Modelo de 2018, piano solo (mono-track). La rama activa de Magenta (RealTime, 20
 
 ## Recomendación final
 
-### Arquitectura del plugin: dos motores especializados
+### Estado de evaluación (actualizado 2026-06-12)
 
-Igual que StemsSeparator usa **Demucs local + SAM via Modal**, el plugin MidiGenerator usará:
-
-| Flujo | Motor | Ejecución | Invocación en plugin |
+| Modelo | Flujo | Estado | Veredicto |
 |---|---|---|---|
-| Text → MIDI desde 0 | **Text2midi** | Local (MPS en Mac) | `python generate_text2midi.py --prompt "..." --out $TMPDIR/out.mid` |
-| Variaciones/continuación/acompañamiento | **Anticipatory MT** | Local (CPU) o Modal si latencia inaceptable | `python generate_amt.py --mode continuation --input $ITEM_MIDI --out $TMPDIR/out.mid` |
+| **Text2midi** | Text→MIDI | ✅ Evaluado (7 tests, CUDA A10G) | ❌ **DESCARTADO** — calidad insuficiente para producción |
+| **MIDI-LLM** | Text→MIDI | ✅ Evaluado (12 comparisons, CUDA A10G) | ⚠️ Mejor que text2midi pero insuficiente para producción sin postproceso |
+| **Anticipatory MT** | Variaciones/acompañamiento | ✅ Evaluado (3 tests) | ⚠️ Viable para flujo 2, latencia aceptable en CPU |
+| **MuseCoco** | Text→MIDI atributos | ✅ Evaluado (3 tests, Modal) | ⚠️ Control explícito pero interfaz rígida (atributos, no texto libre) |
+| **ChatMusician** | Text→ABC notation | ⏳ No evaluado | 🔍 Candidato — mejor arquitectura pero ABC limita multi-track |
+| **Amadeus** (AMAAI-Lab 2025) | Text→MIDI | ⏳ Sin repo público | 🔍 Candidato futuro cuando se publique |
 
-### Plan B (si PoC revela problemas)
+### Situación actual del flujo 1 (Text→MIDI)
 
-| Problema | Plan B |
-|---|---|
-| Text2midi no funciona en MPS | MuseCoco vía Modal (atributos explícitos + multi-track) |
-| AMT demasiado lento en CPU (>60s) | AMT vía Modal (T4/A10G), igual que SAM en StemsSeparator |
-| Text2midi genera solo piano | Evaluar Amadeus (2025, multi-track, SOTA) |
+Ningún modelo evaluado hasta la fecha alcanza calidad suficiente para uso productivo en un plugin
+de REAPER. Tanto text2midi como MIDI-LLM son proofs-of-concept académicos con limitaciones
+estructurales (token limit, seguimiento de atributos débil, coherencia multi-track insuficiente).
+
+El espacio más prometedor para texto→MIDI multi-track coherente en 2026 está sin resolver.
+Las alternativas son:
+1. **Audio-first + transcripción**: usar MusicGen/Suno/Udio (audio generativo de alta calidad)
+   y extraer MIDI via transcripción — introduce ruido pero la calidad de partida es superior.
+2. **Esperar Amadeus** u otros modelos de nueva generación (2025-2026) con arquitecturas más grandes.
+3. **Restringir el alcance del flujo 1**: en lugar de "texto libre → canción completa",
+   generar motivos/frases cortas de un instrumento específico donde los modelos existentes
+   son más fiables.
+
+### Flujo 2 (variaciones/acompañamiento) — sigue siendo viable
+
+**Anticipatory MT** sigue siendo la opción para flujo 2. La evaluación (test1-3) confirma
+que continuation y accompaniment funcionan con calidad aceptable (2.5/5) para uso exploratorio.
+
+### Próxima iteración
+
+Decidir si:
+- Evaluar **ChatMusician** como candidato para flujo 1 (ABC notation → MIDI con librería music21)
+- Evaluar **Amadeus** cuando tenga repositorio público
+- Pivotar el flujo 1 hacia audio-first (MusicGen local) + transcripción MIDI
 
 ---
 
@@ -312,4 +351,4 @@ uv run research_amt.py --mode both
 
 ---
 
-*Documento generado: 2026-06-01. PoC Text2midi+AMT: 2026-06-02. MIDI-LLM: 2026-06-02. MuseCoco Modal script: 2026-06-02. Pendiente: (1) escuchar out_mllm.mid en REAPER, (2) ejecutar setup_weights y PoC MuseCoco, (3) comparar calidad entre los tres.*
+*Documento generado: 2026-06-01. PoC Text2midi+AMT: 2026-06-02. MIDI-LLM evaluado: 2026-06-12. MuseCoco evaluado: 2026-06-12. Text2midi evaluado y DESCARTADO: 2026-06-12. Próxima iteración: ChatMusician o pivote audio-first.*

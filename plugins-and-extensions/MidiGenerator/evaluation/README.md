@@ -89,13 +89,13 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 
 | Script | Test | Estado | Timing | Notas |
 |--------|------|--------|--------|-------|
-| text2midi | test1 | ⚠️ regenerar | ~400s (MPS fp16, temp=1.0) | script tenía bugs: temp=1.0, fp16, max_len=512 |
-| text2midi | test2 | ⚠️ regenerar | ~400s | ídem |
-| text2midi | test3 | ⚠️ regenerar | ~400s | ídem |
-| text2midi | test4 | ⏳ pendiente | — | output_A.mid: trance electrónico 138 BPM |
-| text2midi | test5 | ⏳ pendiente | — | output_B.mid: christmas song |
-| text2midi | test6 | ⏳ pendiente | — | output_4.mid: C minor electrónico (prompt detallado) |
-| text2midi | test7 | ⏳ pendiente | — | output_F.mid: heavy metal |
+| text2midi | test1 | ✅ CUDA A10G | ~80s/output | sad pop piano — ref 3314B, v0 3283B, v1 3332B |
+| text2midi | test2 | ✅ CUDA A10G | ~80s/output | rock guitar — ref 3328B, v0 3518B, v1 3304B |
+| text2midi | test3 | ✅ CUDA A10G | ~80s/output | soft love song piano — ref 2597B, v0 3448B, v1 3336B |
+| text2midi | test4 | ✅ CUDA A10G | ~82s/output | trance 138 BPM — ref 3240B, v0 3101B, v1 3326B |
+| text2midi | test5 | ✅ CUDA A10G | ~81s/output | christmas children — ref 3335B, v0 3624B, v1 3373B |
+| text2midi | test6 | ✅ CUDA A10G | ~83s/output | C minor electrónico — ref **8580B**, v0 3545B, v1 3461B |
+| text2midi | test7 | ✅ CUDA A10G | ~80s/output | heavy metal — ref 2476B, v0 3364B, v1 3254B |
 | midi_llm | comparison_1..12 | ✅ CUDA A10G | ~20s/prompt×4 (414s total) | 48 MIDIs, pipeline idéntico al demo |
 | midi_llm | comparison_1..12 | ✅ MPS (ref) | ~120-180s/gen | generaciones locales para contraste |
 | midi_llm | _orphan_sunday_picnic | archivado | — | sin ref oficial — jazz Sunday picnic |
@@ -105,6 +105,82 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 | musecoco | test1 | ✅ (Modal) | ~2 min (A100-40GB) | jazz piano |
 | musecoco | test2 | ✅ (Modal) | ~2 min | ID 109 sax+drum |
 | musecoco | test3 | ✅ (Modal) | ~2 min | ID 2273 piano+bass |
+
+---
+
+## Evaluación cualitativa — text2midi ✅ Completada (2026-06-12) — MODELO DESCARTADO
+
+### Pipeline de generación
+
+```
+Modal A10G (CUDA) · float32 · temperature=0.9 · max_len=2000
+Modelo: amaai-lab/text2midi (pytorch_model.bin, 900 MB)
+Referencia: demo branch samples/output_*.mid (7 MIDIs oficiales del paper)
+```
+
+### Hallazgo principal: los resultados son decepcionantes — incluyendo las referencias oficiales
+
+La comparativa entre `reference_official.mp3` y `generated_cuda_v*.mp3` revela que ambos
+conjuntos tienen calidad musical insuficiente para uso en producción. No es un problema de
+nuestro pipeline: el propio paper reporta 4.62/7 en Musical Quality en su listening study
+(vs 5.79 del ground truth MidiCaps). El modelo funciona correctamente — el límite es la
+arquitectura y el enfoque.
+
+### Observaciones por test
+
+| Test | Prompt | Seguimiento | Observaciones |
+|------|--------|-------------|---------------|
+| test1 | "A sad pop song with a strong piano presence." | ✅ parcial | Piano presente, pero poco "pop" y poco "sad" — progresión mecánica |
+| test2 | "A rock song with strong drums and electric guitar. The tempo is very fast." | ⚠️ débil | Sin drums reconocibles; "muy rápido" no se traduce en velocidad real |
+| test3 | "A soft love song on piano." | ❌ ignorado | Genera piano + bajo + saxofón + armónica — no respeta "solo piano" |
+| test4 | "...trance track... 138 BPM... A minor..." | ⚠️ parcial | Instrumentación aproximada, 138 BPM no garantizado |
+| test5 | "A cheerful christmas song suitable for children." | ✅ aceptable | El más exitoso — evoca algo "navideño", aunque genérico |
+| test6 | "...C minor... brass... sax... C7/E Eb6 Bbm6 124 BPM..." | ⚠️ parcial | Prompt muy detallado → pieza de ~3500B vs referencia de 8580B; el modelo no genera más contenido aunque el prompt sea más largo |
+| test7 | "A heavy metal song with strong drums and guitar." | ❌ débil | Sin agresividad característica del metal; progresión monótona |
+
+### Limitaciones estructurales del modelo
+
+1. **Prompt corto = modelo libre = resultado genérico.** "A sad pop song" o "heavy metal" producen
+   resultados intercambiables. El modelo no tiene masa suficiente para "interpretar" un género.
+
+2. **Prompt largo ≠ pieza más larga.** test6 tiene el prompt más detallado (instrumentación
+   explícita, BPM, progresión de acordes) pero genera ~3500 bytes igual que los demás.
+   El límite de 2000 tokens REMI es estructural: corresponde a 20-60s de música según densidad,
+   independientemente del prompt.
+
+3. **Seguimiento débil de atributos específicos.** Tempo, tonalidad y progresión de acordes
+   raramente se reflejan con precisión. CLAP score de 0.22 en el paper lo confirma objetivamente.
+
+4. **Multi-track pero sin coherencia entre pistas.** Las pistas se generan token a token de forma
+   autoregresiva — no hay mecanismo que garantice que el saxofón y el bajo estén en la misma tonalidad
+   o toquen en el mismo tiempo.
+
+### Contexto: ¿fue text2midi un modelo "serio"?
+
+No en el sentido de herramienta de producción. Es una **contribución de investigación como baseline**:
+
+- La aportación real del paper es el **dataset MidiCaps** (168k pares MIDI-caption), no el modelo.
+  El modelo existe para demostrar que el dataset es útil para entrenamiento text-to-MIDI.
+- El framing "primer modelo end-to-end text-to-MIDI" es posicionamiento de paper, no de producto.
+  Cuando un paper establece un "primero", está abriendo la línea de investigación, no cerrándola.
+- La arquitectura es deliberadamente modesta: encoder T5-base frozen + decoder custom de 18 capas,
+  ~900MB total. No hay versiones más grandes disponibles públicamente.
+- El listening study lo publica sin ambigüedad: 4.62/7. Es "aceptable" como baseline académico.
+
+### ¿Qué habría que hacer para que funcionase bien?
+
+La dirección correcta es la de **ChatMusician** (fine-tune de LLaMA con ABC notation) o
+**MIDI-LLM** (Llama extendido con vocabulario MIDI): aprovechar la capacidad semántica de un LLM
+real en lugar de construir una arquitectura ad hoc. ChatMusician es arquitectónicamente más sólido
+que text2midi, pero ABC notation limita la polifonía y el multi-track — no es el formato adecuado
+para una integración DAW seria. El problema de texto→MIDI multi-track coherente sigue abierto
+a fecha de junio 2026.
+
+### Veredicto: DESCARTADO ❌
+
+text2midi queda descartado como componente del plugin MidiGenerator. No por fallos en nuestro
+pipeline (que reproduce fielmente el comportamiento oficial) sino porque la calidad del modelo
+es insuficiente para uso productivo incluso en condiciones óptimas.
 
 ---
 
