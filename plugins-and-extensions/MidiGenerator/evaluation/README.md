@@ -74,10 +74,19 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 | text2midi | test1 | generado | ~400s (2000 tokens, MPS) | ver prompt.txt |
 | text2midi | test2 | generado | ~400s | ver prompt.txt |
 | text2midi | test3 | generado | ~400s | ver prompt.txt |
-| midi_llm | comparison_10 (ex-test1) | generado | 148.4s (2046 tokens, MPS) | 5 pistas, 682 notas — ref oficial disponible |
-| midi_llm | comparison_4 (ex-test2)  | generado | ~150s | ref oficial disponible — prompt difiere en "361s" al final |
-| midi_llm | comparison_1-12 resto    | pendiente | — | correr regenerate_all.sh para generar los 10 faltantes |
-| midi_llm | _orphan_sunday_picnic   | generado | ~150s | sin ref oficial — archivado |
+| midi_llm | comparison_1  | ✅ MPS | inf 124s | 6 pistas, 669 notas, 20.0s — pop/rock soothing A minor |
+| midi_llm | comparison_2  | ✅ MPS | inf 121s | 6 pistas, 682 notas, 21.9s — electronic rock corporate A minor |
+| midi_llm | comparison_3  | ✅ MPS | inf 118s | 4 pistas, 682 notas, 26.8s — classical cinematic strings C major |
+| midi_llm | comparison_4  | ✅ MPS | inf ~150s | 5 pistas — classical organ+horn A minor (ex-test2) |
+| midi_llm | comparison_5  | ✅ MPS | inf 117s | 5 pistas, 679 notas, 41.8s — lively pop D major 129 BPM |
+| midi_llm | comparison_6  | ✅ MPS | inf 118s | 5 pistas, 682 notas, 26.8s — rock/pop pizzicato A minor 148 BPM |
+| midi_llm | comparison_7  | ✅ MPS | inf 117s | 6 pistas, 682 notas, 8.3s — orchestral soundtrack F major |
+| midi_llm | comparison_8  | ✅ MPS | inf 119s | 3 pistas, 639 notas, 20.3s — dark cinematic electronic Eb minor |
+| midi_llm | comparison_9  | ✅ MPS | inf 117s | 6 pistas, 682 notas, 17.4s — electronic space C minor |
+| midi_llm | comparison_10 | ✅ MPS | inf 148s | 5 pistas, 682 notas — rock A minor (ex-test1) |
+| midi_llm | comparison_11 | ✅ MPS | inf 114s | 3 pistas, 509 notas, 20.5s — slow rock Bb minor epic |
+| midi_llm | comparison_12 | ✅ MPS | inf 115s | 4 pistas, 588 notas, 21.4s — Christmas classical Eb major |
+| midi_llm | _orphan_sunday_picnic | archivado | ~150s | sin ref oficial — jazz Sunday picnic |
 | amt | test1 | ✅ | carga 1.0s, inf 896.5s (CPU) | continuation 20s, fixture=prompt oficial (73 notas) |
 | amt | test2 | ✅ (Modal A10G) | inf v0:151s v1:127s v2:231s | accompaniment 20s, 3 candidatos, input_fixture.mid (138 notas piano completo) |
 | amt | test3 | ✅ (Modal A10G) | inf v0:1.4s v1:0.8s v2:0.7s | accompaniment 15s, 3 candidatos, fixture jazz Bb |
