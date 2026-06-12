@@ -64,17 +64,20 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install(["git", "ffmpeg"])
     .pip_install(
-        "torch==2.5.1",
-        "vllm==0.6.4",
-        "transformers>=4.46",
-        "huggingface_hub>=0.25",
+        # Exact versions from the official MIDI-LLM requirements.txt
+        "torch==2.8.0",
+        "vllm==0.11.0",
+        "transformers==4.57.1",
+        "tokenizers==0.22.1",
+        "huggingface_hub>=0.36",
         "mido>=1.3",
         "pretty_midi>=0.2.10",
         "numpy",
-        extra_index_url="https://download.pytorch.org/whl/cu121",
+        "safetensors",
+        extra_index_url="https://download.pytorch.org/whl/cu126",
     )
     .run_commands(
-        "pip install 'git+https://github.com/jthickstun/anticipation.git'",
+        "pip install 'git+https://github.com/jthickstun/anticipation.git@af37397922665a0fb8d474d7988b0f3755a38d45'",
     )
 )
 
