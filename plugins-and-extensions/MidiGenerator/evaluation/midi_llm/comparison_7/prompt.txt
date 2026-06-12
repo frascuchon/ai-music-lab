@@ -1,0 +1,9 @@
+Model: MIDI-LLM (slseanwu/MIDI-LLM_Llama-3.2-1B)
+Source: https://midi-llm-demo.vercel.app/prompts/comparison_7.txt
+Prompt: "A thrilling orchestral soundtrack piece that evokes a sense of action, adventure, and epic grandeur, perfect for a film trailer. The composition features a blend of piano, string ensemble, acoustic guitar, voice oohs, and electric guitar, all working together to create a cinematic atmosphere. Set in the key of F major with a lively Allegro tempo and a 4/4 time signature, the music revolves around the chords of C and F, adding to its dynamic and engaging nature."
+References (from the official Vercel demo):
+  - reference_official_bf16.mp3           (MIDI-LLM bf16 — primary reference)
+  - reference_official_fp8.mp3            (MIDI-LLM FP8 quantized — sanity check)
+  - reference_text2midi_competitor.mp3    (text2midi on same prompt — cross-comparison)
+Note: MIDI ground-truth is not publicly downloadable (demo API only, ngrok backend).
+Our command: uv run research_midi_llm.py --prompt "<see Prompt above>" --max_tokens 2046 --out generated_local_mps_v0.mid

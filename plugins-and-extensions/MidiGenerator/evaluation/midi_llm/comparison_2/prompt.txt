@@ -1,0 +1,9 @@
+Model: MIDI-LLM (slseanwu/MIDI-LLM_Llama-3.2-1B)
+Source: https://midi-llm-demo.vercel.app/prompts/comparison_2.txt
+Prompt: "This melodic electronic song, infused with elements of rock, exudes a sense of corporate motivation and happiness. The string ensemble and voice oohs create a soothing ambiance, while the overdriven guitar and drums provide a driving force. Set in A minor with a moderate tempo, the piece features a chord progression of Dm, Emaj7, Cmaj7, Am, and E7."
+References (from the official Vercel demo):
+  - reference_official_bf16.mp3           (MIDI-LLM bf16 — primary reference)
+  - reference_official_fp8.mp3            (MIDI-LLM FP8 quantized — sanity check)
+  - reference_text2midi_competitor.mp3    (text2midi on same prompt — cross-comparison)
+Note: MIDI ground-truth is not publicly downloadable (demo API only, ngrok backend).
+Our command: uv run research_midi_llm.py --prompt "<see Prompt above>" --max_tokens 2046 --out generated_local_mps_v0.mid

@@ -18,10 +18,12 @@ evaluation/
 │   ├── test2/  "A rock song with strong drums and electric guitar."  [Demo E]
 │   └── test3/  "A soft love song on piano."                         [Demo C]
 │
-├── midi_llm/              # Prompts de assets/example_prompts.txt (repo oficial)
-│   ├── test1/  Rock con sintetizadores en A menor, 4/4 — prompt #1
-│   ├── test2/  Pieza clásica con órgano y corno francés — prompt #2
-│   └── test3/  "Upbeat and playful jazz music with lively saxophones" — prompt #4
+├── midi_llm/              # 12 samples del demo oficial https://midi-llm-demo.vercel.app
+│   ├── comparison_1..12/  prompts + 3 refs de audio oficiales por carpeta (bf16/fp8/text2midi)
+│   ├── _orphan_sunday_picnic/  test3 anterior (jazz Sunday picnic) — sin ref oficial
+│   ├── download_demo_references.sh  descarga los 12 sets desde Vercel
+│   ├── build_prompts.py             genera prompt.txt canónico en cada carpeta
+│   └── regenerate_all.sh            regenera MIDIs locales vía research_midi_llm.py
 │
 ├── amt/                   # Demos de https://crfm.stanford.edu/2023/06/16/...
 │   ├── test1/  Continuation (20s) — referencia del sitio: prompt/system4/0-clip-v0
@@ -42,9 +44,12 @@ evaluation/
 oficial) y `generated.mp3` (nuestro script). Ambos derivan del mismo MIDI-to-audio pipeline
 (MuseScore), por lo que la comparación es directa en estructura melódica y armónica.
 
-**MIDI-LLM (test1-3)**: no hay audio de referencia pre-generado (el demo es interactivo).
-Comparar que `generated.mid` es un MIDI válido, multi-track, y que el estilo del prompt
-se refleja en la instrumentación y estructura.
+**MIDI-LLM (comparison_1-12)**: el demo oficial Vercel expone 3 audios de referencia por
+prompt: `reference_official_bf16.mp3` (referencia principal), `reference_official_fp8.mp3`
+(cuantizado FP8) y `reference_text2midi_competitor.mp3` (comparador text2midi). No hay
+MIDI ground-truth descargable (solo el backend ngrok de la API). Comparar los mp3 generados
+localmente (`generated_local_mps_v0.mp3`) contra `reference_official_bf16.mp3`.
+Mapeo histórico: test1 → comparison_10, test2 → comparison_4, test3 → `_orphan_sunday_picnic/`.
 
 **AMT (test1-3)**: el sitio oficial publica audio de demos con el modelo real. Comparar
 `reference_official_continuation.mp3` / `reference_official_accompaniment.mp3` contra
@@ -69,9 +74,10 @@ MIDI que nuestro script Modal generó para la misma descripción textual.
 | text2midi | test1 | generado | ~400s (2000 tokens, MPS) | ver prompt.txt |
 | text2midi | test2 | generado | ~400s | ver prompt.txt |
 | text2midi | test3 | generado | ~400s | ver prompt.txt |
-| midi_llm | test1 | generado | 148.4s (2046 tokens, MPS) | 5 pistas, 682 notas |
-| midi_llm | test2 | generado | ~150s | ver prompt.txt |
-| midi_llm | test3 | generado | ~150s | ver prompt.txt |
+| midi_llm | comparison_10 (ex-test1) | generado | 148.4s (2046 tokens, MPS) | 5 pistas, 682 notas — ref oficial disponible |
+| midi_llm | comparison_4 (ex-test2)  | generado | ~150s | ref oficial disponible — prompt difiere en "361s" al final |
+| midi_llm | comparison_1-12 resto    | pendiente | — | correr regenerate_all.sh para generar los 10 faltantes |
+| midi_llm | _orphan_sunday_picnic   | generado | ~150s | sin ref oficial — archivado |
 | amt | test1 | ✅ | carga 1.0s, inf 896.5s (CPU) | continuation 20s, fixture=prompt oficial (73 notas) |
 | amt | test2 | ✅ (Modal A10G) | inf v0:151s v1:127s v2:231s | accompaniment 20s, 3 candidatos, input_fixture.mid (138 notas piano completo) |
 | amt | test3 | ✅ (Modal A10G) | inf v0:1.4s v1:0.8s v2:0.7s | accompaniment 15s, 3 candidatos, fixture jazz Bb |

@@ -1,0 +1,9 @@
+Model: MIDI-LLM (slseanwu/MIDI-LLM_Llama-3.2-1B)
+Source: https://midi-llm-demo.vercel.app/prompts/comparison_6.txt
+Prompt: "A lively rock song with a touch of pop, featuring pizzicato strings that add a playful and upbeat vibe. The melody is cheerful and energetic, making it suitable for corporate or background music. With a fast tempo of 148 beats per minute and a 4/4 time signature, the song is set in the key of A minor and revolves around the chord progression of C, G, Fmaj7, C, and G."
+References (from the official Vercel demo):
+  - reference_official_bf16.mp3           (MIDI-LLM bf16 — primary reference)
+  - reference_official_fp8.mp3            (MIDI-LLM FP8 quantized — sanity check)
+  - reference_text2midi_competitor.mp3    (text2midi on same prompt — cross-comparison)
+Note: MIDI ground-truth is not publicly downloadable (demo API only, ngrok backend).
+Our command: uv run research_midi_llm.py --prompt "<see Prompt above>" --max_tokens 2046 --out generated_local_mps_v0.mid
