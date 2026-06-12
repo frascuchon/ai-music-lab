@@ -79,6 +79,9 @@ image = (
     .run_commands(
         # Clonar el repo de Amadeus (código del modelo y utils)
         f"git clone https://github.com/lingyu123-su/Amadeus {AMADEUS_DIR}",
+        # Bug en sub_decoder_zoo.py: `from turtle import st` arrastra tkinter
+        # que no existe en containers headless. La importación es dead code.
+        f"sed -i '/from turtle import/d' {AMADEUS_DIR}/Amadeus/sub_decoder_zoo.py",
         # Parchear la ruta hardcodeada del soundfont (apunta al servidor del autor)
         # Usamos el soundfont de sistema instalado via apt (fluid-soundfont-gm)
         "sed -i \"s|DEFAULT_SOUND_FONT = '.*'|"
@@ -95,12 +98,13 @@ image = (
         "sentencepiece>=0.2",
         # Arquitectura del modelo
         "omegaconf>=2.3",
-        "x-transformers>=1.30",
+        "x-transformers==2.17.10",  # versión probada en build anterior; >=1.30 causa backtracking lento
         # Encoding simbólico / MIDI I/O
         "music21>=9.1",
         "mido>=1.3",
         "pretty_midi>=0.2.10",
         "matplotlib>=3.8",
+        "pydub>=0.25",  # requerido por midi2audio.py para conversión WAV→MP3
         # Evaluación (métricas)
         "muspy>=0.5",
         # Utilidades
@@ -154,7 +158,9 @@ def _load_model():
     """
     Carga AmadeusModel (Amadeus-S) y T5 encoder desde el Volume.
 
-    Replica verbatim la lógica de load_resources() de demo/Amadeus_app_EN.py.
+    Replica verbatim la función prepare_model_and_dataset_from_config de
+    demo/Amadeus_app_EN.py (versión local del demo, distinta a la de
+    Amadeus/evaluation_utils.py que requiere el dataset completo).
     """
     import torch
     from omegaconf import OmegaConf
@@ -163,10 +169,10 @@ def _load_model():
 
     sys.path.insert(0, AMADEUS_DIR)
 
-    from Amadeus.evaluation_utils import (
-        wandb_style_config_to_omega_config,
-        prepare_model_and_dataset_from_config,
-    )
+    from Amadeus.evaluation_utils import wandb_style_config_to_omega_config
+    from Amadeus.train_utils import adjust_prediction_order
+    from data_representation import vocab_utils
+    from Amadeus import model_zoo
 
     os.environ["HF_HOME"] = HF_CACHE
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -194,9 +200,45 @@ def _load_model():
     config = OmegaConf.load(config_path)
     config = wandb_style_config_to_omega_config(config)
 
-    # Modelo + vocabulario (verbatim del demo)
+    # ---------------------------------------------------------------------------
+    # Inicialización de vocab y modelo
+    # Replica verbatim prepare_model_and_dataset_from_config de demo/Amadeus_app_EN.py
+    # (versión simplificada sin carga de dataset — solo para inferencia)
+    # ---------------------------------------------------------------------------
+    nn_params = config.nn_params
+    encoding_scheme = config.nn_params.encoding_scheme  # 'nb'
+    num_features = config.nn_params.num_features         # 8
+
+    vocab_name_map = {"remi": "LangTokenVocab", "cp": "MusicTokenVocabCP", "nb": "MusicTokenVocabNB"}
+    vocab = getattr(vocab_utils, vocab_name_map[encoding_scheme])(
+        in_vocab_file_path=vocab_path,
+        event_data=None,
+        encoding_scheme=encoding_scheme,
+        num_features=num_features,
+    )
+
+    prediction_order = adjust_prediction_order(
+        encoding_scheme, num_features, config.data_params.first_pred_feature, nn_params
+    )
+
+    model = getattr(model_zoo, nn_params.model_name)(
+        vocab=vocab,
+        input_length=config.train_params.input_length,
+        prediction_order=prediction_order,
+        input_embedder_name=nn_params.input_embedder_name,
+        main_decoder_name=nn_params.main_decoder_name,
+        sub_decoder_name=nn_params.sub_decoder_name,
+        sub_decoder_depth=nn_params.sub_decoder.num_layer if hasattr(nn_params, "sub_decoder") else 0,
+        sub_decoder_enricher_use=nn_params.sub_decoder.feature_enricher_use
+        if hasattr(nn_params, "sub_decoder") and hasattr(nn_params.sub_decoder, "feature_enricher_use")
+        else False,
+        dim=nn_params.main_decoder.dim_model,
+        heads=nn_params.main_decoder.num_head,
+        depth=nn_params.main_decoder.num_layer,
+        dropout=nn_params.model_dropout,
+    )
+
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
-    model, vocab = prepare_model_and_dataset_from_config(config, vocab_path)
     model.load_state_dict(ckpt["model"], strict=False)
     model.to(device)
     model.eval()
