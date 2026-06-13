@@ -1,0 +1,22 @@
+Test 02 — Piano solo clásico: Chopin Étude (MAPS dataset)
+Archivo original: MAPS_MUS-chpn-e01_ENSTDkCl.wav
+Dataset: MAPS (MIDI Aligned Piano Sounds), piano real Disklavier Kawai EX
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+
+Contenido musical:
+  Chopin Étude Op. 10 No. 1 (arpegiados rápidos)
+  Instrumento: piano solo, alto nivel de polifonía y velocidad
+  Dificultad: ALTA — arpegiados rápidos, muchas notas simultáneas
+  Duración: ~3.6 MB → ~2-3 min aprox.
+
+Por qué este test:
+  MAPS es el benchmark estándar de piano-solo en AMT.
+  YourMT3+ reporta SOTA en MAPS — resultado esperado: MUY BUENO.
+  Caso ideal para comparar con baseline MT3 (también entrenado en MAPS).
+  Piano es el instrumento con mejor cobertura en todos los datasets de entrenamiento.
+
+Métricas objetivo (ref. paper YourMT3+ tabla 1, MAPS):
+  F1 nota (onset+pitch): >85%
+  F1 nota+offset: >65%
+
+Resultado: pendiente

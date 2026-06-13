@@ -1,0 +1,17 @@
+Test 09 — Grabación real (varios géneros): RWC Music Database (087)
+Archivo original: rwc087.wav
+Dataset: RWC Music Database (Real World Computing, colección profesional japonesa)
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 9.32 MB → ~3-4 min aprox.
+
+Contenido musical:
+  Grabación real del RWC Popular Music Database o Classical Database
+  RWC #087 — pista número 87 de la base de datos
+  Dificultad: MEDIA-ALTA — grabación real de alta calidad
+
+Por qué este test:
+  RWC es un benchmark de calidad profesional muy utilizado en MIR.
+  Grabaciones reales con variedad de géneros (pop, jazz, clásico, folk).
+  Permite evaluar generalización a grabaciones fuera de los datasets de entrenamiento.
+
+Resultado: pendiente

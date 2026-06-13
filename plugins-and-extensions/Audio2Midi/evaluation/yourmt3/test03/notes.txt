@@ -1,0 +1,17 @@
+Test 03 — Piano solo clásico: Schubert (MAPS dataset)
+Archivo original: MAPS_MUS-scn15_11_ENSTDkAm.wav
+Dataset: MAPS, piano real Disklavier Yamaha Disklavier Mark IV
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+
+Contenido musical:
+  Schubert Impromptus (melódico, secciones contrastantes)
+  Instrumento: piano solo, velocidad y dinámica variadas
+  Dificultad: MEDIA — más melódico que el Chopin, menos polifonía densa
+  Duración: ~2.51 MB → ~1.5-2 min aprox.
+
+Por qué este test:
+  Segundo ejemplo MAPS para confirmar consistencia de YourMT3+ en piano solo.
+  Piano Yamaha DM vs Kawai EX (test02) — permite verificar robustez acústica.
+  Comparación directa con test02 para ver si la dificultad técnica afecta F1.
+
+Resultado: pendiente

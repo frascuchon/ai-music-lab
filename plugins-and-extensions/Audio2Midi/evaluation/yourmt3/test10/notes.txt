@@ -1,0 +1,20 @@
+Test 10 — Grabación real (varios géneros): RWC Music Database (089)
+Archivo original: rwc089.mp3
+Formato: MP3 (YourMT3+ acepta MP3 vía librosa/torchaudio)
+Dataset: RWC Music Database
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 5.36 MB → ~3-4 min aprox.
+
+Contenido musical:
+  Grabación real del RWC #089 — segunda muestra de RWC
+  Dificultad: MEDIA-ALTA
+
+Por qué este test:
+  Segundo ejemplo RWC — permite comparar consistencia en el corpus.
+  Formato MP3 (vs WAV en otros tests) — verifica robustez ante compresión con pérdida.
+  Si el modelo tiene dificultades con MP3, puede indicar necesidad de conversión previa.
+
+NOTA: el archivo de entrada es input.mp3 (no input.wav) para este test.
+El script eval_all acepta ambos formatos automáticamente.
+
+Resultado: pendiente

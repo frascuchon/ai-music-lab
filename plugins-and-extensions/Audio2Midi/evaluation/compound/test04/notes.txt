@@ -1,0 +1,15 @@
+Test 04 (compound) — Grabación real: RWC 087
+Audio: mismo que yourmt3/test09 — rwc087.wav
+Pipeline: Demucs htdemucs_6s → Basic Pitch por stem
+
+Por qué este test:
+  Grabación REAL de alta calidad — el caso más exigente para separación de fuentes.
+  Demucs fue entrenado mayoritariamente en música pop/rock real → buen rendimiento esperado.
+  Basic Pitch en stems reales vs sintéticos puede variar en calidad.
+
+Caso de evaluación:
+  Si YourMT3+ falla en instrumentos secundarios de grabaciones reales (<10% F1)
+  y el pipeline compuesto da mejor resultado en bajo/guitarra por separación previa,
+  esto validaría la arquitectura compuesta como complemento.
+
+Resultado: pendiente

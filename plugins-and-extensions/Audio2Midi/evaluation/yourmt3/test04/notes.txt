@@ -1,0 +1,23 @@
+Test 04 — Multi-instrumento sintético: Slakh2100 (pista 1884)
+Archivo original: Slakh_test_1884.wav
+Dataset: Slakh2100 (Synthetic Lakh MIDI Dataset, ~2100 pistas sintéticas)
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 10.9 MB → ~3-4 min aprox.
+
+Contenido musical:
+  Pista Slakh #1884 — mezcla sintética multi-instrumento estilo MIDI/virtual
+  Instrumentos esperados: combinación de piano, bajo, batería, cuerdas u otros
+  Dificultad: ALTA — múltiples instrumentos simultáneos, timbre sintético
+  Audio: renderizado con soundfonts (no audio real de músicos)
+
+Por qué este test:
+  CASO CLAVE para YourMT3+ — Slakh es el dataset de multi-instrumento más usado.
+  YourMT3+ fue entrenado en Slakh, resultado esperado: MUY BUENO.
+  Permite medir F1 nota+instrumento (la métrica más exigente).
+  Comparación directa posible con resultados del paper (tabla principal).
+
+Métricas objetivo (ref. paper YourMT3+, Slakh test set):
+  F1 nota (onset+pitch): >70%
+  F1 nota+instrumento: >50%
+
+Resultado: pendiente

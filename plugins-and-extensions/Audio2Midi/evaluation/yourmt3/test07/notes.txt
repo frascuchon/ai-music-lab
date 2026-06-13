@@ -1,0 +1,16 @@
+Test 07 — Música clásica real: MusicNet (pista 2556)
+Archivo original: musicnet2556.wav
+Dataset: MusicNet (grabaciones profesionales con anotaciones MIDI)
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 4.85 MB → ~1.5-2 min aprox.
+
+Contenido musical:
+  Grabación clásica real de instrumento solista o pequeño conjunto
+  Dificultad: MEDIA-ALTA — anotaciones a nivel de nota precisas en MusicNet
+
+Por qué este test:
+  MusicNet es un benchmark estándar de AMT en música clásica real.
+  YourMT3+ entrenado en MusicNet — resultado esperado: BUENO.
+  Ground truth disponible en la distribución MusicNet para comparación exacta.
+
+Resultado: pendiente

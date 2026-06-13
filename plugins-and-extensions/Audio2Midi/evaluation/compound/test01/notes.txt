@@ -1,0 +1,19 @@
+Test 01 (compound) — Funk multi-instrumento (MIRST)
+Audio: mismo que yourmt3/test01 — 00_Funk1-97-C_comp_mic_pshift-3.wav
+Pipeline: Demucs htdemucs_6s → Basic Pitch por stem
+
+Por qué este test:
+  CASO DE COMPARACIÓN DIRECTA con YourMT3+ test01.
+  El funk con bajo/batería/guitarra/teclado es ideal para evaluar si
+  Demucs separa bien los stems antes de transcribir.
+
+Expectativas por stem:
+  - bass:   Basic Pitch captura bien la línea de bajo (mono-instrumento post-Demucs) → BUENO
+  - guitar: stem aislado → Basic Pitch fiable → BUENO
+  - piano:  htdemucs_6s tiende a mezclar teclados con "other" → VARIABLE
+  - drums:  Basic Pitch en drum stem → noisy, no fiable → MALO
+  - vocals: si hay voces → Basic Pitch captura melodía vocal → VARIABLE
+
+Para drums, comparar luego con ADTOF si los resultados son pobres.
+
+Resultado: pendiente

@@ -1,0 +1,15 @@
+Test 05 (compound) — Música de cámara real: MIRST 493
+Audio: mismo que yourmt3/test06 — mirst493.wav
+Pipeline: Demucs htdemucs_6s → Basic Pitch por stem
+
+Por qué este test:
+  Conjunto de cámara real: instrumentos acústicos sin batería electrónica.
+  Permite evaluar si Demucs separa bien instrumentos de cámara (cuerdas, viento).
+  htdemucs_6s puede tener dificultades con instrumentos orquestales no en su vocabulario
+  de stems (violin/cello/flauta → stem "other").
+
+Expectativas:
+  - other: todo el conjunto puede ir a un stem → Basic Pitch mezcla todo → MALO
+  - Este test puede mostrar la limitación de Demucs en música de cámara vs pop
+
+Resultado: pendiente

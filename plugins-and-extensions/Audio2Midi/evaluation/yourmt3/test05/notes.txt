@@ -1,0 +1,17 @@
+Test 05 — Multi-instrumento sintético: Slakh2100 (pista 1975)
+Archivo original: Slakh_test_1975.wav
+Dataset: Slakh2100
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 8.43 MB → ~2.5-3 min aprox.
+
+Contenido musical:
+  Pista Slakh #1975 — segunda muestra de mezcla sintética multi-instrumento
+  Dificultad: ALTA — multi-instrumento
+
+Por qué este test:
+  Segundo ejemplo Slakh para confirmar consistencia (dos pistas diferentes).
+  Permite comparar si el rendimiento varía según la composición instrumentaria
+  (ej. si #1975 tiene más o menos percusión que #1884, o instrumentos distintos).
+  Útil para detectar si algún tipo de instrumento o textura degrada el F1.
+
+Resultado: pendiente

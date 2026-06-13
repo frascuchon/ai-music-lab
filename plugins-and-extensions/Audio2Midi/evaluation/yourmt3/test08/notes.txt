@@ -1,0 +1,16 @@
+Test 08 — Música clásica real: MusicNet (pista 2628)
+Archivo original: musicnet_2628.wav
+Dataset: MusicNet
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 3.99 MB → ~1.5 min aprox.
+
+Contenido musical:
+  Segunda grabación clásica real de MusicNet
+  Dificultad: MEDIA — música clásica acústica de calidad
+
+Por qué este test:
+  Segundo ejemplo MusicNet para confirmar consistencia del modelo en este corpus.
+  Ground truth disponible para comparación exacta.
+  Permite ver si el modelo generaliza bien entre diferentes piezas del mismo dataset.
+
+Resultado: pendiente

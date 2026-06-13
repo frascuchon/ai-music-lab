@@ -1,0 +1,15 @@
+Test 03 (compound) — Multi-instrumento sintético: Slakh #1884
+Audio: mismo que yourmt3/test04 — Slakh_test_1884.wav
+Pipeline: Demucs htdemucs_6s → Basic Pitch por stem
+
+Por qué este test:
+  Multi-instrumento sintético = caso ideal para evaluar el pipeline compuesto.
+  Slakh fue generado con MIDI conocido, permite calcular F1 exacto por stem.
+  Principal punto de comparación: ¿mejora o empeora vs YourMT3+ end-to-end?
+
+Hipótesis a verificar:
+  El pipeline compuesto puede MEJORAR en bajo/guitarra (stems aislados → Basic Pitch preciso)
+  pero EMPEORAR en percusión (Basic Pitch no transcribe drums bien) y
+  puede introducir errores de leakage entre stems (Demucs no separa perfectamente).
+
+Resultado: pendiente
