@@ -101,7 +101,9 @@ image = (
         extra_index_url="https://download.pytorch.org/whl/cu121",
     )
     .pip_install(
+        # Todos en un paso para que pip resuelva conflictos de numpy/TF/demucs juntos
         "demucs>=4.0",
+        "tensorflow-cpu>=2.14,<2.16",  # backend para basic-pitch (TFLite+numpy incompatibles)
         "basic-pitch>=0.4",
         "mido>=1.3",
         "pretty_midi>=0.2.10",
@@ -150,33 +152,34 @@ def setup():
 def _separate_stems(audio_bytes: bytes) -> dict[str, bytes]:
     """
     Separa un audio en stems usando Demucs htdemucs_6s.
-    Returns: dict stem_name → WAV bytes (44.1kHz estéreo)
+    Usa demucs.separate.main (compatible con 4.0.x stable y 4.1.x alpha).
+    Returns: dict stem_name → WAV bytes
     """
-    import demucs.api
-    import soundfile as sf
-    import numpy as np
+    import shutil
+    from demucs.separate import main as demucs_main
 
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp.write(audio_bytes)
         audio_path = tmp.name
 
+    out_dir = tempfile.mkdtemp()
     try:
-        sep = demucs.api.Separator(model=DEMUCS_MODEL, device="cuda")
-        _, separated = sep.separate_audio_file(audio_path)
-        sr = sep.samplerate
+        demucs_main(["-n", DEMUCS_MODEL, "--out", out_dir,
+                     "--device", "cuda", audio_path])
+
+        base_name = Path(audio_path).stem
+        stems_dir = Path(out_dir) / DEMUCS_MODEL / base_name
+        if not stems_dir.exists():
+            raise RuntimeError(f"Demucs no generó salida en {stems_dir}")
 
         result = {}
-        for stem_name, tensor in separated.items():
-            buf = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            buf.close()
-            demucs.api.save_audio(tensor, buf.name, samplerate=sr)
-            with open(buf.name, "rb") as f:
-                result[stem_name] = f.read()
-            os.unlink(buf.name)
+        for stem_file in sorted(stems_dir.glob("*.wav")):
+            result[stem_file.stem] = stem_file.read_bytes()
 
         return result
     finally:
         os.unlink(audio_path)
+        shutil.rmtree(out_dir, ignore_errors=True)
 
 
 def _transcribe_stem(stem_name: str, stem_bytes: bytes) -> "pretty_midi.PrettyMIDI | None":

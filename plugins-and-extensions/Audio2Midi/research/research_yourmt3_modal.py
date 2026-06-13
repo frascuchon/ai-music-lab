@@ -85,7 +85,10 @@ SPACE_DIR = "/yourmt3_space"
 MODEL_HF_REPO = "mimbres/YourMT3"
 EXP_ID = "mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops"
 CKPT_FILE = "last.ckpt"
+# Ruta en HuggingFace Hub (sin amt/ prefix)
 CKPT_HF_PATH = f"logs/2024/{EXP_ID}/checkpoints/{CKPT_FILE}"
+# Ruta en el Volume: initialize_trainer() resuelve como amt/logs/... relativo a SPACE_DIR
+CKPT_VOL_PATH = f"amt/{CKPT_HF_PATH}"
 
 DEFAULT_GPU = os.environ.get("YOURMT3_GPU", "A10G")
 PRECISION = "16"
@@ -98,6 +101,11 @@ image = (
     .apt_install(["git", "ffmpeg", "sox", "libsndfile1"])
     .run_commands(
         f"GIT_LFS_SKIP_SMUDGE=1 git clone {SPACE_REPO} {SPACE_DIR}"
+    )
+    .run_commands(
+        # Audit de la estructura clonada — aparece en los logs del build
+        f"echo '=== Space .py files ===' && find {SPACE_DIR} -name '*.py' "
+        f"! -path '*/__pycache__/*' ! -path '*/logs/*' | sort | head -80"
     )
     .pip_install(
         "torch==2.4.0",
@@ -117,6 +125,8 @@ image = (
         "python-dotenv",
         "deprecated",
         "psutil>=6.0",
+        "wandb",          # importado en ymt3.py (top-level); solo necesario en runtime, no para log
+        "omegaconf>=2.3", # usado por init_train
         "git+https://github.com/craffel/mir_eval.git",
     )
 )
@@ -125,16 +135,75 @@ app = modal.App("yourmt3-inference", image=image)
 
 
 # ---------------------------------------------------------------------------
+# Diagnóstico — ejecutar si hay errores de checkpoint
+# ---------------------------------------------------------------------------
+@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, timeout=120)
+def debug_checkpoint():
+    """
+    Inspecciona el checkpoint descargado en el Volume.
+    modal run research/research_yourmt3_modal.py::debug_checkpoint
+    """
+    ckpt = f"{WEIGHTS_MOUNT}/{CKPT_VOL_PATH}"
+    print(f"Path:        {ckpt}")
+    print(f"Exists:      {os.path.exists(ckpt)}")
+    print(f"Is symlink:  {os.path.islink(ckpt)}")
+    if os.path.islink(ckpt):
+        target = os.readlink(ckpt)
+        real = os.path.realpath(ckpt)
+        print(f"Symlink →    {target}")
+        print(f"Real path:   {real}")
+        print(f"Real exists: {os.path.exists(real)}")
+
+    if os.path.exists(ckpt):
+        size = os.path.getsize(ckpt)
+        print(f"Size:        {size} bytes ({size/1e6:.1f} MB)")
+        with open(ckpt, "rb") as f:
+            first = f.read(64)
+        print(f"First hex:   {first.hex()}")
+        print(f"First repr:  {first!r}")
+        # PyTorch ZIP format starts with PK (0x504b)
+        # PyTorch pickle format starts with \x80 (0x80)
+        if first[:2] == b"PK":
+            print("Formato:     PyTorch ZIP (moderno) ✓")
+        elif first[0:1] == b"\x80":
+            print("Formato:     PyTorch pickle (legacy) ✓")
+        else:
+            print("Formato:     DESCONOCIDO — posible LFS pointer o archivo corrupto")
+
+
+# ---------------------------------------------------------------------------
 # Helpers compartidos
 # ---------------------------------------------------------------------------
 def _setup_space_env():
-    """Configura sys.path y el symlink logs/ → volume, y crea model_output/."""
-    sys.path.insert(0, SPACE_DIR)
+    """Configura sys.path y el symlink logs/ → volume, y crea model_output/.
+
+    Estructura real del Space (confirmada via build audit):
+        /yourmt3_space/
+            app.py, model_helper.py, html_helper.py
+            amt/
+                src/          ← aquí están model/, utils/, config/
+                    model/
+                    utils/
+                    config/
+            examples/
+            logs/ (LFS)
+    """
+    for p in [SPACE_DIR, f"{SPACE_DIR}/amt/src"]:
+        if p not in sys.path:
+            sys.path.insert(0, p)
     os.chdir(SPACE_DIR)
 
-    logs_link = f"{SPACE_DIR}/logs"
-    if not os.path.lexists(logs_link):
-        os.symlink(f"{WEIGHTS_MOUNT}/logs", logs_link)
+    # initialize_trainer resuelve el checkpoint como amt/logs/... relativo a CWD
+    # El git clone (GIT_LFS_SKIP_SMUDGE=1) deja amt/logs/ como directorio real
+    # con LFS pointer files. Lo reemplazamos por un symlink al volume.
+    amt_logs_link = f"{SPACE_DIR}/amt/logs"
+    if os.path.isdir(amt_logs_link) and not os.path.islink(amt_logs_link):
+        import shutil
+        shutil.rmtree(amt_logs_link)
+        print(f"[setup_env] Eliminado directorio LFS: {amt_logs_link}")
+    if not os.path.lexists(amt_logs_link):
+        os.symlink(f"{WEIGHTS_MOUNT}/amt/logs", amt_logs_link)
+        print(f"[setup_env] Symlink creado: {amt_logs_link} → {WEIGHTS_MOUNT}/amt/logs")
 
     os.makedirs(f"{SPACE_DIR}/model_output", exist_ok=True)
 
@@ -173,33 +242,55 @@ def _model_args():
 )
 def setup():
     """
-    Descarga el checkpoint YPTF.MoE+Multi (noPS) de HuggingFace Hub
-    al Volume persistente manteniendo la estructura de directorios esperada
-    por initialize_trainer() del Space.
+    Descarga el checkpoint YPTF.MoE+Multi (noPS) al Volume con requests directo
+    (sin pasar por el caché de huggingface_hub que usa symlinks y se rompe entre containers).
 
     Ejecutar una sola vez:
         modal run research/research_yourmt3_modal.py::setup
     """
-    from huggingface_hub import hf_hub_download
+    import requests
 
-    local_ckpt = f"{WEIGHTS_MOUNT}/{CKPT_HF_PATH}"
+    # Descargar a WEIGHTS_MOUNT/amt/logs/... para que el symlink amt/logs → WEIGHTS_MOUNT/amt/logs funcione
+    local_ckpt = f"{WEIGHTS_MOUNT}/{CKPT_VOL_PATH}"
 
-    if os.path.exists(local_ckpt):
+    if os.path.exists(local_ckpt) and not os.path.islink(local_ckpt):
         size_mb = os.path.getsize(local_ckpt) / 1e6
-        print(f"[setup] Checkpoint ya descargado: {local_ckpt} ({size_mb:.0f} MB)")
-        return
+        if size_mb > 100:
+            print(f"[setup] Checkpoint real ya existe: {local_ckpt} ({size_mb:.0f} MB)")
+            return
+        print(f"[setup] Archivo existente demasiado pequeño ({size_mb:.1f} MB), re-descargando…")
+    elif os.path.islink(local_ckpt):
+        print("[setup] Symlink detectado — eliminando para descargar archivo real…")
+        os.unlink(local_ckpt)
 
-    print(f"[setup] Descargando {CKPT_HF_PATH} desde {MODEL_HF_REPO} …")
+    os.makedirs(os.path.dirname(local_ckpt), exist_ok=True)
+
+    url = f"https://huggingface.co/{MODEL_HF_REPO}/resolve/main/{CKPT_HF_PATH}"
+    print(f"[setup] Descargando desde {url} …")
+
     t0 = time.time()
-    hf_hub_download(
-        repo_id=MODEL_HF_REPO,
-        filename=CKPT_HF_PATH,
-        local_dir=WEIGHTS_MOUNT,
-        local_dir_use_symlinks=False,
-    )
+    r = requests.get(url, stream=True, timeout=120)
+    r.raise_for_status()
+
+    total_bytes = 0
+    with open(local_ckpt, "wb") as f:
+        for chunk in r.iter_content(chunk_size=8 * 1024 * 1024):
+            f.write(chunk)
+            total_bytes += len(chunk)
+            if total_bytes % (100 * 1024 * 1024) < (8 * 1024 * 1024):
+                print(f"[setup]   {total_bytes / 1e6:.0f} MB descargados…")
+
     elapsed = time.time() - t0
-    size_mb = os.path.getsize(local_ckpt) / 1e6
-    print(f"[setup] OK — {size_mb:.0f} MB descargados en {elapsed:.0f}s")
+    size_mb = total_bytes / 1e6
+    print(f"[setup] OK — {size_mb:.0f} MB en {elapsed:.0f}s ({size_mb/elapsed:.1f} MB/s)")
+
+    # Verificar que es un archivo PyTorch válido
+    with open(local_ckpt, "rb") as f:
+        magic = f.read(4)
+    if magic[:2] == b"PK" or magic[0:2] == b"\x80\x04":
+        print(f"[setup] Verificación OK — magic bytes: {magic!r}")
+    else:
+        print(f"[setup] WARNING: magic bytes inesperados: {magic!r}. El checkpoint puede estar corrupto.")
 
     weights_vol.commit()
     print("[setup] Volume commiteado.")
@@ -210,11 +301,26 @@ def setup():
 # ---------------------------------------------------------------------------
 def _load_model_once():
     """Carga modelo YourMT3+ en GPU. Llamar después de _setup_space_env()."""
+    import torch
     from model_helper import load_model_checkpoint
+
+    # Monkey-patch temporal: intercepta torch.load para loguear la ruta exacta
+    _original_torch_load = torch.load
+    def _patched_load(f, *args, **kwargs):
+        path_str = str(f) if not isinstance(f, int) else f"<fd={f}>"
+        print(f"[modal] torch.load → {path_str}")
+        if isinstance(f, (str, os.PathLike)) and os.path.exists(f):
+            size = os.path.getsize(f)
+            with open(f, "rb") as fh:
+                magic = fh.read(4)
+            print(f"[modal]   size={size/1e6:.1f}MB  magic={magic!r}")
+        return _original_torch_load(f, *args, **kwargs)
+    torch.load = _patched_load
 
     print(f"[modal] Cargando modelo YPTF.MoE+Multi (noPS) en CPU …")
     t0 = time.time()
     model = load_model_checkpoint(args=_model_args(), device="cpu")
+    torch.load = _original_torch_load  # restaurar
     print(f"[modal] Modelo cargado en CPU ({time.time()-t0:.1f}s), moviendo a CUDA …")
     model = model.cuda()
     print(f"[modal] Modelo en CUDA. Total: {time.time()-t0:.1f}s")
