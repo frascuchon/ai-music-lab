@@ -75,16 +75,18 @@ El F1+offset de test05 (26.5%) es anormalmente bajo por duraciones de notas exce
 
 **Aviso**: el F1 bajo en MusicNet no refleja la calidad real del modelo. Los MIDIs en `musicnet_midis.tar.gz` tienen timing de partitura (score), no de performance grabada — los onsets no coinciden con el audio. El F1-cls=100% en test07 confirma que el modelo sí identifica correctamente el instrumento; la transcripción será evaluada subjetivamente en REAPER. Para F1 real en MusicNet se necesitaría bajar los CSV de labels por grabación.
 
-##### Evaluación cualitativa en REAPER
+##### Evaluación cualitativa en REAPER (impresión general, 2026-06-22)
 
-*Pendiente — escuchar todos los tests y anotar por instrumento (0–5).
-Ver evaluacion/yourmt3/test*/notes.txt → sección "Métricas subjetivas".*
+Escucha general comparativa de todos los tests: **YourMT3+ funciona claramente mejor** que el pipeline compuesto (Demucs + Basic Pitch). Impresión global confirmada.
+
+Evaluación por instrumento por test: **pendiente** — anotar puntuación 0–5 en cada `notes.txt`.
 
 ##### Veredicto YourMT3+
 
-- **Música sintética multi-instrumento (Slakh)**: excelente. Piano y guitarra cerca de perfección (>90%). Bajo y ensemble con margen de mejora (~43–64%).
-- **Música clásica real (MusicNet/MAPS)**: buen detector de instrumento; calidad de transcripción pendiente de escucha subjetiva. Strings confundidos con Ensemble en 2628.
-- **Limitación en instrumentos secundarios (Funk/Cámara)**: pendiente de escucha. El paper indica <10% en instrumentos no principales de pop real con datos solo sintéticos.
+- **Rendimiento general**: claramente superior al pipeline compuesto en escucha subjetiva (confirma F1 objetivo).
+- **Música sintética multi-instrumento (Slakh)**: excelente. Piano y guitarra cerca de perfección (>90% F1). Bajo y ensemble con margen de mejora.
+- **Música clásica real (MusicNet/MAPS)**: pendiente de puntuación por instrumento.
+- **Limitación en instrumentos secundarios (Funk/Cámara)**: pendiente de puntuación. El paper indica <10% en inst. no principales de pop real con datos solo sintéticos.
 
 ---
 
@@ -231,7 +233,9 @@ Las arquitecturas "end-to-end" (YourMT3+, MT3) intentan resolver el problema en 
 | **Reutilización StemsSeparator** | ❌ no aplica | ✅ código Demucs ya existente |
 | **Soporte Mac MPS** | ❌ CUDA-first | ✅ Demucs + Basic Pitch = MPS nativo |
 
-**Veredicto evaluado (2026-06-22)**: el pipeline compuesto fue evaluado con F1 objetivo (compound/test03 vs Slakh 1884): **31.1% vs 77.5% de YourMT3+** en el mismo audio. La hipótesis de que BasicPitch mejoraría con stems aislados no se cumple — el leakage de Demucs introduce demasiadas notas fantasma (7484 est vs 2355 ref = 3.2× sobre-detección). **El pipeline compuesto (Demucs + Basic Pitch) queda DESCARTADO** como alternativa general. Si la calidad de batería de YourMT3+ resulta insuficiente en escucha subjetiva, el único componente que merecería integración sería Demucs + ADTOF (drums especializado), no el pipeline completo.
+**Veredicto evaluado (2026-06-22)**: el pipeline compuesto fue evaluado con F1 objetivo (compound/test03 vs Slakh 1884): **31.1% vs 77.5% de YourMT3+** en el mismo audio, y **confirmado subjetivamente en escucha general** — YourMT3+ es claramente mejor. La hipótesis de que BasicPitch mejoraría con stems aislados no se cumple — el leakage de Demucs introduce demasiadas notas fantasma (7484 est vs 2355 ref = 3.2× sobre-detección). **El pipeline Demucs + Basic Pitch queda DESCARTADO.**
+
+**Dirección siguiente**: sustituir Basic Pitch por un transcriptor de mayor calidad por stem. Candidatos a evaluar: Demucs + **YourMT3+** por stem (combina la separación de fuentes con el mejor transcriptor), o Demucs + transcriptores especializados por tipo de stem (ADTOF para drums, Transkun para piano, etc.). Pendiente de investigación y evaluación.
 
 ---
 

@@ -29,4 +29,7 @@ Resultado:
     BasicPitch sobre-detecta masivamente (7484 est vs 2355 ref = 3.2× más notas).
     Leakage entre stems de Demucs introduce notas fantasma en cada stem.
 
-  Métricas subjetivas (escucha en REAPER): pendiente
+  Métricas subjetivas (escucha en REAPER):
+    Impresión general: MALO — confirmado por escucha. Resultado claramente inferior a YourMT3+.
+    BasicPitch genera demasiadas notas falsas (sobre-detección) y leakage entre stems.
+    Pipeline Demucs + BasicPitch DESCARTADO. Puntuación por instrumento: no realizada.

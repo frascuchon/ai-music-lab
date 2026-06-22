@@ -14,4 +14,7 @@ Expectativas:
 
 Resultado:
   Sin ground truth disponible para este test.
-  Métricas subjetivas (escucha en REAPER): pendiente
+  Métricas subjetivas (escucha en REAPER):
+    Impresión general: MALO — resultado claramente inferior a YourMT3+.
+    BasicPitch genera demasiadas notas falsas (sobre-detección) y leakage entre stems.
+    Pipeline Demucs + BasicPitch DESCARTADO. Puntuación por instrumento: no realizada.
