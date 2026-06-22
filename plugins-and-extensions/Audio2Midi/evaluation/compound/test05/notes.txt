@@ -12,4 +12,6 @@ Expectativas:
   - other: todo el conjunto puede ir a un stem → Basic Pitch mezcla todo → MALO
   - Este test puede mostrar la limitación de Demucs en música de cámara vs pop
 
-Resultado: pendiente
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER): pendiente

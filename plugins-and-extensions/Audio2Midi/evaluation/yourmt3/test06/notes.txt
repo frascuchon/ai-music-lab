@@ -15,4 +15,6 @@ Por qué este test:
   entre datos sintéticos y reales en el rendimiento del modelo.
   YourMT3+ usa cross-dataset stem augmentation para mejorar generalización.
 
-Resultado: pendiente
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER): pendiente

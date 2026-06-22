@@ -14,4 +14,6 @@ Por qué este test:
   Grabaciones reales con variedad de géneros (pop, jazz, clásico, folk).
   Permite evaluar generalización a grabaciones fuera de los datasets de entrenamiento.
 
-Resultado: pendiente
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER): pendiente

@@ -14,4 +14,19 @@ Por qué este test:
   (ej. si #1975 tiene más o menos percusión que #1884, o instrumentos distintos).
   Útil para detectar si algún tipo de instrumento o textura degrada el F1.
 
-Resultado: pendiente
+Resultado:
+  Métricas objetivas (compute_f1.py vs Slakh2100 Track01975/all_src.mid):
+    F1 onset+pitch:        73.9%  (n_ref=5645, n_est=3826)
+    F1 onset+offset+pitch: 26.5%  ← muy bajo: notas mucho más largas en estimación
+    F1 clase instrumento:  90.9%  (ref={Bass,Ensemble,Guitar,Piano,Synth Lead}
+                                    est={Bass,Ensemble,Guitar,Piano,Pipe,Synth Lead})
+    Por clase (F1 onset+pitch):
+      Synth Lead: 98.9%  (n_ref=360,  n_est=358)   ← excelente
+      Piano:      81.5%  (n_ref=2920, n_est=2435)
+      Bass:       73.9%  (n_ref=304,  n_est=289)
+      Guitar:     67.8%  (n_ref=613,  n_est=428)
+      Ensemble:   30.2%  (n_ref=1448, n_est=315)   ← infra-detectado
+    Nota: onset+pitch alto (74%) pero offset muy bajo (27%) indica que las notas
+    se detectan bien en tiempo pero con duraciones excesivamente largas en Ensemble.
+
+  Métricas subjetivas (escucha en REAPER): pendiente

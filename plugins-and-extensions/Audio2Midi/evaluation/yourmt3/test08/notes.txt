@@ -13,4 +13,17 @@ Por qué este test:
   Ground truth disponible para comparación exacta.
   Permite ver si el modelo generaliza bien entre diferentes piezas del mismo dataset.
 
-Resultado: pendiente
+Resultado:
+  Métricas objetivas (compute_f1.py vs MusicNet 2628.mid):
+    F1 onset+pitch:        14.4%  (n_ref=1519, n_est=1538)
+    F1 onset+offset+pitch:  7.0%
+    F1 clase instrumento:  50.0%  (ref={Piano,Strings}, est={Ensemble,Piano})
+    Por clase (F1 onset+pitch):
+      Piano:    13.8%  (n_ref=1162, n_est=1178)  ← timing mismatch (ver test07)
+      Strings:   0.0%  (n_ref=357,  n_est=0)     ← strings no detectado
+      Ensemble:  0.0%  (n_ref=0,    n_est=360)   ← clase fantasma
+    NOTA: F1-op bajo por el mismo timing mismatch de MusicNet (score vs recording).
+    Adicionalmente, el modelo no detecta cuerdas (Strings) sino que las confunde
+    con Ensemble — error de clasificación de instrumento relevante.
+
+  Métricas subjetivas (escucha en REAPER): pendiente

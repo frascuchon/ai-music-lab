@@ -20,4 +20,21 @@ Métricas objetivo (ref. paper YourMT3+, Slakh test set):
   F1 nota (onset+pitch): >70%
   F1 nota+instrumento: >50%
 
-Resultado: pendiente
+Resultado:
+  Métricas objetivas (compute_f1.py vs Slakh2100 Track01884/all_src.mid):
+    F1 onset+pitch:        77.5%  (n_ref=2355, n_est=2101)
+    F1 onset+offset+pitch: 61.8%
+    F1 clase instrumento:  61.5%  (ref={Bass,Chrom.Perc,Ensemble,Guitar,Other,Piano}
+                                    est={Bass,Ensemble,Guitar,Organ,Piano,Pipe,Reed})
+    Por clase (F1 onset+pitch):
+      Piano:    93.1%  (n_ref=626,  n_est=607)  ← excelente
+      Guitar:   90.9%  (n_ref=827,  n_est=766)  ← excelente
+      Ensemble: 63.8%  (n_ref=389,  n_est=269)
+      Bass:     42.7%  (n_ref=445,  n_est=444)  ← limitado
+      Other:     0.0%  (n_ref=61,   n_est=0)    ← no detectado
+      Chrom.P:   0.0%  (n_ref=7,    n_est=0)    ← no detectado
+    Nota: supera las métricas del paper (~70% onset+pitch en Slakh test).
+    Clases fantasma en estimación: Organ, Pipe, Reed (0 notas de ref) —
+    el modelo introduce instrumentos no presentes en la pista.
+
+  Métricas subjetivas (escucha en REAPER): pendiente

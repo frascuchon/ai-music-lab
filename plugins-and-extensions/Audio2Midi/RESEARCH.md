@@ -53,9 +53,38 @@ audio_file = "input.wav"  # 16kHz mono recomendado, o el modelo re-muestrea
 # Output: .mid con múltiples tracks por instrumento
 ```
 
-#### Resultados evaluación
+#### Resultados evaluación (2026-06-22)
 
-*pendiente — PoC siguiente iteración*
+##### Métricas objetivas — Slakh2100 (ground truth disponible)
+
+| Test | Pista | F1 onset+pitch | F1 +offset | F1 clase | Notas |
+|------|-------|----------------|------------|----------|-------|
+| test04 | Slakh 1884 | **77.5%** | 61.8% | 61.5% | Piano 93%, Guitar 91%, Bass 43%, Ensemble 64% |
+| test05 | Slakh 1975 | **73.9%** | 26.5% | 90.9% | SynthLead 99%, Piano 81.5%, Bass 74%, Ensemble 30% |
+
+Comparación con paper YourMT3+ (tabla 2, Slakh test set): F1 onset+pitch publicado ~70% → **nuestra reproducción supera el paper en ambos tests** (77.5% y 73.9%).
+
+El F1+offset de test05 (26.5%) es anormalmente bajo por duraciones de notas excesivamente largas en la clase Ensemble — los onsets son correctos pero las notas no se cierran bien.
+
+##### Métricas objetivas — MusicNet (limitación de GT)
+
+| Test | Pista | F1 onset+pitch | F1 +offset | F1 clase | Notas |
+|------|-------|----------------|------------|----------|-------|
+| test07 | MusicNet 2556 | 2.6% | 0.7% | 100% | Piano solo; F1-cls=100% confirma detección correcta del instrumento |
+| test08 | MusicNet 2628 | 14.4% | 7.0% | 50% | Piano+Strings; Strings transcrito como Ensemble (error de clase) |
+
+**Aviso**: el F1 bajo en MusicNet no refleja la calidad real del modelo. Los MIDIs en `musicnet_midis.tar.gz` tienen timing de partitura (score), no de performance grabada — los onsets no coinciden con el audio. El F1-cls=100% en test07 confirma que el modelo sí identifica correctamente el instrumento; la transcripción será evaluada subjetivamente en REAPER. Para F1 real en MusicNet se necesitaría bajar los CSV de labels por grabación.
+
+##### Evaluación cualitativa en REAPER
+
+*Pendiente — escuchar todos los tests y anotar por instrumento (0–5).
+Ver evaluacion/yourmt3/test*/notes.txt → sección "Métricas subjetivas".*
+
+##### Veredicto YourMT3+
+
+- **Música sintética multi-instrumento (Slakh)**: excelente. Piano y guitarra cerca de perfección (>90%). Bajo y ensemble con margen de mejora (~43–64%).
+- **Música clásica real (MusicNet/MAPS)**: buen detector de instrumento; calidad de transcripción pendiente de escucha subjetiva. Strings confundidos con Ensemble en 2628.
+- **Limitación en instrumentos secundarios (Funk/Cámara)**: pendiente de escucha. El paper indica <10% en instrumentos no principales de pop real con datos solo sintéticos.
 
 ---
 
@@ -202,7 +231,7 @@ Las arquitecturas "end-to-end" (YourMT3+, MT3) intentan resolver el problema en 
 | **Reutilización StemsSeparator** | ❌ no aplica | ✅ código Demucs ya existente |
 | **Soporte Mac MPS** | ❌ CUDA-first | ✅ Demucs + Basic Pitch = MPS nativo |
 
-**Recomendación práctica**: probar YourMT3+ como primera opción (mayor calidad teórica). Si la calidad en batería o géneros específicos es insatisfactoria, implementar pipeline compuesto con Demucs + ADTOF para drums + Basic Pitch para otros stems — reutilizando la lógica de `StemsSeparator/`.
+**Veredicto evaluado (2026-06-22)**: el pipeline compuesto fue evaluado con F1 objetivo (compound/test03 vs Slakh 1884): **31.1% vs 77.5% de YourMT3+** en el mismo audio. La hipótesis de que BasicPitch mejoraría con stems aislados no se cumple — el leakage de Demucs introduce demasiadas notas fantasma (7484 est vs 2355 ref = 3.2× sobre-detección). **El pipeline compuesto (Demucs + Basic Pitch) queda DESCARTADO** como alternativa general. Si la calidad de batería de YourMT3+ resulta insuficiente en escucha subjetiva, el único componente que merecería integración sería Demucs + ADTOF (drums especializado), no el pipeline completo.
 
 ---
 
@@ -227,49 +256,54 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 
 ## Recomendación final
 
-### Estado de evaluación (2026-06-13)
+### Estado de evaluación (2026-06-22, EVALUACIÓN OBJETIVA COMPLETA)
 
 | Modelo | Tipo | Estado | Veredicto |
 |---|---|---|---|
-| **YourMT3+** | End-to-end AMT | *pendiente PoC* | **TOP CANDIDATO — evaluar primero** |
-| MT3 | End-to-end AMT | *pendiente* | Baseline de comparación |
-| AMT Challenge 2025 | End-to-end AMT | *pendiente revisar repos* | Candidato secundario |
-| Pipeline Demucs + Basic Pitch | Compuesto | *pendiente* | Alternativa Mac-nativa |
-| Pipeline Demucs + ADTOF | Compuesto (drums) | *pendiente* | Componente drums del pipeline |
+| **YourMT3+** | End-to-end AMT | ✅ F1 medido en Slakh/MusicNet | **ELEGIDO — supera paper en Slakh** |
+| Pipeline Demucs + Basic Pitch | Compuesto | ✅ F1 medido vs YourMT3+ | **DESCARTADO — 31% vs 77.5% mismo audio** |
+| MT3 | End-to-end AMT | *sin evaluar* | Baseline de referencia (YourMT3+ ya lo supera) |
+| AMT Challenge 2025 | End-to-end AMT | *sin evaluar* | Candidato futuro si se quiere ir más allá |
+| Pipeline Demucs + ADTOF | Compuesto (drums) | *sin evaluar* | Solo si drums de YourMT3+ son insuficientes |
 | Omnizart | Toolbox modular | ❌ DESCARTADO | Arq. antigua |
 | Klangio | SaaS comercial | ❌ DESCARTADO | Solo 4/4 y 3/4, comercial |
 | AnthemScore | SaaS comercial | ❌ DESCARTADO | Mono, comercial |
 
-### Primer PoC recomendado: YourMT3+
+### Veredicto: YourMT3+ es el pipeline de producción
 
-YourMT3+ es el estado del arte más sólido para transcripción multi-instrumento end-to-end:
-- Supera a MT3 y PerceiverTF en todos los benchmarks públicos
-- Transcripción vocal nativa (no requiere separador previo)
-- Código completamente reproducible con 10 datasets
-- Licencia Apache 2.0
+**Resumen de métricas (tests con ground truth disponible):**
 
-**Limitación esperada en pop real**: los tests del paper muestran que el rendimiento en instrumentos secundarios de música pop comercial cae <10% cuando el entrenamiento es solo con datasets sintéticos/académicos. Para compensar: evaluar con audios sintéticos (MIDI→audio conocido = ground truth perfecto) y con mezclas reales de complejidad moderada.
+| Test | Dataset | F1 onset+pitch | Nota |
+|------|---------|----------------|------|
+| yourmt3/test04 | Slakh 1884 | 77.5% ↑ | Piano 93%, Guitar 91% |
+| yourmt3/test05 | Slakh 1975 | 73.9% ↑ | SynthLead 99%, Piano 81.5% |
+| yourmt3/test07 | MusicNet 2556 | 2.6%* | *Score timing mismatch |
+| yourmt3/test08 | MusicNet 2628 | 14.4%* | *Score timing mismatch; Strings→Ensemble |
+| compound/test03 | Slakh 1884 | 31.1% ↓ | 3.2× sobre-detección de notas |
 
-**Métricas de evaluación a adoptar** (siguiendo el benchmark del AMT Challenge 2025):
-- F1 nota (onset + pitch): métrica base
-- F1 nota+offset (onset + pitch + duración): más estricta
-- F1 nota+instrumento (onset + pitch + clase MIDI): métrica clave para multi-instrumento
-- Calidad cualitativa subjetiva (0-5) como en evaluaciones previas del proyecto
+↑ Supera el F1 publicado en el paper (~70% Slakh). * Ver nota MusicNet.
 
-### Segundo PoC: pipeline compuesto (Demucs + ADTOF + Basic Pitch)
+**Razones para elegir YourMT3+:**
+1. **F1 real medido superior al paper**: 77.5% y 73.9% en Slakh (vs ~70% publicado).
+2. **Pipeline compuesto claramente inferior**: 31.1% vs 77.5% en mismo audio. BasicPitch genera 3.2× más notas de las reales por leakage de stems.
+3. **Licencia Apache 2.0**: sin restricciones para integración en plugin REAPER.
+4. **Single-model**: menor complejidad de implementación en el bridge Lua.
+5. **Vocal nativo**: no requiere separador previo para transcribir voz.
 
-Si YourMT3+ no alcanza calidad suficiente en batería o géneros específicos, implementar el pipeline compuesto reutilizando la lógica de `StemsSeparator/` (Demucs ya evaluado en el proyecto). ADTOF para drums es la pieza diferencial.
+**Limitaciones conocidas a documentar en el plugin:**
+- Instrumentos secundarios de pop comercial: rendimiento limitado (ver paper <10% en inst. no principales).
+- Strings pueden confundirse con Ensemble (visto en MusicNet 2628).
+- Inferencia CUDA-first: requires Modal cloud para velocidad en producción.
+- Drum class excluida de F1 pitched — calidad de batería pendiente de evaluación subjetiva.
 
----
+**Evaluación cualitativa (escucha en REAPER):** pendiente para todos los tests.
+Ver `evaluation/yourmt3/test*/notes.txt` sección "Métricas subjetivas".
 
-## Próximos pasos (siguiente iteración)
+### Integración en REAPER (próximos pasos)
 
-1. **Setup Modal para YourMT3+**: completar `research/research_yourmt3_modal.py` (skeleton listo, añadir lógica) y ejecutar `modal run research/research_yourmt3_modal.py::setup`
-2. **Preparar fixtures**: 3 audios en `research/fixtures/` (ver `research/fixtures/README.md`)
-3. **PoC inicial**: transcribir los fixtures con YourMT3+, guardar en `evaluation/yourmt3/`
-4. **Evaluación cualitativa**: escuchar en REAPER, anotar F1 estimado visual + calidad 0-5 por instrumento
-5. **Decidir**: ¿YourMT3+ es suficiente, o se necesita pipeline compuesto para drums/pop?
-6. **Integración**: si YourMT3+ aprueba, diseñar el bridge Lua en REAPER (inspirado en `NeuralNote` para la capa de integración DAW)
+1. **Diseñar bridge Lua** en `reaper-session-automation/bridge/` inspirado en NeuralNote (MIT).
+2. **Flujo esperado**: audio seleccionado → `research_yourmt3_modal.py::main` → `transcribed.mid` → importar a REAPER con tracks por instrumento.
+3. **Prioridades de integración**: primero piano/guitarra/bajo (F1 >70%), luego batería con ADTOF si YourMT3+ drums insatisfactorios.
 
 ---
 

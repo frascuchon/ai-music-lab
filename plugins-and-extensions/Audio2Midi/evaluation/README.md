@@ -82,7 +82,36 @@ modal run research_compound_pipeline_modal.py::eval_all \
     --eval-dir ../evaluation/compound
 ```
 
-### 5. Escuchar en REAPER
+### 5. Descargar ground truth y calcular F1 objetivo (optional)
+
+Para los tests con GT disponible (Slakh test04/05, MusicNet test07/08, compound test03):
+
+```bash
+cd plugins-and-extensions/Audio2Midi/evaluation
+bash fetch_ground_truth.sh   # ~39 MB en _ground_truth/ (gitignored)
+
+# Calcular métricas F1 (desde la carpeta research con el venv activo):
+cd ../research
+.venv/bin/python ../evaluation/compute_f1.py
+.venv/bin/python ../evaluation/compute_f1.py --json /tmp/f1.json  # con JSON completo
+```
+
+Métricas reportadas:
+- **F1 onset+pitch**: F1 con tolerancia 50ms, sin restricción de offset
+- **F1 onset+offset+pitch**: más estricto (offset_ratio=0.2)
+- **F1 clase instrumento**: presencia binaria de clases (Piano/Bass/Guitar/…)
+- **Por clase**: desglose por clase instrumental coarse (mc13_full_plus_256)
+
+### 6. Renderizar MIDIs a MP3 (para escucha offline)
+
+```bash
+cd plugins-and-extensions/Audio2Midi/evaluation
+bash render_mp3.sh   # genera transcribed_cuda.mp3 junto a cada .mid
+```
+
+Requiere MuseScore (`mscore`). Idempotente — omite los MP3 que ya existen.
+
+### 7. Escuchar en REAPER
 
 1. Abrir un proyecto nuevo en REAPER
 2. Arrastrar `transcribed_cuda.mid` a la timeline
@@ -90,7 +119,7 @@ modal run research_compound_pipeline_modal.py::eval_all \
 4. Asignar VST por instrumento y escuchar
 5. Comparar con el audio original
 
-### 6. Anotar resultados
+### 8. Anotar resultados
 
 Editar `RESEARCH.md` en la sección "Resultados evaluación" de cada candidato.
 
@@ -109,7 +138,8 @@ Métricas subjetivas (0-5 por instrumento):
 | `input.wav` | Audio de entrada (WAV PCM, cualquier sr) |
 | `input.mp3` | Audio de entrada en MP3 (test10 RWC) |
 | `transcribed_cuda.mid` | Salida del modelo (YourMT3+ o compound) |
-| `notes.txt` | Metadatos del test y resultados |
+| `transcribed_cuda.mp3` | Renderizado con MuseScore para escucha offline |
+| `notes.txt` | Metadatos del test y resultados (objetivo + subjetivo) |
 
 ## Datasets de origen (audios de referencia)
 

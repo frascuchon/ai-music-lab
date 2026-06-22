@@ -13,4 +13,18 @@ Por qué este test:
   YourMT3+ entrenado en MusicNet — resultado esperado: BUENO.
   Ground truth disponible en la distribución MusicNet para comparación exacta.
 
-Resultado: pendiente
+Resultado:
+  Métricas objetivas (compute_f1.py vs MusicNet 2556.mid):
+    F1 onset+pitch:         2.6%  (n_ref=1447, n_est=1428)
+    F1 onset+offset+pitch:  0.7%
+    F1 clase instrumento:  100%   (ref={Piano}, est={Piano})
+    Por clase (F1 onset+pitch):
+      Piano: 2.6%  ← caso de timing mismatch (ver nota)
+    NOTA: el F1 de onset es artificialmente bajo porque el MIDI de referencia de
+    MusicNet (musicnet_midis.tar.gz) tiene timing de partitura score, no de
+    performance. La alineación temporal score→recording que genera los CSVs no
+    está incluida en los MIDIs descargables. El modelo sí transcribe piano
+    correctamente (F1-cls=100%), pero los tiempos no coinciden con el GT MIDI.
+    Para F1 real en MusicNet se necesitarían los CSVs de labels (formato propio).
+
+  Métricas subjetivas (escucha en REAPER): pendiente

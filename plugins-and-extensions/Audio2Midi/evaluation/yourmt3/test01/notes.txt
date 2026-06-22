@@ -18,4 +18,6 @@ Métricas objetivo (ref. paper YourMT3+ tabla 2):
   F1 nota (onset+pitch): >60%
   F1 nota+instrumento: >40%
 
-Resultado: pendiente
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER): pendiente

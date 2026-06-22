@@ -14,4 +14,6 @@ Por qué este test:
   Piano Yamaha DM vs Kawai EX (test02) — permite verificar robustez acústica.
   Comparación directa con test02 para ver si la dificultad técnica afecta F1.
 
-Resultado: pendiente
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER): pendiente

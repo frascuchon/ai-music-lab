@@ -16,4 +16,6 @@ Expectativas por stem:
 
 Para drums, comparar luego con ADTOF si los resultados son pobres.
 
-Resultado: pendiente
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER): pendiente

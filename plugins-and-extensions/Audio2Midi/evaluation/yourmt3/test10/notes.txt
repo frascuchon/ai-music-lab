@@ -17,4 +17,6 @@ Por qué este test:
 NOTA: el archivo de entrada es input.mp3 (no input.wav) para este test.
 El script eval_all acepta ambos formatos automáticamente.
 
-Resultado: pendiente
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER): pendiente

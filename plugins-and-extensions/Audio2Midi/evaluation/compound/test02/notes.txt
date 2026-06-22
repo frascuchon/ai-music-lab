@@ -14,4 +14,6 @@ Expectativas:
 Si el rendimiento es significativamente peor que YourMT3+ aquí, indica que
 el pipeline compuesto introduce degradación incluso sin separación real necesaria.
 
-Resultado: pendiente
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER): pendiente

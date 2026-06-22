@@ -12,4 +12,6 @@ Caso de evaluación:
   y el pipeline compuesto da mejor resultado en bajo/guitarra por separación previa,
   esto validaría la arquitectura compuesta como complemento.
 
-Resultado: pendiente
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER): pendiente

@@ -12,4 +12,21 @@ Hipótesis a verificar:
   pero EMPEORAR en percusión (Basic Pitch no transcribe drums bien) y
   puede introducir errores de leakage entre stems (Demucs no separa perfectamente).
 
-Resultado: pendiente
+Resultado:
+  Métricas objetivas (compute_f1.py vs Slakh2100 Track01884/all_src.mid):
+    F1 onset+pitch:        31.1%  (n_ref=2355, n_est=7484)
+    F1 onset+offset+pitch: 10.6%
+    F1 clase instrumento:  80.0%  (ref={Bass,Chrom.Perc,Ensemble,Guitar,Other,Piano}
+                                    est={Bass,Ensemble,Guitar,Piano})
+    Por clase (F1 onset+pitch):
+      Guitar:   44.0%  (n_ref=827,  n_est=1443)  ← sobre-detección 1.7×
+      Piano:    39.0%  (n_ref=626,  n_est=1720)  ← sobre-detección 2.7×
+      Bass:     27.3%  (n_ref=445,  n_est=857)   ← sobre-detección 1.9×
+      Ensemble:  6.7%  (n_ref=389,  n_est=3464)  ← sobre-detección 8.9×
+      Other:     0.0%  (n_ref=61,   n_est=0)
+      Chrom.P:   0.0%  (n_ref=7,    n_est=0)
+    VEREDICTO: Claramente inferior a YourMT3+ en el mismo audio (31% vs 77.5%).
+    BasicPitch sobre-detecta masivamente (7484 est vs 2355 ref = 3.2× más notas).
+    Leakage entre stems de Demucs introduce notas fantasma en cada stem.
+
+  Métricas subjetivas (escucha en REAPER): pendiente
