@@ -104,7 +104,7 @@ Evaluación por instrumento por test: **pendiente** — anotar puntuación 0–5
 
 #### Resultados evaluación
 
-*pendiente — usado principalmente como baseline de comparación en el benchmark de YourMT3+*
+❌ **CERRADO sin evaluar (2026-06-22).** YourMT3+ es el sucesor directo de MT3 y lo supera en todos los benchmarks públicos donde se solapan. Evaluar MT3 no aportaría información adicional al proyecto.
 
 ---
 
@@ -235,7 +235,15 @@ Las arquitecturas "end-to-end" (YourMT3+, MT3) intentan resolver el problema en 
 
 **Veredicto evaluado (2026-06-22)**: el pipeline compuesto fue evaluado con F1 objetivo (compound/test03 vs Slakh 1884): **31.1% vs 77.5% de YourMT3+** en el mismo audio, y **confirmado subjetivamente en escucha general** — YourMT3+ es claramente mejor. La hipótesis de que BasicPitch mejoraría con stems aislados no se cumple — el leakage de Demucs introduce demasiadas notas fantasma (7484 est vs 2355 ref = 3.2× sobre-detección). **El pipeline Demucs + Basic Pitch queda DESCARTADO.**
 
-**Dirección siguiente**: sustituir Basic Pitch por un transcriptor de mayor calidad por stem. Candidatos a evaluar: Demucs + **YourMT3+** por stem (combina la separación de fuentes con el mejor transcriptor), o Demucs + transcriptores especializados por tipo de stem (ADTOF para drums, Transkun para piano, etc.). Pendiente de investigación y evaluación.
+**Dirección siguiente — Pipeline compuesto v2 (Demucs + ADTOF + YourMT3+):**
+- Demucs htdemucs_6s separa la mezcla en stems (vocals, bass, drums, guitar, piano, other)
+- Stem **drums** → ADTOF (transcriptor especializado, entrenado en 359h de música real)
+- Resto de stems → **YourMT3+** por stem (mismo transcriptor SOTA pero con input limpio)
+- Merge de todos los MIDIs en pistas separadas por instrumento
+
+Hipótesis: YourMT3+ sobre stems aislados debería rendir significativamente mejor que sobre la mezcla completa (elimina la ambigüedad de separación, que es donde más falla). ADTOF para drums es superior a BasicPitch y a YourMT3+ en batería real.
+
+🔲 **Pendiente de implementación y evaluación** en una sesión dedicada.
 
 ---
 
@@ -260,15 +268,15 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 
 ## Recomendación final
 
-### Estado de evaluación (2026-06-22, EVALUACIÓN OBJETIVA COMPLETA)
+### Estado de evaluación (2026-06-22)
 
 | Modelo | Tipo | Estado | Veredicto |
 |---|---|---|---|
-| **YourMT3+** | End-to-end AMT | ✅ F1 medido en Slakh/MusicNet | **ELEGIDO — supera paper en Slakh** |
-| Pipeline Demucs + Basic Pitch | Compuesto | ✅ F1 medido vs YourMT3+ | **DESCARTADO — 31% vs 77.5% mismo audio** |
-| MT3 | End-to-end AMT | *sin evaluar* | Baseline de referencia (YourMT3+ ya lo supera) |
-| AMT Challenge 2025 | End-to-end AMT | *sin evaluar* | Candidato futuro si se quiere ir más allá |
-| Pipeline Demucs + ADTOF | Compuesto (drums) | *sin evaluar* | Solo si drums de YourMT3+ son insuficientes |
+| **YourMT3+** | End-to-end AMT | ✅ F1 Slakh 77.5% + subjetivo positivo | **ELEGIDO — pipeline de producción** |
+| Pipeline Demucs + Basic Pitch | Compuesto | ✅ F1 31.1% + subjetivo negativo | ❌ **DESCARTADO — 3.2× sobre-detección** |
+| MT3 | End-to-end AMT | ❌ CERRADO sin evaluar | YourMT3+ es su sucesor directo y lo supera en todos los benchmarks publicados; no aporta información adicional evaluarlo |
+| AMT Challenge 2025 | End-to-end AMT | 🔲 PENDIENTE sesión dedicada | Submissions recientes con potencial; requiere revisar repos públicos por separado |
+| **Pipeline Demucs + ADTOF + YourMT3+** | Compuesto v2 | 🔲 PENDIENTE — próximo candidato | Demucs separa stems; ADTOF transcribe drums; YourMT3+ transcribe el resto de stems por separado |
 | Omnizart | Toolbox modular | ❌ DESCARTADO | Arq. antigua |
 | Klangio | SaaS comercial | ❌ DESCARTADO | Solo 4/4 y 3/4, comercial |
 | AnthemScore | SaaS comercial | ❌ DESCARTADO | Mono, comercial |
@@ -303,11 +311,11 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 **Evaluación cualitativa (escucha en REAPER):** pendiente para todos los tests.
 Ver `evaluation/yourmt3/test*/notes.txt` sección "Métricas subjetivas".
 
-### Integración en REAPER (próximos pasos)
+### Próximos pasos
 
-1. **Diseñar bridge Lua** en `reaper-session-automation/bridge/` inspirado en NeuralNote (MIT).
-2. **Flujo esperado**: audio seleccionado → `research_yourmt3_modal.py::main` → `transcribed.mid` → importar a REAPER con tracks por instrumento.
-3. **Prioridades de integración**: primero piano/guitarra/bajo (F1 >70%), luego batería con ADTOF si YourMT3+ drums insatisfactorios.
+1. **Pipeline compuesto v2** (sesión dedicada): implementar `research_compound_v2_modal.py` con Demucs + ADTOF (drums) + YourMT3+ (otros stems). Evaluar con los mismos 5 tests del compound actual para comparación directa.
+2. **AMT Challenge 2025** (sesión dedicada): revisar submissions con código público, evaluar el más prometedor.
+3. **Integración en REAPER**: diseñar bridge Lua inspirado en NeuralNote (MIT) para el pipeline ganador (YourMT3+ o compound v2).
 
 ---
 
