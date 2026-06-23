@@ -176,4 +176,4 @@ Esta interfaz es suficientemente genérica para AMT, y podría adaptarse a model
 
 ---
 
-*Análisis realizado: 2026-06-11. Basado en `humaneval/accompany.py` (upstream AMT) e issue #18 del repositorio. El loop batch de AMT (sin interactividad) está implementado en `research/research_amt.py::run_accompaniment`.*
+*Análisis realizado: 2026-06-11. Basado en `humaneval/accompany.py` (upstream Anticipatory Music Transformer) e issue #18 del repositorio. El loop batch (sin interactividad) está implementado en `research/research_anticipatory.py::run_accompaniment`.*

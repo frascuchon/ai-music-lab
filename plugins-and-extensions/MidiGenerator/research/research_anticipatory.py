@@ -6,9 +6,9 @@ Modos:
   - accompaniment:  genera acompañamiento dado una melodía como control
 
 Uso:
-    uv run research_amt.py --mode continuation --input fixtures/melody.mid --out out_cont.mid
-    uv run research_amt.py --mode accompaniment --input fixtures/melody.mid --out out_acc.mid
-    uv run research_amt.py  # crea fixture + genera continuación
+    uv run research_anticipatory.py --mode continuation --input fixtures/melody.mid --out out_cont.mid
+    uv run research_anticipatory.py --mode accompaniment --input fixtures/melody.mid --out out_acc.mid
+    uv run research_anticipatory.py  # crea fixture + genera continuación
 
 Referencia: https://github.com/jthickstun/anticipation
 Modelo HF: stanford-crfm/music-medium-800k (360M params, Apache 2.0)

@@ -25,36 +25,36 @@ IMPORTANTE: este script tiene múltiples local_entrypoints. Siempre especificar 
 para inferencia. modal run sin ::suffix falla cuando hay más de un entrypoint.
 
 Setup (pre-descarga de pesos al Volume, opcional):
-    modal run research_amt_modal.py::setup
-    modal run research_amt_modal.py::setup --model stanford-crfm/music-large-800k
+    modal run research_anticipatory_modal.py::setup
+    modal run research_anticipatory_modal.py::setup --model stanford-crfm/music-large-800k
 
 Inferencia (modo accompaniment):
-    modal run research_amt_modal.py::main \
-        --input ../evaluation/amt/test2/input_fixture.mid \
+    modal run research_anticipatory_modal.py::main \
+        --input ../evaluation/anticipatory/test2/input_fixture.mid \
         --mode accompaniment --prompt-length 5 --clip-length 20 \
-        --out ../evaluation/amt/test2/generated.mid
+        --out ../evaluation/anticipatory/test2/generated.mid
 
     # con modelo grande y GPU T4:
-    modal run research_amt_modal.py::main \
+    modal run research_anticipatory_modal.py::main \
         --model stanford-crfm/music-large-800k --gpu T4 \
-        --input ../evaluation/amt/test2/input_fixture.mid \
+        --input ../evaluation/anticipatory/test2/input_fixture.mid \
         --mode accompaniment --clip-length 20 \
         --out /tmp/generated_large.mid
 
     # 3 candidatos (multiplicity):
-    modal run research_amt_modal.py::main \
-        --input ../evaluation/amt/test2/input_fixture.mid \
+    modal run research_anticipatory_modal.py::main \
+        --input ../evaluation/anticipatory/test2/input_fixture.mid \
         --mode accompaniment --multiplicity 3 \
-        --out ../evaluation/amt/test2/generated.mid
+        --out ../evaluation/anticipatory/test2/generated.mid
 
 Inferencia (modo continuation):
-    modal run research_amt_modal.py::main \
-        --input ../evaluation/amt/test1/input_fixture.mid \
+    modal run research_anticipatory_modal.py::main \
+        --input ../evaluation/anticipatory/test1/input_fixture.mid \
         --mode continuation --duration 20 \
-        --out ../evaluation/amt/test1/generated.mid
+        --out ../evaluation/anticipatory/test1/generated.mid
 
 Recovery (si el cliente cae durante spawn+poll):
-    modal run research_amt_modal.py::recover
+    modal run research_anticipatory_modal.py::recover
 
 Referencias:
   Repo:  https://github.com/jthickstun/anticipation
@@ -72,13 +72,13 @@ import modal
 # ---------------------------------------------------------------------------
 # Volume — caché HuggingFace persistente entre ejecuciones (~400MB–3GB según modelo)
 # ---------------------------------------------------------------------------
-weights_vol = modal.Volume.from_name("amt-weights", create_if_missing=True)
+weights_vol = modal.Volume.from_name("anticipatory-weights", create_if_missing=True)
 WEIGHTS_MOUNT = "/vol/weights"
 HF_CACHE = f"{WEIGHTS_MOUNT}/hf_cache"
 
 DEFAULT_MODEL = "stanford-crfm/music-medium-800k"
-DEFAULT_GPU = os.environ.get("AMT_GPU", "A10G")
-LAST_CALL_FILE = ".amt_last_call.json"
+DEFAULT_GPU = os.environ.get("ANTICIPATORY_GPU", "A10G")
+LAST_CALL_FILE = ".anticipatory_last_call.json"
 
 # ---------------------------------------------------------------------------
 # Container image — PyTorch CUDA 12.1 + anticipation desde GitHub
@@ -223,7 +223,7 @@ def _inference_impl(
 
 
 # ---------------------------------------------------------------------------
-# GPU variant única — el tipo se fija vía DEFAULT_GPU (env var AMT_GPU) y se
+# GPU variant única — el tipo se fija vía DEFAULT_GPU (env var ANTICIPATORY_GPU) y se
 # puede sobreescribir en runtime con run.with_options(gpu=...) desde main().
 # ---------------------------------------------------------------------------
 _FN_KWARGS = dict(cpu=2, memory=6144, timeout=3600, volumes={WEIGHTS_MOUNT: weights_vol})
@@ -248,7 +248,7 @@ def run(midi_bytes: bytes, model_name: str = DEFAULT_MODEL, mode: str = "accompa
     volumes={WEIGHTS_MOUNT: weights_vol},
 )
 def download_model(model_name: str = DEFAULT_MODEL) -> None:
-    """Descarga el modelo AMT al Volume. Ejecutar una sola vez por modelo."""
+    """Descarga el modelo Anticipatory Music Transformer al Volume. Ejecutar una sola vez por modelo."""
     import time
     from huggingface_hub import snapshot_download
 
@@ -270,13 +270,13 @@ def download_model(model_name: str = DEFAULT_MODEL) -> None:
 
 @app.local_entrypoint()
 def setup(model: str = DEFAULT_MODEL) -> None:
-    """Pre-descarga un modelo AMT al Volume (evita cold-start en inferencia).
+    """Pre-descarga un modelo Anticipatory Music Transformer al Volume (evita cold-start en inferencia).
 
     Ejemplo:
-        modal run research_amt_modal.py::setup
-        modal run research_amt_modal.py::setup --model stanford-crfm/music-large-800k
+        modal run research_anticipatory_modal.py::setup
+        modal run research_anticipatory_modal.py::setup --model stanford-crfm/music-large-800k
     """
-    print(f"Pre-descargando {model} al Volume 'amt-weights'...")
+    print(f"Pre-descargando {model} al Volume 'anticipatory-weights'...")
     download_model.remote(model_name=model)
     print("Setup completado.")
 
@@ -287,7 +287,7 @@ def setup(model: str = DEFAULT_MODEL) -> None:
 @app.local_entrypoint()
 def main(
     input: str = "",
-    out: str = "out_amt.mid",
+    out: str = "out_anticipatory.mid",
     mode: str = "accompaniment",
     model: str = DEFAULT_MODEL,
     gpu: str = "A10G",
@@ -302,18 +302,18 @@ def main(
     multiplicity: int = 1,
 ) -> None:
     """
-    Genera MIDI con AMT en Modal GPU.
+    Genera MIDI con Anticipatory Music Transformer en Modal GPU.
 
     Ejemplos:
-        modal run research_amt_modal.py \\
-            --input ../evaluation/amt/test2/input_fixture.mid \\
+        modal run research_anticipatory_modal.py \\
+            --input ../evaluation/anticipatory/test2/input_fixture.mid \\
             --mode accompaniment --clip-length 20 --out /tmp/generated.mid
 
-        modal run research_amt_modal.py \\
+        modal run research_anticipatory_modal.py \\
             --model stanford-crfm/music-large-800k --gpu L4 \\
-            --input ../evaluation/amt/test2/input_fixture.mid \\
+            --input ../evaluation/anticipatory/test2/input_fixture.mid \\
             --mode accompaniment --multiplicity 3 \\
-            --out ../evaluation/amt/test2/generated.mid
+            --out ../evaluation/anticipatory/test2/generated.mid
     """
     import time
 
@@ -416,18 +416,18 @@ def main(
 def recover(call_id: str = "", out: str = "") -> None:
     """
     Recupera el resultado de un spawn() previo que quedó huérfano.
-    Sin argumentos lee .amt_last_call.json del directorio actual.
+    Sin argumentos lee .anticipatory_last_call.json del directorio actual.
 
     Ejemplo:
-        modal run research_amt_modal.py::recover
-        modal run research_amt_modal.py::recover --call-id fc-XXXX --out /tmp/out.mid
+        modal run research_anticipatory_modal.py::recover
+        modal run research_anticipatory_modal.py::recover --call-id fc-XXXX --out /tmp/out.mid
     """
     import time
 
     if not call_id:
         state_file = Path(LAST_CALL_FILE)
         if not state_file.exists():
-            print("[recover] No hay .amt_last_call.json y no se pasó --call-id")
+            print("[recover] No hay .anticipatory_last_call.json y no se pasó --call-id")
             return
         state = json.loads(state_file.read_text())
         call_id = state["call_id"]

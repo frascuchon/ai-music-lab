@@ -586,7 +586,7 @@ uv run research_midi_llm.py --prompt "..." --temperature 0.85 --out out_mllm.mid
 
 ### PoC 2 — Anticipatory Music Transformer (referencia, ya ejecutado)
 ```bash
-uv run research_amt.py --mode both
+uv run research_anticipatory.py --mode both
 ```
 
 ### Validación en REAPER
