@@ -275,7 +275,7 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 | **YourMT3+** | End-to-end AMT | ✅ F1 Slakh 77.5% + subjetivo positivo | **ELEGIDO — pipeline de producción** |
 | Pipeline Demucs + Basic Pitch | Compuesto | ✅ F1 31.1% + subjetivo negativo | ❌ **DESCARTADO — 3.2× sobre-detección** |
 | MT3 | End-to-end AMT | ❌ CERRADO sin evaluar | YourMT3+ es su sucesor directo y lo supera en todos los benchmarks publicados; no aporta información adicional evaluarlo |
-| AMT Challenge 2025 | End-to-end AMT | 🔲 PENDIENTE sesión dedicada | Submissions recientes con potencial; requiere revisar repos públicos por separado |
+| **MIROS** (AMT Challenge 2025 winner) | End-to-end AMT | 🔲 PENDIENTE — Modal run + escucha subjetiva | Ganador AMT Challenge 2025 (F=0.5998 vs MT3 0.3932); repo público; eval scaffold listo |
 | **Pipeline Demucs + ADTOF + YourMT3+** | Compuesto v2 | 🔲 PENDIENTE — próximo candidato | Demucs separa stems; ADTOF transcribe drums; YourMT3+ transcribe el resto de stems por separado |
 | Omnizart | Toolbox modular | ❌ DESCARTADO | Arq. antigua |
 | Klangio | SaaS comercial | ❌ DESCARTADO | Solo 4/4 y 3/4, comercial |
@@ -313,9 +313,70 @@ Ver `evaluation/yourmt3/test*/notes.txt` sección "Métricas subjetivas".
 
 ### Próximos pasos
 
-1. **Pipeline compuesto v2** (sesión dedicada): implementar `research_compound_v2_modal.py` con Demucs + ADTOF (drums) + YourMT3+ (otros stems). Evaluar con los mismos 5 tests del compound actual para comparación directa.
-2. **AMT Challenge 2025** (sesión dedicada): revisar submissions con código público, evaluar el más prometedor.
-3. **Integración en REAPER**: diseñar bridge Lua inspirado en NeuralNote (MIT) para el pipeline ganador (YourMT3+ o compound v2).
+1. **MIROS** (sesión actual): ejecutar `research_miros_modal.py::eval_all`, completar tabla F1, escucha subjetiva en REAPER.
+2. **Pipeline compuesto v2** (sesión dedicada): implementar `research_compound_v2_modal.py` con Demucs + ADTOF (drums) + YourMT3+ (otros stems). Evaluar con los mismos 5 tests del compound actual para comparación directa.
+3. **Integración en REAPER**: diseñar bridge Lua inspirado en NeuralNote (MIT) para el pipeline ganador (YourMT3+ o MIROS).
+
+---
+
+## Resultados — MIROS (AMT Challenge 2025 winner)
+
+**Fecha de evaluación:** pendiente ejecución Modal  
+**Repo:** https://github.com/amt-os/ai4m-miros  
+**GPU:** A10G (flash-attn 2.7.2, requiere Ampere+)  
+**Coste estimado:** setup ~$0.05 (descarga 2 ckpts ~2 GB) + 10 tests ~$0.25  
+**Licencia:** no especificada — uso solo investigación interna
+
+### Leaderboard AMT Challenge 2025 (referencia)
+
+| Ranking | Sistema | F-measure challenge | Notas |
+|---------|---------|--------------------|-|
+| 1 | **MIROS** | **0.5998** | MusicFM encoder, Ampere GPU required |
+| 2 | YourMT3-YPTF-MoE-M | 0.5938 | Nuestro modelo evaluado |
+| 3 | YourMT3-YPTF-S | 0.5581 | — |
+| 4 | YourMT3-P | 0.3947 | — |
+| 5 | MT3 (baseline) | 0.3932 | — |
+
+Fuente: arXiv 2603.27528, 76 piezas sintetizadas, 8 instrumentos.
+
+### Métricas F1 objetivas (mir_eval, onset_tolerance=50ms)
+
+**PENDIENTE — rellenar tras `modal run research_miros_modal.py::eval_all`**
+
+| Test | Dataset | F1-op MIROS | F1-op YourMT3+ | Δ | Nota |
+|------|---------|------------|----------------|---|------|
+| miros/test04 | Slakh 1884 | ❓ | 77.5% | ❓ | — |
+| miros/test05 | Slakh 1975 | ❓ | 73.9% | ❓ | — |
+| miros/test07 | MusicNet 2556 | ❓ | 2.6%* | ❓ | *score timing |
+| miros/test08 | MusicNet 2628 | ❓ | 14.4%* | ❓ | *score timing |
+
+### Evaluación subjetiva (escucha REAPER)
+
+**PENDIENTE** — ver `evaluation/miros/test*/notes.txt` sección "Resultado".
+
+### Instrucciones de evaluación
+
+```bash
+cd plugins-and-extensions/Audio2Midi/research
+
+# 1. Descargar pesos (una vez)
+modal run research_miros_modal.py::setup
+
+# 2. Smoke test
+modal run research_miros_modal.py::main \
+    --audio-path ../evaluation/miros/test04/input.wav \
+    --out-dir ../evaluation/miros/test04
+
+# 3. Evaluar todo
+modal run research_miros_modal.py::eval_all
+
+# 4. Render MP3
+bash ../evaluation/render_mp3.sh
+
+# 5. F1 objetivo
+uv run python ../evaluation/compute_f1.py --only miros
+uv run python ../evaluation/compute_f1.py --json /tmp/miros_f1.json
+```
 
 ---
 
