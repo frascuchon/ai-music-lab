@@ -1,0 +1,24 @@
+Test 08 — Música clásica real: MusicNet (pista 2628)
+Audio: symlink → ../../yourmt3/test08/input.wav
+Archivo original: musicnet_2628.wav
+Dataset: MusicNet
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 3.99 MB → ~1.5 min aprox.
+
+Contenido musical:
+  Segunda grabación clásica real de MusicNet
+
+Por qué este test:
+  Comparación directa MIROS vs YourMT3+ sobre el mismo audio.
+  Ground truth disponible: _ground_truth/musicnet/2628.mid
+  CAVEAT: GT es partitura (score timing), no performance → F1 artificialmente bajo.
+  YourMT3+ obtuvo F1-op=14.4%; clasificó Strings→Ensemble (error de clase).
+
+Métricas objetivo (AMT Challenge 2025):
+  MIROS=0.5998 vs YourMT3-YPTF-MoE-M=0.5938 (media sobre 76 piezas challenge)
+
+Resultado:
+  Objetivo (mir_eval, onset+pitch): <pendiente — rellenar tras compute_f1.py>
+  Objetivo (mir_eval, class F1): <pendiente>
+  Nota: F1-op bajo esperado por score-timing mismatch (igual que YourMT3+)
+  Subjetivo (escucha REAPER): <pendiente>

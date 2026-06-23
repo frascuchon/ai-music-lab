@@ -1,0 +1,22 @@
+Test 10 — Grabación real (varios géneros): RWC Music Database (089)
+Audio: symlink → ../../yourmt3/test10/input.mp3
+Archivo original: rwc089.mp3
+Formato: MP3 (MIROS acepta MP3 vía torchaudio)
+Dataset: RWC Music Database
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 5.36 MB → ~3-4 min aprox.
+
+Contenido musical:
+  Grabación real del RWC Music Database
+
+Por qué este test:
+  Comparación directa MIROS vs YourMT3+ sobre el mismo audio.
+  Sin ground truth disponible → evaluación subjetiva únicamente.
+  Test de robustez con entrada MP3 (vs WAV en tests 01-09).
+
+Métricas objetivo (AMT Challenge 2025):
+  MIROS=0.5998 vs YourMT3-YPTF-MoE-M=0.5938 (media sobre 76 piezas challenge)
+
+Resultado:
+  Objetivo (mir_eval): sin GT disponible
+  Subjetivo (escucha REAPER): <pendiente>

@@ -120,6 +120,23 @@ link_or_copy \
     "${EVAL_DIR}/compound/test05/input.wav"
 
 # ---------------------------------------------------------------------------
+# MIROS tests (symlinks a los mismos audios que YourMT3)
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- MIROS (10 tests, mismos audios que YourMT3) ---"
+
+for i in 01 02 03 04 05 06 07 08 09; do
+    link_or_copy \
+        "${EVAL_DIR}/yourmt3/test${i}/input.wav" \
+        "${EVAL_DIR}/miros/test${i}/input.wav"
+done
+
+# test10 es mp3
+link_or_copy \
+    "${EVAL_DIR}/yourmt3/test10/input.mp3" \
+    "${EVAL_DIR}/miros/test10/input.mp3"
+
+# ---------------------------------------------------------------------------
 # Resumen
 # ---------------------------------------------------------------------------
 echo ""
@@ -150,8 +167,24 @@ for d in "${EVAL_DIR}/compound"/test*/; do
 done
 
 echo ""
+echo "MIROS (10 tests):"
+for d in "${EVAL_DIR}/miros"/test*/; do
+    wav="${d}input.wav"
+    mp3="${d}input.mp3"
+    if [[ -f "$wav" ]]; then
+        echo "  $(basename "$d"): ✓ input.wav (symlink)"
+    elif [[ -f "$mp3" ]]; then
+        echo "  $(basename "$d"): ✓ input.mp3 (symlink)"
+    else
+        echo "  $(basename "$d"): ✗ falta input"
+    fi
+done
+
+echo ""
 echo "Siguiente paso:"
 echo "  cd ../research"
 echo "  modal run research_yourmt3_modal.py::setup          # descarga pesos (una vez)"
 echo "  modal run research_yourmt3_modal.py::eval_all       # transcribe los 10 tests"
 echo "  modal run research_compound_pipeline_modal.py::eval_all  # pipeline compuesto"
+echo "  modal run research_miros_modal.py::setup            # descarga pesos MIROS (una vez)"
+echo "  modal run research_miros_modal.py::eval_all         # transcribe los 10 tests MIROS"

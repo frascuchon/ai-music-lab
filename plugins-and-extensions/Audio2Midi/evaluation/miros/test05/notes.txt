@@ -1,0 +1,24 @@
+Test 05 — Multi-instrumento sintético: Slakh2100 (pista 1975)
+Audio: symlink → ../../yourmt3/test05/input.wav
+Archivo original: Slakh_test_1975.wav
+Dataset: Slakh2100
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 8.43 MB → ~2.5-3 min aprox.
+
+Contenido musical:
+  Pista Slakh #1975 — segunda muestra de mezcla sintética multi-instrumento
+
+Por qué este test:
+  Comparación directa MIROS vs YourMT3+ sobre el mismo audio.
+  Ground truth disponible: _ground_truth/slakh/Track01975/all_src.mid
+  YourMT3+ obtuvo F1-op=73.9% en este test.
+
+Métricas objetivo (AMT Challenge 2025):
+  MIROS=0.5998 vs YourMT3-YPTF-MoE-M=0.5938 (media sobre 76 piezas challenge)
+
+Resultado:
+  Objetivo (mir_eval, onset+pitch): <pendiente — rellenar tras compute_f1.py>
+  Objetivo (mir_eval, onset+offset+pitch): <pendiente>
+  Objetivo (mir_eval, class F1): <pendiente>
+  Per-class: <pendiente>
+  Subjetivo (escucha REAPER): <pendiente>

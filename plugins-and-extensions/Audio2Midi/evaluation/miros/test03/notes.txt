@@ -1,0 +1,20 @@
+Test 03 — Piano solo clásico: Schubert (MAPS dataset)
+Audio: symlink → ../../yourmt3/test03/input.wav
+Archivo original: MAPS_MUS-scn15_11_ENSTDkAm.wav
+Dataset: MAPS, piano real Disklavier Yamaha Disklavier Mark IV
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+
+Contenido musical:
+  Schubert Impromptus (melódico, secciones contrastantes)
+  Instrumento: piano solo, velocidad y dinámica variadas
+
+Por qué este test:
+  Comparación directa MIROS vs YourMT3+ sobre el mismo audio.
+  Sin ground truth disponible → evaluación subjetiva únicamente.
+
+Métricas objetivo (AMT Challenge 2025):
+  MIROS=0.5998 vs YourMT3-YPTF-MoE-M=0.5938 (media sobre 76 piezas challenge)
+
+Resultado:
+  Objetivo (mir_eval): sin GT disponible
+  Subjetivo (escucha REAPER): <pendiente>
