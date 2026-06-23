@@ -268,15 +268,15 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 
 ## Recomendación final
 
-### Estado de evaluación (2026-06-22)
+### Estado de evaluación (2026-06-23)
 
 | Modelo | Tipo | Estado | Veredicto |
 |---|---|---|---|
 | **YourMT3+** | End-to-end AMT | ✅ F1 Slakh 77.5% + subjetivo positivo | **ELEGIDO — pipeline de producción** |
 | Pipeline Demucs + Basic Pitch | Compuesto | ✅ F1 31.1% + subjetivo negativo | ❌ **DESCARTADO — 3.2× sobre-detección** |
-| MT3 | End-to-end AMT | ❌ CERRADO sin evaluar | YourMT3+ es su sucesor directo y lo supera en todos los benchmarks publicados; no aporta información adicional evaluarlo |
-| **MIROS** (AMT Challenge 2025 winner) | End-to-end AMT | ✅ F1-op Slakh: 77.5% (test04) / 64.0% (test05) | Empata YourMT3+ en test04; pierde 9.9pp en test05 (infra-detección Ensemble/SynthLead). Escucha REAPER pendiente. |
-| **Pipeline Demucs + ADTOF + YourMT3+** | Compuesto v2 | 🔲 PENDIENTE — próximo candidato | Demucs separa stems; ADTOF transcribe drums; YourMT3+ transcribe el resto de stems por separado |
+| MT3 | End-to-end AMT | ❌ CERRADO sin evaluar | YourMT3+ es su sucesor directo; no aporta información adicional evaluarlo |
+| **MIROS** (AMT Challenge 2025 winner) | End-to-end AMT | ✅ CERRADO — F1-op 77.5% (test04) / 64.0% (test05) | Empata YourMT3+ en Slakh 1884; pierde 9.9pp en Slakh 1975. No supera YourMT3+ de forma consistente. Escucha subjetiva positiva. |
+| **YourMT3+ + ADTOF (compound v2)** | Compuesto v2 | 🔲 PRÓXIMA SESIÓN | Demucs separa stems; ADTOF mejora transcripción de batería; YourMT3+ transcribe el resto |
 | Omnizart | Toolbox modular | ❌ DESCARTADO | Arq. antigua |
 | Klangio | SaaS comercial | ❌ DESCARTADO | Solo 4/4 y 3/4, comercial |
 | AnthemScore | SaaS comercial | ❌ DESCARTADO | Mono, comercial |
@@ -306,22 +306,21 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 - Instrumentos secundarios de pop comercial: rendimiento limitado (ver paper <10% en inst. no principales).
 - Strings pueden confundirse con Ensemble (visto en MusicNet 2628).
 - Inferencia CUDA-first: requires Modal cloud para velocidad en producción.
-- Drum class excluida de F1 pitched — calidad de batería pendiente de evaluación subjetiva.
+- Drum class excluida de F1 pitched — calidad de batería es la principal limitación conocida; ADTOF puede mejorarla.
 
 **Evaluación cualitativa (escucha en REAPER):** pendiente para todos los tests.
 Ver `evaluation/yourmt3/test*/notes.txt` sección "Métricas subjetivas".
 
 ### Próximos pasos
 
-1. **MIROS** (sesión actual): ejecutar `research_miros_modal.py::eval_all`, completar tabla F1, escucha subjetiva en REAPER.
-2. **Pipeline compuesto v2** (sesión dedicada): implementar `research_compound_v2_modal.py` con Demucs + ADTOF (drums) + YourMT3+ (otros stems). Evaluar con los mismos 5 tests del compound actual para comparación directa.
-3. **Integración en REAPER**: diseñar bridge Lua inspirado en NeuralNote (MIT) para el pipeline ganador (YourMT3+ o MIROS).
+1. **YourMT3+ + ADTOF (compound v2)** — próxima sesión: Demucs separa stems; ADTOF reemplaza la detección de batería de YourMT3+; YourMT3+ transcribe los stems restantes. Evaluar sobre mismos tests con GT.
+2. **Integración en REAPER**: bridge Lua para el pipeline ganador una vez cerrado compound v2.
 
 ---
 
-## Resultados — MIROS (AMT Challenge 2025 winner)
+## Resultados — MIROS (AMT Challenge 2025 winner) ✅ CERRADO 2026-06-23
 
-**Fecha de evaluación:** pendiente ejecución Modal  
+**Fecha de evaluación:** 2026-06-23  
 **Repo:** <https://github.com/amt-os/ai4m-miros>  
 **GPU:** A10G (flash-attn 2.7.2, requiere Ampere+)  
 **Coste estimado:** setup ~$0.05 (descarga 2 ckpts ~2 GB) + 10 tests ~$0.25  
@@ -357,7 +356,13 @@ Fuente: arXiv 2603.27528, 76 piezas sintetizadas, 8 instrumentos.
 
 ### Evaluación subjetiva (escucha REAPER)
 
-**PENDIENTE** — ver `evaluation/miros/test*/notes.txt` sección "Resultado".
+Subjetivamente positiva (escucha informal). Ver `evaluation/miros/test*/notes.txt` para notas por test.
+
+### Veredicto final MIROS
+
+**No supera YourMT3+ de forma consistente.** En Slakh 1884 empatan; en Slakh 1975 MIROS pierde 9.9pp por fallos en Ensemble y SynthLead. El overhead (requiere GPU Ampere+, 2 checkpoints ~2 GB, repo sin LICENSE) no compensa la paridad de resultados. **YourMT3+ sigue siendo el pipeline de producción.**
+
+MIROS es interesante para pistas con pocos instrumentos bien definidos (donde el challenge 2025 lo valida), pero no ofrece ventaja general en contenido musical real variado.
 
 ### Instrucciones de evaluación
 
