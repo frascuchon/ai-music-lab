@@ -8,6 +8,10 @@ usando mir_eval.transcription. Soporta los tests que tienen GT disponible:
   - yourmt3/test07  (MusicNet 2556)
   - yourmt3/test08  (MusicNet 2628)
   - compound/test03 (Slakh2100 Track01884, mismo GT que yourmt3/test04)
+  - miros/test04    (Slakh2100 Track01884 — comparación directa con yourmt3/test04)
+  - miros/test05    (Slakh2100 Track01975 — comparación directa con yourmt3/test05)
+  - miros/test07    (MusicNet 2556 — caveat: score timing)
+  - miros/test08    (MusicNet 2628 — caveat: score timing)
 
 Ground truth (creado por fetch_ground_truth.sh):
   evaluation/_ground_truth/slakh/Track01884/all_src.mid
@@ -83,6 +87,27 @@ TESTS: list[TestSpec] = [
         "compound/test03",
         "slakh",
         GT_ROOT / "slakh/Track01884/all_src.mid",
+    ),
+    # MIROS (AMT Challenge 2025 winner) — mismos GT que yourmt3/, comparación directa
+    TestSpec(
+        "miros/test04",
+        "slakh",
+        GT_ROOT / "slakh/Track01884/all_src.mid",
+    ),
+    TestSpec(
+        "miros/test05",
+        "slakh",
+        GT_ROOT / "slakh/Track01975/all_src.mid",
+    ),
+    TestSpec(
+        "miros/test07",
+        "musicnet",
+        GT_ROOT / "musicnet/2556.mid",
+    ),
+    TestSpec(
+        "miros/test08",
+        "musicnet",
+        GT_ROOT / "musicnet/2628.mid",
     ),
 ]
 
