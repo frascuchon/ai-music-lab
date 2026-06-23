@@ -322,7 +322,7 @@ Ver `evaluation/yourmt3/test*/notes.txt` sección "Métricas subjetivas".
 ## Resultados — MIROS (AMT Challenge 2025 winner)
 
 **Fecha de evaluación:** pendiente ejecución Modal  
-**Repo:** https://github.com/amt-os/ai4m-miros  
+**Repo:** <https://github.com/amt-os/ai4m-miros>  
 **GPU:** A10G (flash-attn 2.7.2, requiere Ampere+)  
 **Coste estimado:** setup ~$0.05 (descarga 2 ckpts ~2 GB) + 10 tests ~$0.25  
 **Licencia:** no especificada — uso solo investigación interna
@@ -330,7 +330,7 @@ Ver `evaluation/yourmt3/test*/notes.txt` sección "Métricas subjetivas".
 ### Leaderboard AMT Challenge 2025 (referencia)
 
 | Ranking | Sistema | F-measure challenge | Notas |
-|---------|---------|--------------------|-|
+|---------|---------|---------------------|-------|
 | 1 | **MIROS** | **0.5998** | MusicFM encoder, Ampere GPU required |
 | 2 | YourMT3-YPTF-MoE-M | 0.5938 | Nuestro modelo evaluado |
 | 3 | YourMT3-YPTF-S | 0.5581 | — |
@@ -344,7 +344,7 @@ Fuente: arXiv 2603.27528, 76 piezas sintetizadas, 8 instrumentos.
 **PENDIENTE — rellenar tras `modal run research_miros_modal.py::eval_all`**
 
 | Test | Dataset | F1-op MIROS | F1-op YourMT3+ | Δ | Nota |
-|------|---------|------------|----------------|---|------|
+|------|---------|-------------|----------------|---|------|
 | miros/test04 | Slakh 1884 | ❓ | 77.5% | ❓ | — |
 | miros/test05 | Slakh 1975 | ❓ | 73.9% | ❓ | — |
 | miros/test07 | MusicNet 2556 | ❓ | 2.6%* | ❓ | *score timing |
