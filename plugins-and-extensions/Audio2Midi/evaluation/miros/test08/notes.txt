@@ -17,8 +17,10 @@ Por qué este test:
 Métricas objetivo (AMT Challenge 2025):
   MIROS=0.5998 vs YourMT3-YPTF-MoE-M=0.5938 (media sobre 76 piezas challenge)
 
-Resultado:
-  Objetivo (mir_eval, onset+pitch): <pendiente — rellenar tras compute_f1.py>
-  Objetivo (mir_eval, class F1): <pendiente>
-  Nota: F1-op bajo esperado por score-timing mismatch (igual que YourMT3+)
+Resultado (2026-06-23):
+  Objetivo (mir_eval, onset+pitch):  F1-op  = 15.8%  (YourMT3+: 14.4% — +1.4pp)
+  Objetivo (mir_eval, class F1):     F1-cls = 50%    (YourMT3+: 50% — igual)
+  n_ref=1519, n_est=1577
+  Per-class: Piano 15.1%, Strings→Ensemble (error de clase, igual que YourMT3+)
+  Nota: score timing mismatch — F1 bajo por desfase temporal, no por calidad real
   Subjetivo (escucha REAPER): <pendiente>

@@ -275,7 +275,7 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 | **YourMT3+** | End-to-end AMT | ✅ F1 Slakh 77.5% + subjetivo positivo | **ELEGIDO — pipeline de producción** |
 | Pipeline Demucs + Basic Pitch | Compuesto | ✅ F1 31.1% + subjetivo negativo | ❌ **DESCARTADO — 3.2× sobre-detección** |
 | MT3 | End-to-end AMT | ❌ CERRADO sin evaluar | YourMT3+ es su sucesor directo y lo supera en todos los benchmarks publicados; no aporta información adicional evaluarlo |
-| **MIROS** (AMT Challenge 2025 winner) | End-to-end AMT | 🔲 PENDIENTE — Modal run + escucha subjetiva | Ganador AMT Challenge 2025 (F=0.5998 vs MT3 0.3932); repo público; eval scaffold listo |
+| **MIROS** (AMT Challenge 2025 winner) | End-to-end AMT | ✅ F1-op Slakh: 77.5% (test04) / 64.0% (test05) | Empata YourMT3+ en test04; pierde 9.9pp en test05 (infra-detección Ensemble/SynthLead). Escucha REAPER pendiente. |
 | **Pipeline Demucs + ADTOF + YourMT3+** | Compuesto v2 | 🔲 PENDIENTE — próximo candidato | Demucs separa stems; ADTOF transcribe drums; YourMT3+ transcribe el resto de stems por separado |
 | Omnizart | Toolbox modular | ❌ DESCARTADO | Arq. antigua |
 | Klangio | SaaS comercial | ❌ DESCARTADO | Solo 4/4 y 3/4, comercial |
@@ -339,16 +339,21 @@ Ver `evaluation/yourmt3/test*/notes.txt` sección "Métricas subjetivas".
 
 Fuente: arXiv 2603.27528, 76 piezas sintetizadas, 8 instrumentos.
 
-### Métricas F1 objetivas (mir_eval, onset_tolerance=50ms)
+### Métricas F1 objetivas (mir_eval, onset_tolerance=50ms) — 2026-06-23
 
-**PENDIENTE — rellenar tras `modal run research_miros_modal.py::eval_all`**
+| Test | Dataset | F1-op MIROS | F1-oop MIROS | F1-cls MIROS | F1-op YourMT3+ | Δ F1-op | Nota |
+|------|---------|-------------|--------------|--------------|----------------|---------|------|
+| test04 | Slakh 1884 | **77.5%** | 64.9% | 72.7% | 77.5% | **=** | Piano 92%, Guitar 90%, Bass 43% |
+| test05 | Slakh 1975 | 64.0% | 19.3% | 76.9% | **73.9%** | **-9.9pp** | MIROS infra-detecta Ensemble (26% vs 1448 notas GT) |
+| test07 | MusicNet 2556 | 3.3% | 0.8% | 100% | 2.6% | +0.7pp | Score timing mismatch — insignificante |
+| test08 | MusicNet 2628 | 15.8% | 7.9% | 50% | 14.4% | +1.4pp | Score timing; Strings→Ensemble (ambos modelos) |
 
-| Test | Dataset | F1-op MIROS | F1-op YourMT3+ | Δ | Nota |
-|------|---------|-------------|----------------|---|------|
-| miros/test04 | Slakh 1884 | ❓ | 77.5% | ❓ | — |
-| miros/test05 | Slakh 1975 | ❓ | 73.9% | ❓ | — |
-| miros/test07 | MusicNet 2556 | ❓ | 2.6%* | ❓ | *score timing |
-| miros/test08 | MusicNet 2628 | ❓ | 14.4%* | ❓ | *score timing |
+**Veredicto objetivo (Slakh, datos fiables):**
+- test04: MIROS = YourMT3+ (77.5% empate). MIROS genera 99 notas menos (2200 vs 2101 est), ligeramente más preciso.
+- test05: MIROS pierde 9.9pp vs YourMT3+. Derrumbe en Ensemble (26.4% vs 1448 GT) y Guitar (41.3% sub-detección). YourMT3+ obtiene 99% en SynthLead; MIROS solo 3.4%.
+- MusicNet: scores de partitura — resultados no comparables con performance real.
+
+**Nota:** F1-oop (onset+offset+pitch) MIROS test04 es 64.9% vs 61.8% de YourMT3+ — MIROS es 3.1pp mejor en predicción de duración de notas en Slakh 1884.
 
 ### Evaluación subjetiva (escucha REAPER)
 

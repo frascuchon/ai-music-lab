@@ -93,7 +93,7 @@ DEFAULT_GPU = os.environ.get("MIROS_GPU", "A10G")
 # ---------------------------------------------------------------------------
 image = (
     modal.Image.debian_slim(python_version="3.10")
-    .apt_install(["git", "ffmpeg", "sox", "libsndfile1"])
+    .apt_install(["git", "ffmpeg", "sox", "libsndfile1", "curl"])
     .run_commands(
         f"git clone {MIROS_REPO_URL} {REPO_DIR}"
     )
@@ -125,8 +125,10 @@ image = (
         "git+https://github.com/katsura-jp/pytorch-cosine-annealing-with-warmup.git",
     )
     .run_commands(
-        # flash-attn 2.7.2 requiere CUDA Ampere+ (A10G OK, T4 NO)
-        "pip install flash-attn==2.7.2.post1 --no-build-isolation"
+        # flash-attn 2.7.2 wheel precompilada (cu12+torch2.4+py3.10). Ampere+ only (A10G OK).
+        # El build step no tiene GPU/CUDA_HOME → compilar desde fuente falla; usamos wheel binaria.
+        "pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.2.post1/"
+        "flash_attn-2.7.2.post1+cu12torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl"
     )
 )
 
@@ -178,7 +180,7 @@ def _download_gdrive(gdrive_id: str, dest_path: str, label: str = "") -> None:
         import gdown
         url = f"https://drive.google.com/uc?id={gdrive_id}"
         print(f"{tag}Descargando con gdown desde {url} …")
-        gdown.download(url, dest_path, quiet=False, fuzzy=True)
+        gdown.download(url, dest_path, quiet=False)
         size = os.path.getsize(dest_path)
         print(f"{tag}OK (gdown) — {size/1e6:.0f} MB en {time.time()-t0:.0f}s")
         return

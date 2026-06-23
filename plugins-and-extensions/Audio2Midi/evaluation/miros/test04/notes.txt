@@ -16,9 +16,19 @@ Por qué este test:
 Métricas objetivo (AMT Challenge 2025):
   MIROS=0.5998 vs YourMT3-YPTF-MoE-M=0.5938 (media sobre 76 piezas challenge)
 
-Resultado:
-  Objetivo (mir_eval, onset+pitch): <pendiente — rellenar tras compute_f1.py>
-  Objetivo (mir_eval, onset+offset+pitch): <pendiente>
-  Objetivo (mir_eval, class F1): <pendiente>
-  Per-class: <pendiente>
+Resultado (2026-06-23):
+  Objetivo (mir_eval, onset+pitch):        F1-op  = 77.5%  (YourMT3+: 77.5% — EMPATE)
+  Objetivo (mir_eval, onset+offset+pitch): F1-oop = 64.9%  (YourMT3+: 61.8% — MIROS +3.1pp)
+  Objetivo (mir_eval, class F1):           F1-cls = 72.7%  (YourMT3+: 61.5% — MIROS +11.2pp)
+  n_ref=2355, n_est=2200 (MIROS genera 155 notas menos que GT)
+  Per-class:
+    Piano           F1=91.8%  n_ref=626   n_est=668
+    Guitar          F1=90.0%  n_ref=827   n_est=813
+    Ensemble        F1=64.9%  n_ref=389   n_est=246   ← infra-detecta Ensemble
+    Bass            F1=43.4%  n_ref=445   n_est=444
+    Chromatic Perc  F1=0.0%   n_ref=7     n_est=0     ← no detectado
+    Other           F1=0.0%   n_ref=61    n_est=0     ← no detectado
+    Synth Pad (FP)  F1=0.0%   n_ref=0     n_est=29    ← alucinación
+  Clases GT:  Bass, Chromatic Percussion, Ensemble, Guitar, Other, Piano
+  Clases EST: Bass, Ensemble, Guitar, Piano, Synth Pad
   Subjetivo (escucha REAPER): <pendiente>
