@@ -318,11 +318,18 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 4. **Single-model**: menor complejidad de implementación en el bridge Lua.
 5. **Vocal nativo**: no requiere separador previo para transcribir voz.
 
-**Limitaciones conocidas a documentar en el plugin:**
-- Instrumentos secundarios de pop comercial: rendimiento limitado (ver paper <10% en inst. no principales).
-- Strings pueden confundirse con Ensemble (visto en MusicNet 2628).
-- Inferencia CUDA-first: requires Modal cloud para velocidad en producción.
-- Drum class excluida de F1 pitched — calidad de batería es la principal limitación conocida; ADTOF puede mejorarla.
+**Limitaciones conocidas (confirmadas en escucha 2026-06-24):**
+
+| Limitación | Impacto DAW | Causa técnica |
+|---|---|---|
+| **Instrument bleed** — una frase se fragmenta entre varios instrumentos GM | Edición difícil: la melodía está repartida en N pistas | El modelo asigna clase instrumento frame a frame sin restricción de continuidad por frase |
+| **Huecos de detección** — silencios en melodías continuas | Notas faltantes en pasajes suaves o legato | Umbral de onset demasiado alto para notas de baja energía |
+| **Sin detección de tempo** — MIDI siempre a 120 BPM fijo | **Bloqueante para producción**: imposible cuantizar ni alinear al grid del DAW | Los modelos AMT no incluyen beat tracking; tempo map no se escribe en el MIDI |
+| Patrones rítmicos no capturados | El timing de notas es aproximado, no cuantizable | AMT optimiza onset F1 (±50ms), no alineación métrica |
+| Instrumentos secundarios poco representados | Clases raras (Chromatic Perc, Other) a veces a 0% | Sub-representación en dataset de entrenamiento |
+| Strings → Ensemble (error de clase frecuente) | Pista de cuerdas etiquetada como ensemble | Distribución GM ambigua entre clases |
+
+**La limitación más crítica para el plugin REAPER es la ausencia de tempo detection.** Sin el tempo correcto en el MIDI, el usuario no puede usar el cuantizador del DAW ni alinear el material transcrito a ningún grid. Esto convierte la transcripción en un objeto de solo lectura, no editable. Solución futura necesaria: paso previo de beat tracking (librosa / madmom / essentia) que escriba el tempo map en el header del MIDI antes de entregarlo.
 
 **Evaluación cualitativa en música real (2026-06-24):**
 Escucha subjetiva sobre 3 temas propios: Half Foot Outside (jazz/funk), Villa-Lobos Bachianas nº5 (clásico), Moderat - A New Error (electronic).

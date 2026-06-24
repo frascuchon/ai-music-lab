@@ -30,3 +30,23 @@ Evaluación subjetiva (escucha en REAPER) — 2026-06-24:
                referencia de tempo compartida → desincronización en el merge.
   Ritmo: mediocre en los tres modelos. Los patrones rítmicos no se detectan correctamente;
          la batería (en los tres) no captura los patrones reales de la pieza.
+
+Observaciones detalladas (escucha 2026-06-24):
+
+  1. INSTRUMENT BLEED — Una misma línea melódica se fragmenta entre varios instrumentos:
+     ej. guitarra → parte como Guitar, parte como Piano, parte como Celesta.
+     Causa probable: el modelo asigna clase de instrumento frame a frame según la
+     distribución de probabilidad del espectrograma, sin restricción de continuidad
+     de instrumento por frase. Un cambio de timbre dentro de la misma frase (vibrato,
+     ataque diferente) puede saltar a otra clase GM.
+
+  2. HUECOS DE DETECCIÓN — Momentos vacíos donde no se detecta melodía aunque suena.
+     Causa probable: umbral de onset demasiado alto para notas suaves o legato;
+     o frames sin activación suficiente entre notas sostenidas.
+
+  3. SIN DETECCIÓN DE TEMPO — El MIDI usa 120 BPM fijo (default). El tempo real de
+     la canción no se inscribe en el MIDI. Consecuencia: imposible cuantizar o alinear
+     el proyecto MIDI en el DAW; las notas no caen en los beats correctos del grid.
+     Todos los modelos evaluados (YourMT3+, MIROS, compound_v2) tienen este problema.
+     Solución futura: añadir un paso de tempo detection (librosa/madmom) que escriba
+     el tempo map correcto en el MIDI antes de entregarlo al DAW.
