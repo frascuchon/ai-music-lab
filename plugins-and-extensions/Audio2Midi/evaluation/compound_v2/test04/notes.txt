@@ -9,23 +9,37 @@ Contenido musical:
   Pista Slakh #1884 — mezcla sintética multi-instrumento con batería
   Instrumentos: batería, bajo, guitarra, piano, ensemble, otros
 
-Por qué este test:
-  Test principal para compound v2: es el único test con batería dominante y GT disponible.
-  Ground truth: _ground_truth/slakh/Track01884/all_src.mid (incluye drum track).
-  YourMT3+ obtuvo F1-op=77.5%; compound v2 debería igualar en pitched y añadir F1 de drums.
-
 Pipeline compound v2:
   - Audio completo → YourMT3+ (pitched instruments)
   - drums.wav (Demucs htdemucs_6s) → ADTOF → drums MIDI
   - merge: pitched + drums → transcribed_cuda.mid
 
-Métricas objetivo:
-  F1-op  (pitched)  ≥ 75%   (paridad con YourMT3+ standalone, sin degradar)
-  F1-drm (drums)    ≥ 40%   macro-F1 onset ±50ms (BD/SD/HH/TT/CY)
-  n_ref  (pitched)  ≈ 2355  (mismos que test04 de los demás pipelines)
+Resultado (2026-06-24):
+  F1-op  (pitched):    77.5%   (YourMT3+ solo: 77.5% — PARIDAD PERFECTA ✅)
+  F1-oop (pitched):    61.8%   (YourMT3+ solo: 61.8% — idéntico)
+  F1-cls (pitched):    61.5%   (YourMT3+ solo: 61.5% — idéntico)
+  n_ref=2355, n_est=2101 (pitched)
 
-Resultado:
-  <pendiente — ejecutar research_compound_v2_modal.py::eval_all --only 4>
+  F1-drm ADTOF (drums, onset ±50ms):
+    BD   40.4%  n_ref=313   n_est=1238  ← sobre-detección 4× (leakage Demucs en kick)
+    CY   27.4%  n_ref=88    n_est=124
+    HH   80.3%  n_ref=1555  n_est=2275  ← mejor clase, pero aún 1.5× over
+    SD   42.6%  n_ref=210   n_est=777   ← sobre-detección 3.7×
+    TT    9.3%  n_ref=33    n_est=652   ← muy ruidoso
+  Macro-F1 drums: 40.0%
 
-Subjetivo (escucha en REAPER):
-  <pendiente>
+  Instrumentos pitched per-class:
+    Piano      93.1%  n_ref=626   n_est=607   ← excelente
+    Guitar     90.9%  n_ref=827   n_est=766   ← excelente
+    Ensemble   63.8%  n_ref=389   n_est=269   ← infra-detecta
+    Bass       42.7%  n_ref=445   n_est=444
+
+  GT classes:  Bass, Chromatic Percussion, Ensemble, Guitar, Other, Piano
+  EST classes: Bass, Ensemble, Guitar, Organ, Piano, Pipe, Reed
+
+Veredicto:
+  ✅ F1 pitched = YourMT3+ standalone (el merge no degrada el canal melódico)
+  ⚠️ F1 drums 40.0% macro — HH detectado bien (80%), pero BD/SD sobre-detectados 3-4×
+     El leakage de Demucs en el stem drums es la causa principal de la sobre-detección.
+
+Métricas subjetivas (escucha en REAPER): pendiente

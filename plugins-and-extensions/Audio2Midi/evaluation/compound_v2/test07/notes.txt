@@ -3,29 +3,29 @@ Audio: symlink → ../../yourmt3/test07/input.wav
 Archivo original: musicnet2556.wav
 Dataset: MusicNet (grabaciones profesionales con anotaciones MIDI)
 Fuente: HuggingFace Space mimbres/YourMT3 examples/
-Tamaño: 4.85 MB → ~1.5-2 min aprox.
+Tamaño: 4.8 MB → ~1.5-2 min aprox.
 
 Contenido musical:
-  Grabación clásica real — piano solo o pequeño conjunto sin batería.
-
-Por qué este test:
-  Verifica que el merge con drums vacío no degrada el resultado pitched.
-  Ground truth: _ground_truth/musicnet/2556.mid
-  CAVEAT: GT es partitura (score timing) → F1 artificialmente bajo (<5%).
-  YourMT3+: F1-op=2.6% (score mismatch). Compound v2 debería dar resultado similar.
+  Grabación clásica real — piano solista (sin batería)
 
 Pipeline compound v2:
-  - Audio completo → YourMT3+ (piano solista esperado)
-  - drums.wav (Demucs htdemucs_6s) → ADTOF → drums MIDI (vacío esperado)
+  - Audio completo → YourMT3+ (pitched instruments)
+  - drums.wav (Demucs htdemucs_6s) → ADTOF → drums MIDI (41 bytes, vacío — sin batería detectada)
   - merge: pitched + drums → transcribed_cuda.mid
 
-Métricas objetivo:
-  F1-op  (pitched)  ≈ 2-3%  (igual que YourMT3+; score timing mismatch — no interpretable)
-  F1-cls             = 100%  (piano detectado correctamente)
-  F1-drm             = N/A   (sin batería en clásico)
+Resultado (2026-06-24):
+  F1-op  (pitched):     2.6%   (YourMT3+ solo: 2.6% — PARIDAD ✅)
+  F1-oop (pitched):     0.7%
+  F1-cls (pitched):   100.0%   (piano correctamente detectado)
+  n_ref=1447, n_est=1428
 
-Resultado:
-  <pendiente — ejecutar research_compound_v2_modal.py::eval_all --only 7>
+  CAVEAT: GT es partitura (score timing), no performance → F1 artificialmente bajo.
+  La métrica de clase (100%) confirma que el instrumento se detecta bien.
 
-Subjetivo (escucha en REAPER):
-  <pendiente>
+  F1-drm (drums): N/A — ADTOF correctamente no detecta batería en clásico ✅
+
+Veredicto:
+  ✅ Merge no introduce ruido en audio sin batería
+  ✅ F1 pitched = YourMT3+ standalone
+
+Métricas subjetivas (escucha en REAPER): pendiente

@@ -3,28 +3,29 @@ Audio: symlink → ../../yourmt3/test08/input.wav
 Archivo original: musicnet_2628.wav
 Dataset: MusicNet (grabaciones profesionales con anotaciones MIDI)
 Fuente: HuggingFace Space mimbres/YourMT3 examples/
-Tamaño: ~5 MB
+Tamaño: 4.0 MB
 
 Contenido musical:
-  Grabación clásica real — piano + cuerdas, sin batería.
-
-Por qué este test:
-  Verifica que el merge con drums vacío no degrada el resultado pitched.
-  Ground truth: _ground_truth/musicnet/2628.mid
-  CAVEAT: GT es partitura (score timing) → F1 artificialmente bajo.
-  YourMT3+: F1-op=14.4%; error de clase (Strings→Ensemble).
+  Grabación clásica real — piano + cuerdas (sin batería)
 
 Pipeline compound v2:
-  - Audio completo → YourMT3+ (piano + cuerdas)
-  - drums.wav (Demucs htdemucs_6s) → ADTOF → drums MIDI (vacío esperado)
+  - Audio completo → YourMT3+ (pitched instruments)
+  - drums.wav (Demucs htdemucs_6s) → ADTOF → drums MIDI (41 bytes, vacío — sin batería detectada)
   - merge: pitched + drums → transcribed_cuda.mid
 
-Métricas objetivo:
-  F1-op  (pitched)  ≈ 12-16%  (paridad con YourMT3+; score timing mismatch)
-  F1-drm             = N/A     (sin batería en clásico)
+Resultado (2026-06-24):
+  F1-op  (pitched):    14.4%   (YourMT3+ solo: 14.4% — PARIDAD ✅)
+  F1-oop (pitched):     7.1%
+  F1-cls (pitched):    50.0%   (Piano detectado; Strings→Ensemble — error de clase)
+  n_ref=1519, n_est=1538
 
-Resultado:
-  <pendiente — ejecutar research_compound_v2_modal.py::eval_all --only 8>
+  CAVEAT: GT es partitura (score timing) → F1 artificialmente bajo.
+  Error de clase conocido: Strings transcritas como Ensemble (igual que YourMT3+ solo).
 
-Subjetivo (escucha en REAPER):
-  <pendiente>
+  F1-drm (drums): N/A — ADTOF correctamente no detecta batería en clásico ✅
+
+Veredicto:
+  ✅ Merge no introduce ruido en audio sin batería
+  ✅ F1 pitched = YourMT3+ standalone
+
+Métricas subjetivas (escucha en REAPER): pendiente

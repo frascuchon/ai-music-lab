@@ -246,9 +246,20 @@ Las arquitecturas "end-to-end" (YourMT3+, MT3) intentan resolver el problema en 
 
 Nota de diseño: YourMT3+ recibe audio completo (no stems) para evitar el leakage de Demucs que hundió v1. El rol de Demucs se limita a extraer el stem de batería para ADTOF.
 
-Hipótesis: YourMT3+ sobre stems aislados debería rendir significativamente mejor que sobre la mezcla completa (elimina la ambigüedad de separación, que es donde más falla). ADTOF para drums es superior a BasicPitch y a YourMT3+ en batería real.
+**EVALUADO 2026-06-24:**
 
-🔲 **Pendiente de implementación y evaluación** en una sesión dedicada.
+| Test | Dataset | F1-op pitched | Δ vs YourMT3+ | F1-drm drums (macro) |
+|---|---|---|---|---|
+| test04 | Slakh 1884 | **77.5%** | +0.0pp (paridad) | 40.0% (HH 80%, BD 40%, SD 43%) |
+| test05 | Slakh 1975 | **73.9%** | +0.0pp (paridad) | 49.6% (BD 75%, HH 66%, SD 49%) |
+| test07 | MusicNet 2556 | 2.6% | +0.0pp | N/A (sin batería) |
+| test08 | MusicNet 2628 | 14.4% | +0.0pp | N/A (sin batería) |
+
+**Veredicto compound v2:**
+- ✅ **F1 pitched = YourMT3+ standalone en todos los tests** — el merge no degrada el canal melódico.
+- ⚠️ **F1 drums ADTOF**: 40-50% macro en Slakh (HH excelente 80%, BD/SD sobre-detectados 3-4× por leakage de Demucs). ADTOF aporta batería real ausente en YourMT3+, pero con ruido significativo.
+- ✅ **Sin batería en clásico**: ADTOF correctamente devuelve MIDI vacío en MusicNet. El merge no introduce ruido.
+- **Conclusión**: compound v2 es una mejora sobre v1 (F1 31.1% → 77.5% pitched) y añade pista de batería a YourMT3+. La calidad de drums (40-50% F1) es subóptima pero funcional como primera pista de percusión. El leakage de Demucs es el limitante principal.
 
 ---
 
@@ -281,7 +292,7 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 | Pipeline Demucs + Basic Pitch | Compuesto | ✅ F1 31.1% + subjetivo negativo | ❌ **DESCARTADO — 3.2× sobre-detección** |
 | MT3 | End-to-end AMT | ❌ CERRADO sin evaluar | YourMT3+ es su sucesor directo; no aporta información adicional evaluarlo |
 | **MIROS** (AMT Challenge 2025 winner) | End-to-end AMT | ✅ CERRADO — F1-op 77.5% (test04) / 64.0% (test05) | Empata YourMT3+ en Slakh 1884; pierde 9.9pp en Slakh 1975. No supera YourMT3+ de forma consistente. Escucha subjetiva positiva. |
-| **YourMT3+ + ADTOF (compound v2)** | Compuesto v2 | 🔲 IMPLEMENTADO — eval pendiente | Demucs extrae stem drums → ADTOF; audio completo → YourMT3+; merge. Scripts listos 2026-06-24. |
+| **YourMT3+ + ADTOF (compound v2)** | Compuesto v2 | ✅ CERRADO 2026-06-24 — F1-pitched=77.5% (=YourMT3+), F1-drm=40-50% | Merge no degrada pitched. Drums: HH 80% pero BD/SD sobre-detectados 3-4×. |
 | Omnizart | Toolbox modular | ❌ DESCARTADO | Arq. antigua |
 | Klangio | SaaS comercial | ❌ DESCARTADO | Solo 4/4 y 3/4, comercial |
 | AnthemScore | SaaS comercial | ❌ DESCARTADO | Mono, comercial |

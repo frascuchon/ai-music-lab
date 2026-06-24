@@ -145,12 +145,9 @@ def _transcribe_drums(audio_bytes: bytes) -> bytes:
             f.write(audio_bytes)
 
         model, hparams = _load_model()
-        # predictFolder acepta glob o path; escribe MIDI en out_dir con el mismo stem name
-        model.predictFolder(
-            audioFiles=tmp_audio,
-            outputLocation=out_dir,
-            **hparams,
-        )
+        # Firma real: predictFolder(inputFolder, outputFolder, **kwargs)
+        # inputFolder puede ser un directorio o un path de archivo
+        model.predictFolder(tmp_audio, out_dir, **hparams)
 
         midi_files = glob.glob(os.path.join(out_dir, "*.mid"))
         if not midi_files:
@@ -174,7 +171,8 @@ def _transcribe_drums(audio_bytes: bytes) -> bytes:
             combined.instruments.append(drum_inst)
 
         if not combined.instruments:
-            raise RuntimeError("ADTOF generó MIDI pero sin notas")
+            # Audio sin batería (ej: música clásica) — resultado vacío válido
+            print("[adtof] MIDI sin notas de batería (audio sin drums) — devolviendo MIDI vacío")
 
         out_buf = tempfile.NamedTemporaryFile(suffix=".mid", delete=False)
         out_buf.close()
