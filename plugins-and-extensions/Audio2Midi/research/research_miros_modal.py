@@ -28,7 +28,9 @@ Pipeline:
         ↓
     Parallel multi-T5 decoders (RoPE, FlashAttention)
         ↓
-    transcribed_cuda.mid (multi-track)
+    librosa.beat.beat_track → variable tempo map (beat tracking)
+        ↓
+    transcribed_cuda.mid (multi-track, tempo map corregido)
 
 Setup (descarga pesos al Volume, ejecutar una vez):
     cd Audio2Midi/research
@@ -233,7 +235,7 @@ def _setup_repo_env() -> None:
         print(f"[setup_env] Symlink: {miros_dest} → {miros_src}")
 
 
-def _transcribe_one(audio_bytes: bytes) -> bytes:
+def _transcribe_one(audio_bytes: bytes, beat_tracking: bool = True) -> bytes:
     """
     Transcribe un audio (bytes) a MIDI (bytes) llamando a miros_transcribe().
 
@@ -259,13 +261,180 @@ def _transcribe_one(audio_bytes: bytes) -> bytes:
         miros_transcribe(audio_path, midi_path)
         if os.path.exists(midi_path) and os.path.getsize(midi_path) > 0:
             with open(midi_path, "rb") as f:
-                return f.read()
+                midi_bytes = f.read()
+            if beat_tracking:
+                midi_bytes = _apply_beat_tracking(audio_bytes, midi_bytes)
+            return midi_bytes
         else:
             raise RuntimeError(f"MIROS no generó MIDI en: {midi_path}")
     finally:
         for p in [audio_path, midi_path]:
             if os.path.exists(p):
                 os.unlink(p)
+
+
+def _apply_beat_tracking(audio_bytes: bytes, midi_bytes: bytes) -> bytes:
+    """
+    Post-procesamiento: detecta beats del audio con librosa y reescribe el
+    tempo map del MIDI resultante.
+
+    Cada beat detectado en el audio corresponde a un beat en el MIDI, por lo que
+    REAPER puede alinear su grid con la música real y el material queda editable.
+
+    Estrategia:
+    - beat_times[i] → tick i * ticks_per_beat
+    - Tempo entre beat i e i+1 = (beat_times[i+1] - beat_times[i]) * 1e6 µs/beat
+    - Los tiempos absolutos de las notas (en segundos) se conservan intactos;
+      solo cambia cómo el MIDI los codifica en ticks.
+    """
+    import librosa
+    import pretty_midi
+    import mido
+    import numpy as np
+
+    suffix = ".wav"
+    if audio_bytes[:3] == b"ID3" or audio_bytes[:2] == b"\xff\xfb":
+        suffix = ".mp3"
+
+    tmp_audio = tempfile.mktemp(suffix=suffix)
+    tmp_midi_in = tempfile.mktemp(suffix=".mid")
+    tmp_midi_out = tempfile.mktemp(suffix=".mid")
+
+    try:
+        with open(tmp_audio, "wb") as f:
+            f.write(audio_bytes)
+        with open(tmp_midi_in, "wb") as f:
+            f.write(midi_bytes)
+
+        # 1. Detección de beats
+        y, sr = librosa.load(tmp_audio, sr=None, mono=True)
+        tempo_arr, beat_frames = librosa.beat.beat_track(
+            y=y, sr=sr, hop_length=512, units="frames"
+        )
+        beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=512)
+        global_bpm = float(np.atleast_1d(tempo_arr)[0])
+
+        print(f"[beat_tracking] {global_bpm:.1f} BPM, {len(beat_times)} beats detectados")
+
+        if len(beat_times) < 2:
+            print("[beat_tracking] Muy pocos beats — MIDI sin modificar.")
+            return midi_bytes
+
+        # 2. Leer notas originales (tiempos en segundos) con pretty_midi
+        pm = pretty_midi.PrettyMIDI(tmp_midi_in)
+
+        # 3. Conversor segundos → ticks usando la malla de beats
+        ticks_per_beat = 480
+
+        def seconds_to_ticks(t_sec: float) -> int:
+            if t_sec <= beat_times[0]:
+                frac = (t_sec - beat_times[0]) / (beat_times[1] - beat_times[0])
+                return max(0, int(round(frac * ticks_per_beat)))
+            if t_sec >= beat_times[-1]:
+                frac = (t_sec - beat_times[-2]) / (beat_times[-1] - beat_times[-2])
+                return int(round((len(beat_times) - 2 + frac) * ticks_per_beat))
+            idx = int(np.searchsorted(beat_times, t_sec, side="right")) - 1
+            dt = beat_times[idx + 1] - beat_times[idx]
+            frac = (t_sec - beat_times[idx]) / dt
+            return int(round((idx + frac) * ticks_per_beat))
+
+        # 4. Construir MIDI con mido: track 0 = tempo map variable
+        mid = mido.MidiFile(ticks_per_beat=ticks_per_beat, type=1)
+
+        tempo_track = mido.MidiTrack()
+        mid.tracks.append(tempo_track)
+        tempo_track.append(mido.MetaMessage("track_name", name="Tempo Map", time=0))
+
+        last_tick = 0
+        for i in range(len(beat_times) - 1):
+            dt = beat_times[i + 1] - beat_times[i]
+            if dt <= 0:
+                continue
+            tempo_us = int(round(dt * 1e6))          # µs/beat = segundos_por_beat * 1e6
+            tick = i * ticks_per_beat
+            tempo_track.append(
+                mido.MetaMessage("set_tempo", tempo=tempo_us, time=tick - last_tick)
+            )
+            last_tick = tick
+        tempo_track.append(mido.MetaMessage("end_of_track", time=0))
+
+        # 5. Pistas de instrumento
+        drum_ch = 9
+        non_drum_chs = [c for c in range(16) if c != drum_ch]
+        non_drum_ch_idx = 0
+
+        for inst_idx, inst in enumerate(pm.instruments):
+            if inst.is_drum:
+                channel = drum_ch
+            else:
+                channel = non_drum_chs[non_drum_ch_idx % len(non_drum_chs)]
+                non_drum_ch_idx += 1
+
+            track = mido.MidiTrack()
+            mid.tracks.append(track)
+            track.append(
+                mido.MetaMessage("track_name", name=inst.name or f"Inst {inst_idx}", time=0)
+            )
+            track.append(
+                mido.Message("program_change", channel=channel, program=inst.program, time=0)
+            )
+
+            events: list[tuple] = []
+            for note in inst.notes:
+                tick_on = seconds_to_ticks(note.start)
+                tick_off = max(tick_on + 1, seconds_to_ticks(note.end))
+                events.append((tick_on, "note_on", note.pitch, note.velocity, channel))
+                events.append((tick_off, "note_off", note.pitch, 0, channel))
+            for cc in inst.control_changes:
+                events.append(
+                    (seconds_to_ticks(cc.time), "control_change", cc.number, cc.value, channel)
+                )
+            for pb in inst.pitch_bends:
+                events.append(
+                    (seconds_to_ticks(pb.time), "pitchwheel", pb.pitch, 0, channel)
+                )
+
+            events.sort(key=lambda e: e[0])
+            last_tick_ev = 0
+            for tick, msg_type, p1, p2, ch in events:
+                delta = max(0, tick - last_tick_ev)
+                last_tick_ev = tick
+                if msg_type == "note_on":
+                    track.append(
+                        mido.Message("note_on", channel=ch, note=p1, velocity=p2, time=delta)
+                    )
+                elif msg_type == "note_off":
+                    track.append(
+                        mido.Message("note_off", channel=ch, note=p1, velocity=0, time=delta)
+                    )
+                elif msg_type == "control_change":
+                    track.append(
+                        mido.Message("control_change", channel=ch, control=p1, value=p2, time=delta)
+                    )
+                elif msg_type == "pitchwheel":
+                    track.append(
+                        mido.Message("pitchwheel", channel=ch, pitch=p1, time=delta)
+                    )
+            track.append(mido.MetaMessage("end_of_track", time=0))
+
+        mid.save(tmp_midi_out)
+        with open(tmp_midi_out, "rb") as f:
+            result = f.read()
+
+        print(f"[beat_tracking] MIDI reescrito: {len(midi_bytes)} → {len(result)} bytes")
+        return result
+
+    except Exception as exc:
+        print(f"[beat_tracking] ERROR ({exc}) — devolviendo MIDI original sin modificar.")
+        return midi_bytes
+
+    finally:
+        for p in [tmp_audio, tmp_midi_in, tmp_midi_out]:
+            try:
+                if os.path.exists(p):
+                    os.unlink(p)
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -336,11 +505,13 @@ def setup() -> None:
     timeout=7200,
     gpu=DEFAULT_GPU,
 )
-def transcribe_batch(audio_payloads: list[bytes]) -> list[bytes]:
+def transcribe_batch(audio_payloads: list[bytes], beat_tracking: bool = True) -> list[bytes]:
     """
     Transcribe cada audio a MIDI multi-instrumento con MIROS.
 
     audio_payloads: bytes de cada archivo WAV/MP3
+    beat_tracking: si True (por defecto), reescribe el tempo map del MIDI con
+                   librosa.beat.beat_track para que el grid de REAPER se alinee.
     Returns: list[midi_bytes] — b"" si la transcripción falló para ese audio
     """
     _setup_repo_env()
@@ -349,7 +520,7 @@ def transcribe_batch(audio_payloads: list[bytes]) -> list[bytes]:
     for i, audio_bytes in enumerate(audio_payloads):
         t0 = time.time()
         try:
-            midi_bytes = _transcribe_one(audio_bytes)
+            midi_bytes = _transcribe_one(audio_bytes, beat_tracking=beat_tracking)
             elapsed = time.time() - t0
             print(f"[transcribe] [{i+1}/{len(audio_payloads)}] OK — {len(midi_bytes)} bytes ({elapsed:.1f}s)")
             results.append(midi_bytes)
@@ -368,6 +539,7 @@ def main(
     audio_path: str = "",
     out_dir: str = ".",
     force: bool = False,
+    no_beat_tracking: bool = False,
 ):
     """
     Transcribe un audio con MIROS y guarda el MIDI resultante en out-dir.
@@ -376,6 +548,10 @@ def main(
         modal run research_miros_modal.py::main \\
             --audio-path ../evaluation/miros/test04/input.wav \\
             --out-dir ../evaluation/miros/test04
+
+        # Sin beat tracking (tempo map por defecto):
+        modal run research_miros_modal.py::main \\
+            --audio-path ... --no-beat-tracking
     """
     if not audio_path:
         print("ERROR: --audio-path requerido. Ejemplo:")
@@ -397,9 +573,10 @@ def main(
         print(f"[main] Ya existe {out_mid}. Usa --force para regenerar.")
         return
 
-    print(f"[main] Transcribiendo con MIROS: {audio_p.name} → {out_mid}")
+    beat_tracking = not no_beat_tracking
+    print(f"[main] Transcribiendo con MIROS: {audio_p.name} → {out_mid} (beat_tracking={beat_tracking})")
     audio_bytes = audio_p.read_bytes()
-    [midi_bytes] = transcribe_batch.remote([audio_bytes])
+    [midi_bytes] = transcribe_batch.remote([audio_bytes], beat_tracking=beat_tracking)
 
     if not midi_bytes:
         print("[main] ERROR: la transcripción devolvió vacío.")
@@ -417,6 +594,7 @@ def eval_all(
     eval_dir: str = "../evaluation/miros",
     force: bool = False,
     only: str = "",
+    no_beat_tracking: bool = False,
 ):
     """
     Transcribe todos los tests del directorio de evaluación con MIROS.
@@ -432,6 +610,9 @@ def eval_all(
 
         # Forzar re-transcripción:
         modal run research_miros_modal.py::eval_all --force
+
+        # Sin beat tracking:
+        modal run research_miros_modal.py::eval_all --no-beat-tracking
     """
     eval_path = Path(eval_dir)
 
@@ -476,9 +657,10 @@ def eval_all(
         print("[eval_all] Nada que transcribir (todos los tests ya tienen outputs o faltan inputs).")
         return
 
-    print(f"\n[eval_all] Transcribiendo {len(audio_bytes_list)} tests en Modal ({DEFAULT_GPU}) …\n")
+    beat_tracking = not no_beat_tracking
+    print(f"\n[eval_all] Transcribiendo {len(audio_bytes_list)} tests en Modal ({DEFAULT_GPU}) (beat_tracking={beat_tracking}) …\n")
     t0 = time.time()
-    results = transcribe_batch.remote(audio_bytes_list)
+    results = transcribe_batch.remote(audio_bytes_list, beat_tracking=beat_tracking)
 
     ok = 0
     for (td, out_mid), midi_bytes in zip(valid_dirs, results):
