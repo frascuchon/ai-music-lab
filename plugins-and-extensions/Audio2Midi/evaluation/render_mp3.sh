@@ -23,7 +23,7 @@ fi
 total=0
 skipped=0
 
-for mid in "$ROOT"/{yourmt3,compound,miros}/test*/transcribed_cuda.mid; do
+for mid in "$ROOT"/{yourmt3,compound,compound_v2,miros}/test*/transcribed_cuda.mid; do
     [[ -f "$mid" ]] || continue
     mp3="${mid%.mid}.mp3"
     if [[ -f "$mp3" ]]; then

@@ -1,0 +1,30 @@
+Test 08 — Música clásica real: MusicNet (pista 2628)
+Audio: symlink → ../../yourmt3/test08/input.wav
+Archivo original: musicnet_2628.wav
+Dataset: MusicNet (grabaciones profesionales con anotaciones MIDI)
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: ~5 MB
+
+Contenido musical:
+  Grabación clásica real — piano + cuerdas, sin batería.
+
+Por qué este test:
+  Verifica que el merge con drums vacío no degrada el resultado pitched.
+  Ground truth: _ground_truth/musicnet/2628.mid
+  CAVEAT: GT es partitura (score timing) → F1 artificialmente bajo.
+  YourMT3+: F1-op=14.4%; error de clase (Strings→Ensemble).
+
+Pipeline compound v2:
+  - Audio completo → YourMT3+ (piano + cuerdas)
+  - drums.wav (Demucs htdemucs_6s) → ADTOF → drums MIDI (vacío esperado)
+  - merge: pitched + drums → transcribed_cuda.mid
+
+Métricas objetivo:
+  F1-op  (pitched)  ≈ 12-16%  (paridad con YourMT3+; score timing mismatch)
+  F1-drm             = N/A     (sin batería en clásico)
+
+Resultado:
+  <pendiente — ejecutar research_compound_v2_modal.py::eval_all --only 8>
+
+Subjetivo (escucha en REAPER):
+  <pendiente>

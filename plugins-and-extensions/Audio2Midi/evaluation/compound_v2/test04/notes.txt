@@ -1,0 +1,31 @@
+Test 04 — Multi-instrumento sintético: Slakh2100 (pista 1884)
+Audio: symlink → ../../yourmt3/test04/input.wav
+Archivo original: Slakh_test_1884.wav
+Dataset: Slakh2100 (Synthetic Lakh MIDI Dataset, ~2100 pistas sintéticas)
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 10.9 MB → ~3-4 min aprox.
+
+Contenido musical:
+  Pista Slakh #1884 — mezcla sintética multi-instrumento con batería
+  Instrumentos: batería, bajo, guitarra, piano, ensemble, otros
+
+Por qué este test:
+  Test principal para compound v2: es el único test con batería dominante y GT disponible.
+  Ground truth: _ground_truth/slakh/Track01884/all_src.mid (incluye drum track).
+  YourMT3+ obtuvo F1-op=77.5%; compound v2 debería igualar en pitched y añadir F1 de drums.
+
+Pipeline compound v2:
+  - Audio completo → YourMT3+ (pitched instruments)
+  - drums.wav (Demucs htdemucs_6s) → ADTOF → drums MIDI
+  - merge: pitched + drums → transcribed_cuda.mid
+
+Métricas objetivo:
+  F1-op  (pitched)  ≥ 75%   (paridad con YourMT3+ standalone, sin degradar)
+  F1-drm (drums)    ≥ 40%   macro-F1 onset ±50ms (BD/SD/HH/TT/CY)
+  n_ref  (pitched)  ≈ 2355  (mismos que test04 de los demás pipelines)
+
+Resultado:
+  <pendiente — ejecutar research_compound_v2_modal.py::eval_all --only 4>
+
+Subjetivo (escucha en REAPER):
+  <pendiente>

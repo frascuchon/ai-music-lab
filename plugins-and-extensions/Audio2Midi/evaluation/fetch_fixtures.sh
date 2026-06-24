@@ -137,6 +137,20 @@ link_or_copy \
     "${EVAL_DIR}/miros/test10/input.mp3"
 
 # ---------------------------------------------------------------------------
+# Compound v2 tests (symlinks a los tests con ground truth de YourMT3)
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Compound v2 (4 tests con GT, mismos audios que YourMT3) ---"
+
+for src_test in test04 test05 test07 test08; do
+    dst="${EVAL_DIR}/compound_v2/${src_test}"
+    mkdir -p "$dst"
+    link_or_copy \
+        "${EVAL_DIR}/yourmt3/${src_test}/input.wav" \
+        "${dst}/input.wav"
+done
+
+# ---------------------------------------------------------------------------
 # Resumen
 # ---------------------------------------------------------------------------
 echo ""
@@ -181,10 +195,23 @@ for d in "${EVAL_DIR}/miros"/test*/; do
 done
 
 echo ""
+echo "Compound v2 (4 tests con GT):"
+for d in "${EVAL_DIR}/compound_v2"/test*/; do
+    wav="${d}input.wav"
+    if [[ -f "$wav" ]]; then
+        echo "  $(basename "$d"): ✓ input.wav (symlink)"
+    else
+        echo "  $(basename "$d"): ✗ falta input.wav"
+    fi
+done
+
+echo ""
 echo "Siguiente paso:"
 echo "  cd ../research"
-echo "  modal run research_yourmt3_modal.py::setup          # descarga pesos (una vez)"
-echo "  modal run research_yourmt3_modal.py::eval_all       # transcribe los 10 tests"
-echo "  modal run research_compound_pipeline_modal.py::eval_all  # pipeline compuesto"
-echo "  modal run research_miros_modal.py::setup            # descarga pesos MIROS (una vez)"
-echo "  modal run research_miros_modal.py::eval_all         # transcribe los 10 tests MIROS"
+echo "  modal run research_yourmt3_modal.py::setup              # descarga pesos (una vez)"
+echo "  modal run research_yourmt3_modal.py::eval_all           # transcribe los 10 tests"
+echo "  modal run research_compound_pipeline_modal.py::eval_all # pipeline compuesto v1"
+echo "  modal run research_miros_modal.py::setup                # descarga pesos MIROS (una vez)"
+echo "  modal run research_miros_modal.py::eval_all             # transcribe los 10 tests MIROS"
+echo "  modal run research_adtof_modal.py::setup                # verifica ADTOF"
+echo "  modal run research_compound_v2_modal.py::eval_all --only 4,5,7,8  # compound v2"

@@ -23,7 +23,7 @@
 | **Basic Pitch** (Spotify) | Mono/polif. instrument-agnostic | ❌ mono-instrumento | ✅ sí | ✅ MPS/CPU | Apache 2.0 | ✅ 2022, producción | Solo en pipeline compuesto |
 | **Transkun V2** (ISMIR 2024) | Piano-only AMT | ❌ solo piano | ✅ sí | ✅ CPU | MIT | ✅ ISMIR 2024 | Solo en pipeline compuesto |
 | **OaF Drums** (Magenta) | Drums-only | ❌ solo batería | ✅ sí | ✅ CPU/TF | Apache 2.0 | ✅ SOTA drums | Solo en pipeline compuesto |
-| **ADTOF** (Zehren) | Drums-only CRNN | ❌ solo batería | ✅ sí | ✅ CPU | LGPL | ✅ ICASSP 2022 | Solo en pipeline compuesto |
+| **ADTOF** (Zehren) | Drums-only CRNN | ❌ solo batería | ✅ sí | ✅ CPU | CC BY-NC-SA 4.0 | ✅ ISMIR 2021 | Solo en pipeline compuesto (compound v2) |
 | **Klangio** | SaaS por instrumento | ❌ un instrumento/app | ✅ MIDI+MXL+GP5 | ✅ (API REST) | Comercial | ✅ producción 2026 | ❌ DESCARTADO: solo 4/4 y 3/4 |
 | **AnthemScore** | SaaS generalista | ⚠️ 1 pista | ✅ MIDI | ✅ (desktop) | Comercial | ✅ producción | ❌ DESCARTADO: mono, comercial |
 | **NeuralNote** | Plugin VST/AU | ❌ mono (usa Basic Pitch) | ✅ sí | ✅ nativo | MIT | ⚠️ activo | Referencia de integración DAW |
@@ -218,7 +218,7 @@ Las arquitecturas "end-to-end" (YourMT3+, MT3) intentan resolver el problema en 
 - **Dataset**: 359h de música real anotada (no sintética) via rhythm game charts
 - **Arquitectura**: CRNN con dataset escalado. Complementario a OaF Drums.
 - **Ventaja vs OaF**: entrenado en datos reales (no solo MIDI sintético), mejor generalización a rock/metal.
-- **Licencia**: LGPL
+- **Licencia**: CC BY-NC-SA 4.0 (no comercial, share-alike) — solo investigación interna. Nota: RESEARCH.md indicaba LGPL por error; la licencia real es CC BY-NC-SA 4.0.
 
 ### Trade-offs: pipeline compuesto vs end-to-end
 
@@ -235,11 +235,16 @@ Las arquitecturas "end-to-end" (YourMT3+, MT3) intentan resolver el problema en 
 
 **Veredicto evaluado (2026-06-22)**: el pipeline compuesto fue evaluado con F1 objetivo (compound/test03 vs Slakh 1884): **31.1% vs 77.5% de YourMT3+** en el mismo audio, y **confirmado subjetivamente en escucha general** — YourMT3+ es claramente mejor. La hipótesis de que BasicPitch mejoraría con stems aislados no se cumple — el leakage de Demucs introduce demasiadas notas fantasma (7484 est vs 2355 ref = 3.2× sobre-detección). **El pipeline Demucs + Basic Pitch queda DESCARTADO.**
 
-**Dirección siguiente — Pipeline compuesto v2 (Demucs + ADTOF + YourMT3+):**
-- Demucs htdemucs_6s separa la mezcla en stems (vocals, bass, drums, guitar, piano, other)
-- Stem **drums** → ADTOF (transcriptor especializado, entrenado en 359h de música real)
-- Resto de stems → **YourMT3+** por stem (mismo transcriptor SOTA pero con input limpio)
-- Merge de todos los MIDIs en pistas separadas por instrumento
+**Pipeline compuesto v2 (Demucs + ADTOF + YourMT3+) — implementado 2026-06-24:**
+
+- Audio original completo → **YourMT3+** (F1 pitched preservado al máximo)
+- Demucs htdemucs_6s extrae solo el stem **drums** → **ADTOF** (drums especializado, 359h real)
+- Merge pitched + drums → `transcribed_cuda.mid` multi-pista
+- Scripts: `research_adtof_modal.py` + `research_compound_v2_modal.py`
+- Tests: `evaluation/compound_v2/test{04,05,07,08}` con GT disponible
+- Métrica adicional en `compute_f1.py`: F1 drum-onset por clase (BD/SD/HH/TT/CY), `--no-drums` para omitir.
+
+Nota de diseño: YourMT3+ recibe audio completo (no stems) para evitar el leakage de Demucs que hundió v1. El rol de Demucs se limita a extraer el stem de batería para ADTOF.
 
 Hipótesis: YourMT3+ sobre stems aislados debería rendir significativamente mejor que sobre la mezcla completa (elimina la ambigüedad de separación, que es donde más falla). ADTOF para drums es superior a BasicPitch y a YourMT3+ en batería real.
 
@@ -276,7 +281,7 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 | Pipeline Demucs + Basic Pitch | Compuesto | ✅ F1 31.1% + subjetivo negativo | ❌ **DESCARTADO — 3.2× sobre-detección** |
 | MT3 | End-to-end AMT | ❌ CERRADO sin evaluar | YourMT3+ es su sucesor directo; no aporta información adicional evaluarlo |
 | **MIROS** (AMT Challenge 2025 winner) | End-to-end AMT | ✅ CERRADO — F1-op 77.5% (test04) / 64.0% (test05) | Empata YourMT3+ en Slakh 1884; pierde 9.9pp en Slakh 1975. No supera YourMT3+ de forma consistente. Escucha subjetiva positiva. |
-| **YourMT3+ + ADTOF (compound v2)** | Compuesto v2 | 🔲 PRÓXIMA SESIÓN | Demucs separa stems; ADTOF mejora transcripción de batería; YourMT3+ transcribe el resto |
+| **YourMT3+ + ADTOF (compound v2)** | Compuesto v2 | 🔲 IMPLEMENTADO — eval pendiente | Demucs extrae stem drums → ADTOF; audio completo → YourMT3+; merge. Scripts listos 2026-06-24. |
 | Omnizart | Toolbox modular | ❌ DESCARTADO | Arq. antigua |
 | Klangio | SaaS comercial | ❌ DESCARTADO | Solo 4/4 y 3/4, comercial |
 | AnthemScore | SaaS comercial | ❌ DESCARTADO | Mono, comercial |
@@ -313,7 +318,16 @@ Ver `evaluation/yourmt3/test*/notes.txt` sección "Métricas subjetivas".
 
 ### Próximos pasos
 
-1. **YourMT3+ + ADTOF (compound v2)** — próxima sesión: Demucs separa stems; ADTOF reemplaza la detección de batería de YourMT3+; YourMT3+ transcribe los stems restantes. Evaluar sobre mismos tests con GT.
+1. **Ejecutar compound v2** (2026-06-24): scripts listos, ejecutar:
+
+   ```bash
+   cd Audio2Midi/research
+   modal run research_adtof_modal.py::setup
+   modal run research_compound_v2_modal.py::eval_all --only 4,5,7,8
+   bash ../evaluation/render_mp3.sh
+   uv run python ../evaluation/compute_f1.py --only compound_v2/
+   ```
+
 2. **Integración en REAPER**: bridge Lua para el pipeline ganador una vez cerrado compound v2.
 
 ---
