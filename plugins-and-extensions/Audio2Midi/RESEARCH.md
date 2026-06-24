@@ -291,7 +291,7 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 | **YourMT3+** | End-to-end AMT | ✅ F1 Slakh 77.5% + subjetivo positivo | **ELEGIDO — pipeline de producción** |
 | Pipeline Demucs + Basic Pitch | Compuesto | ✅ F1 31.1% + subjetivo negativo | ❌ **DESCARTADO — 3.2× sobre-detección** |
 | MT3 | End-to-end AMT | ❌ CERRADO sin evaluar | YourMT3+ es su sucesor directo; no aporta información adicional evaluarlo |
-| **MIROS** (AMT Challenge 2025 winner) | End-to-end AMT | ✅ CERRADO — F1-op 77.5% (test04) / 64.0% (test05) | Empata YourMT3+ en Slakh 1884; pierde 9.9pp en Slakh 1975. No supera YourMT3+ de forma consistente. Escucha subjetiva positiva. |
+| **MIROS** (AMT Challenge 2025 winner) | End-to-end AMT | ✅ F1-op 77.5%/64.0% (Slakh). Subjetivo real: **mejor de los tres** (melodía, 2026-06-24) | Empata YourMT3+ en Slakh 1884; pierde 9.9pp en Slakh 1975. En música real propia supera a YourMT3+ subjetivamente. |
 | **YourMT3+ + ADTOF (compound v2)** | Compuesto v2 | ✅ CERRADO 2026-06-24 — F1-pitched=77.5% (=YourMT3+), F1-drm=40-50% | Merge no degrada pitched. Drums: HH 80% pero BD/SD sobre-detectados 3-4×. |
 | Omnizart | Toolbox modular | ❌ DESCARTADO | Arq. antigua |
 | Klangio | SaaS comercial | ❌ DESCARTADO | Solo 4/4 y 3/4, comercial |
@@ -324,8 +324,23 @@ Framework semi-supervisado para AMT con datos escasos. Limitación estructural: 
 - Inferencia CUDA-first: requires Modal cloud para velocidad en producción.
 - Drum class excluida de F1 pitched — calidad de batería es la principal limitación conocida; ADTOF puede mejorarla.
 
-**Evaluación cualitativa (escucha en REAPER):** pendiente para todos los tests.
-Ver `evaluation/yourmt3/test*/notes.txt` sección "Métricas subjetivas".
+**Evaluación cualitativa en música real (2026-06-24):**
+Escucha subjetiva sobre 3 temas propios: Half Foot Outside (jazz/funk), Villa-Lobos Bachianas nº5 (clásico), Moderat - A New Error (electronic).
+Carpeta: `evaluation/custom_eval/track{01,02,03}/`.
+
+| Dimensión | YourMT3+ | MIROS | Compound v2 |
+|---|---|---|---|
+| Calidad general | Caótico | **Mejor** | Caótico |
+| Melodía | Aceptable | **Mejor** | Igual que YourMT3+ |
+| Ritmo | Mediocre | Mediocre | Mediocre |
+| Batería | — | — | Fuera de tiempo (desincronización merge) |
+
+**Conclusión evaluación subjetiva:** MIROS supera a YourMT3+ en música real (especialmente melodía). La detección de patrones rítmicos es mediocre en los tres modelos — limitación estructural de la AMT actual. La batería de compound_v2 está fuera de tiempo: consecuencia de mezclar dos transcripciones independientes (YourMT3+ y ADTOF) sin referencia de tempo compartida.
+
+**Implicación para la elección de pipeline:**
+MIROS es candidato a revisitar como pipeline de producción (mejor subjetivo en música real), aunque en benchmarks Slakh empata o pierde vs YourMT3+. YourMT3+ sigue siendo más robusto en tests objetivos.
+
+Ver `evaluation/custom_eval/track*/notes.txt` para notas por tema.
 
 ### Próximos pasos
 

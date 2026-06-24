@@ -19,3 +19,13 @@ Preguntas para la escucha:
   - ¿MIROS o YourMT3+ generan menos "ruido" de notas fantasma?
 
 Resultado subjetivo (escucha en REAPER): pendiente
+
+Evaluación subjetiva (escucha en REAPER) — 2026-06-24:
+  General: transcripción bastante caótica en los tres modelos.
+  MIROS: mejor resultado global, especialmente a nivel melódico.
+  YourMT3+: segundo mejor; similar a MIROS pero ligeramente inferior en melodía.
+  Compound v2: igual que YourMT3+ en pitched; batería (ADTOF) fuera de tiempo en ocasiones
+               — causa probable: ADTOF y YourMT3+ se generan independientemente, sin
+               referencia de tempo compartida → desincronización en el merge.
+  Ritmo: mediocre en los tres modelos. Los patrones rítmicos no se detectan correctamente;
+         la batería (en los tres) no captura los patrones reales de la pieza.
