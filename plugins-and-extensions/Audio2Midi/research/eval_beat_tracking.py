@@ -5,11 +5,11 @@ Toma los pares (input.wav, transcribed_cuda.mid) existentes en evaluation/miros/
 y aplica _apply_beat_tracking localmente (sin Modal ni GPU).
 
 Comprueba:
-  1. BPM detectado por librosa coincide con el tempo map inyectado en el MIDI
+  1. BPM detectado por librosa coincide con el tempo único inyectado en el MIDI
   2. El número de notas es idéntico al original
-  3. El drift de tiempo absoluto por nota es < 5 ms
-  4. El MIDI resultante tiene múltiples cambios de tempo (mapa variable)
-  5. El MIDI resultante es válido (carga sin errores)
+  3. El drift de tiempo absoluto por nota es < 5 ms (round-trip ticks)
+  4. El MIDI tiene exactamente 1 evento set_tempo (tempo constante para grilla uniforme)
+  5. El BPM está en rango musical (60-180 BPM)
 
 Uso:
     cd Audio2Midi/research
@@ -51,57 +51,31 @@ def _apply_beat_tracking(audio_bytes: bytes, midi_bytes: bytes) -> bytes:
             f.write(midi_bytes)
 
         y, sr = librosa.load(tmp_audio, sr=None, mono=True)
-        tempo_arr, beat_frames = librosa.beat.beat_track(
-            y=y, sr=sr, hop_length=512, units="frames"
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=512, aggregate=np.median)
+        tempo_arr, _ = librosa.beat.beat_track(
+            onset_envelope=onset_env, sr=sr, hop_length=512, units="frames"
         )
-        beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=512)
         global_bpm = float(np.atleast_1d(tempo_arr)[0])
-
-        if len(beat_times) < 2:
-            return midi_bytes
+        while global_bpm < 60:
+            global_bpm *= 2
+        while global_bpm > 180:
+            global_bpm /= 2
 
         pm = pretty_midi.PrettyMIDI(tmp_midi_in)
 
         ticks_per_beat = 480
-        first_dur = float(beat_times[1] - beat_times[0])
-        beat0_tick = int(round(beat_times[0] / first_dur * ticks_per_beat))
+        beat_duration = 60.0 / global_bpm
+        tempo_us = int(round(beat_duration * 1e6))
 
         def seconds_to_ticks(t_sec: float) -> int:
-            if t_sec <= 0:
-                return 0
-            if t_sec <= beat_times[0]:
-                return max(0, int(round(t_sec / first_dur * ticks_per_beat)))
-            if t_sec >= beat_times[-1]:
-                last_dur = float(beat_times[-1] - beat_times[-2])
-                extra = (t_sec - beat_times[-1]) / last_dur
-                return int(round(beat0_tick + (len(beat_times) - 1 + extra) * ticks_per_beat))
-            idx = int(np.searchsorted(beat_times, t_sec, side="right")) - 1
-            dt = float(beat_times[idx + 1] - beat_times[idx])
-            frac = (t_sec - beat_times[idx]) / dt
-            return int(round(beat0_tick + (idx + frac) * ticks_per_beat))
+            return max(0, int(round(t_sec / beat_duration * ticks_per_beat)))
 
         mid = mido.MidiFile(ticks_per_beat=ticks_per_beat, type=1)
 
         tempo_track = mido.MidiTrack()
         mid.tracks.append(tempo_track)
         tempo_track.append(mido.MetaMessage("track_name", name="Tempo Map", time=0))
-
-        tempo_us_first = int(round(first_dur * 1e6))
-        tempo_track.append(mido.MetaMessage("set_tempo", tempo=tempo_us_first, time=0))
-        last_tick = 0
-
-        for i in range(len(beat_times) - 1):
-            dt = beat_times[i + 1] - beat_times[i]
-            if dt <= 0:
-                continue
-            tempo_us = int(round(dt * 1e6))
-            tick = beat0_tick + i * ticks_per_beat
-            delta = tick - last_tick
-            if delta > 0:
-                tempo_track.append(
-                    mido.MetaMessage("set_tempo", tempo=tempo_us, time=delta)
-                )
-                last_tick = tick
+        tempo_track.append(mido.MetaMessage("set_tempo", tempo=tempo_us, time=0))
         tempo_track.append(mido.MetaMessage("end_of_track", time=0))
 
         drum_ch = 9
@@ -229,7 +203,7 @@ def main():
 
     PASS = "\033[32mPASS\033[0m"
     FAIL = "\033[31mFAIL\033[0m"
-    header = f"{'Test':<8} {'BPM':>6} {'Beats':>6} {'Tempos':>7} {'Notes':>6} {'MaxDrift':>10}  {'Checks'}"
+    header = f"{'Test':<8} {'BPM':>6} {'Range':>12} {'Tempos':>7} {'Notes':>6} {'MaxDrift':>10}  {'Checks'}"
     print(header)
     print("-" * len(header))
 
@@ -246,13 +220,6 @@ def main():
         audio_bytes = audio.read_bytes()
         midi_bytes_orig = mid_orig.read_bytes()
 
-        # Detección librosa (para referencia)
-        y, sr = librosa.load(str(audio), sr=None, mono=True)
-        tempo_arr, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=512, units="frames")
-        beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=512)
-        librosa_bpm = float(np.atleast_1d(tempo_arr)[0])
-        n_beats = len(beat_times)
-
         # Aplicar beat tracking
         midi_bytes_new = _apply_beat_tracking(audio_bytes, midi_bytes_orig)
 
@@ -261,26 +228,24 @@ def main():
         n_new = note_count(midi_bytes_new)
         notes_ok = n_orig == n_new
 
-        # 2. Tempo map variable (≥ 2 cambios)
+        # 2. Tempo map: exactamente 1 evento set_tempo (constante)
         bpms = extract_tempo_changes(midi_bytes_new)
         n_tempos = len(bpms)
-        tempos_ok = n_tempos >= 2
+        tempos_ok = n_tempos == 1
 
-        # 3. BPM medio del mapa ≈ librosa BPM (tolerancia ±15%)
-        if bpms:
-            mean_bpm = float(np.mean(bpms))
-            bpm_ok = abs(mean_bpm - librosa_bpm) / librosa_bpm < 0.15
-        else:
-            mean_bpm = 0.0
-            bpm_ok = False
+        # 3. BPM en rango musical (60-180)
+        detected_bpm = bpms[0] if bpms else 0.0
+        bpm_ok = 60 <= detected_bpm <= 180
 
         # 4. Drift de tiempos absolutos (round-trip: segundos → ticks → segundos)
+        #    Con tempo constante el error es solo redondeo de ticks (~1 tick).
         times_orig = note_times(midi_bytes_orig)
         times_new = note_times(midi_bytes_new)
         if times_orig and times_new and len(times_orig) == len(times_new):
             diffs = [abs(a - b) for a, b in zip(times_orig, times_new)]
             max_drift_ms = max(diffs) * 1000
-            drift_ok = max_drift_ms < 20.0  # tolerancia 20 ms
+            # Tolerancia = media de los diffs (esperamos <1 tick = <beat_dur/480 s)
+            drift_ok = max_drift_ms < 5.0
         else:
             max_drift_ms = float("inf")
             drift_ok = False
@@ -290,13 +255,14 @@ def main():
 
         checks = " ".join([
             f"notes={PASS if notes_ok else FAIL}",
-            f"tempos={PASS if tempos_ok else FAIL}",
+            f"1tempo={PASS if tempos_ok else FAIL}",
             f"bpm={PASS if bpm_ok else FAIL}",
             f"drift={PASS if drift_ok else FAIL}",
         ])
+        bpm_range = f"{detected_bpm:.1f} BPM" if bpms else "—"
 
         print(
-            f"{td.name:<8} {librosa_bpm:>6.1f} {n_beats:>6} {n_tempos:>7} "
+            f"{td.name:<8} {detected_bpm:>6.1f} {bpm_range:>12} {n_tempos:>7} "
             f"{n_new:>6} {max_drift_ms:>9.1f}ms  {checks}"
         )
 

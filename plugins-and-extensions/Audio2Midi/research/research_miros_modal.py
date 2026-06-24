@@ -275,17 +275,15 @@ def _transcribe_one(audio_bytes: bytes, beat_tracking: bool = True) -> bytes:
 
 def _apply_beat_tracking(audio_bytes: bytes, midi_bytes: bytes) -> bytes:
     """
-    Post-procesamiento: detecta beats del audio con librosa y reescribe el
-    tempo map del MIDI resultante.
+    Post-procesamiento: detecta el BPM del audio con librosa y reescribe el MIDI
+    con un único tempo constante global.
 
-    Cada beat detectado en el audio corresponde a un beat en el MIDI, por lo que
-    REAPER puede alinear su grid con la música real y el material queda editable.
+    Usar un tempo constante (no beat-a-beat variable) garantiza que REAPER muestre
+    una grilla uniforme con barras de igual longitud, lo que hace el material
+    cómodamente editable. El BPM detectado define la grilla; las notas se posicionan
+    en los ticks correspondientes a sus tiempos absolutos originales.
 
-    Estrategia:
-    - beat_times[i] → tick i * ticks_per_beat
-    - Tempo entre beat i e i+1 = (beat_times[i+1] - beat_times[i]) * 1e6 µs/beat
-    - Los tiempos absolutos de las notas (en segundos) se conservan intactos;
-      solo cambia cómo el MIDI los codifica en ticks.
+    Los tiempos absolutos de las notas (en segundos) se conservan intactos.
     """
     import librosa
     import pretty_midi
@@ -306,72 +304,41 @@ def _apply_beat_tracking(audio_bytes: bytes, midi_bytes: bytes) -> bytes:
         with open(tmp_midi_in, "wb") as f:
             f.write(midi_bytes)
 
-        # 1. Detección de beats
+        # 1. Detección de BPM global desde el audio
         y, sr = librosa.load(tmp_audio, sr=None, mono=True)
-        tempo_arr, beat_frames = librosa.beat.beat_track(
-            y=y, sr=sr, hop_length=512, units="frames"
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=512, aggregate=np.median)
+        tempo_arr, _ = librosa.beat.beat_track(
+            onset_envelope=onset_env, sr=sr, hop_length=512, units="frames"
         )
-        beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=512)
         global_bpm = float(np.atleast_1d(tempo_arr)[0])
 
-        print(f"[beat_tracking] {global_bpm:.1f} BPM, {len(beat_times)} beats detectados")
+        # Mantener en rango musical típico (60-180 BPM)
+        while global_bpm < 60:
+            global_bpm *= 2
+        while global_bpm > 180:
+            global_bpm /= 2
 
-        if len(beat_times) < 2:
-            print("[beat_tracking] Muy pocos beats — MIDI sin modificar.")
-            return midi_bytes
+        print(f"[beat_tracking] BPM detectado: {global_bpm:.1f}")
 
         # 2. Leer notas originales (tiempos en segundos) con pretty_midi
         pm = pretty_midi.PrettyMIDI(tmp_midi_in)
 
-        # 3. Conversor segundos → ticks usando la malla de beats
-        #
-        # Anclaje: tick 0 = tiempo 0s (no beat_times[0]).
-        # El intervalo [0s, beat_times[0]] se extrapola con el tempo del primer
-        # beat detectado, añadiendo beat0_tick ticks de "pre-beat".
-        # Esto preserva los tiempos absolutos de todas las notas en el round-trip.
+        # 3. Conversor segundos → ticks con tempo constante
+        #    t_sec / beat_duration * ticks_per_beat
         ticks_per_beat = 480
-        first_dur = float(beat_times[1] - beat_times[0])
-        beat0_tick = int(round(beat_times[0] / first_dur * ticks_per_beat))
+        beat_duration = 60.0 / global_bpm
+        tempo_us = int(round(beat_duration * 1e6))
 
         def seconds_to_ticks(t_sec: float) -> int:
-            if t_sec <= 0:
-                return 0
-            if t_sec <= beat_times[0]:
-                # Extrapolación pre-beat con el tempo del primer intervalo
-                return max(0, int(round(t_sec / first_dur * ticks_per_beat)))
-            if t_sec >= beat_times[-1]:
-                last_dur = float(beat_times[-1] - beat_times[-2])
-                extra = (t_sec - beat_times[-1]) / last_dur
-                return int(round(beat0_tick + (len(beat_times) - 1 + extra) * ticks_per_beat))
-            idx = int(np.searchsorted(beat_times, t_sec, side="right")) - 1
-            dt = float(beat_times[idx + 1] - beat_times[idx])
-            frac = (t_sec - beat_times[idx]) / dt
-            return int(round(beat0_tick + (idx + frac) * ticks_per_beat))
+            return max(0, int(round(t_sec / beat_duration * ticks_per_beat)))
 
-        # 4. Construir MIDI con mido: track 0 = tempo map variable
+        # 4. Construir MIDI con mido: track 0 = tempo único
         mid = mido.MidiFile(ticks_per_beat=ticks_per_beat, type=1)
 
         tempo_track = mido.MidiTrack()
         mid.tracks.append(tempo_track)
         tempo_track.append(mido.MetaMessage("track_name", name="Tempo Map", time=0))
-
-        # Tempo inicial desde tick 0 (pre-beat, extrapolado con primer intervalo)
-        tempo_us_first = int(round(first_dur * 1e6))
-        tempo_track.append(mido.MetaMessage("set_tempo", tempo=tempo_us_first, time=0))
-        last_tick = 0
-
-        for i in range(len(beat_times) - 1):
-            dt = beat_times[i + 1] - beat_times[i]
-            if dt <= 0:
-                continue
-            tempo_us = int(round(dt * 1e6))
-            tick = beat0_tick + i * ticks_per_beat
-            delta = tick - last_tick
-            if delta > 0:
-                tempo_track.append(
-                    mido.MetaMessage("set_tempo", tempo=tempo_us, time=delta)
-                )
-                last_tick = tick
+        tempo_track.append(mido.MetaMessage("set_tempo", tempo=tempo_us, time=0))
         tempo_track.append(mido.MetaMessage("end_of_track", time=0))
 
         # 5. Pistas de instrumento
