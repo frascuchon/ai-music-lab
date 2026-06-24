@@ -324,19 +324,29 @@ def _apply_beat_tracking(audio_bytes: bytes, midi_bytes: bytes) -> bytes:
         pm = pretty_midi.PrettyMIDI(tmp_midi_in)
 
         # 3. Conversor segundos → ticks usando la malla de beats
+        #
+        # Anclaje: tick 0 = tiempo 0s (no beat_times[0]).
+        # El intervalo [0s, beat_times[0]] se extrapola con el tempo del primer
+        # beat detectado, añadiendo beat0_tick ticks de "pre-beat".
+        # Esto preserva los tiempos absolutos de todas las notas en el round-trip.
         ticks_per_beat = 480
+        first_dur = float(beat_times[1] - beat_times[0])
+        beat0_tick = int(round(beat_times[0] / first_dur * ticks_per_beat))
 
         def seconds_to_ticks(t_sec: float) -> int:
+            if t_sec <= 0:
+                return 0
             if t_sec <= beat_times[0]:
-                frac = (t_sec - beat_times[0]) / (beat_times[1] - beat_times[0])
-                return max(0, int(round(frac * ticks_per_beat)))
+                # Extrapolación pre-beat con el tempo del primer intervalo
+                return max(0, int(round(t_sec / first_dur * ticks_per_beat)))
             if t_sec >= beat_times[-1]:
-                frac = (t_sec - beat_times[-2]) / (beat_times[-1] - beat_times[-2])
-                return int(round((len(beat_times) - 2 + frac) * ticks_per_beat))
+                last_dur = float(beat_times[-1] - beat_times[-2])
+                extra = (t_sec - beat_times[-1]) / last_dur
+                return int(round(beat0_tick + (len(beat_times) - 1 + extra) * ticks_per_beat))
             idx = int(np.searchsorted(beat_times, t_sec, side="right")) - 1
-            dt = beat_times[idx + 1] - beat_times[idx]
+            dt = float(beat_times[idx + 1] - beat_times[idx])
             frac = (t_sec - beat_times[idx]) / dt
-            return int(round((idx + frac) * ticks_per_beat))
+            return int(round(beat0_tick + (idx + frac) * ticks_per_beat))
 
         # 4. Construir MIDI con mido: track 0 = tempo map variable
         mid = mido.MidiFile(ticks_per_beat=ticks_per_beat, type=1)
@@ -345,17 +355,23 @@ def _apply_beat_tracking(audio_bytes: bytes, midi_bytes: bytes) -> bytes:
         mid.tracks.append(tempo_track)
         tempo_track.append(mido.MetaMessage("track_name", name="Tempo Map", time=0))
 
+        # Tempo inicial desde tick 0 (pre-beat, extrapolado con primer intervalo)
+        tempo_us_first = int(round(first_dur * 1e6))
+        tempo_track.append(mido.MetaMessage("set_tempo", tempo=tempo_us_first, time=0))
         last_tick = 0
+
         for i in range(len(beat_times) - 1):
             dt = beat_times[i + 1] - beat_times[i]
             if dt <= 0:
                 continue
-            tempo_us = int(round(dt * 1e6))          # µs/beat = segundos_por_beat * 1e6
-            tick = i * ticks_per_beat
-            tempo_track.append(
-                mido.MetaMessage("set_tempo", tempo=tempo_us, time=tick - last_tick)
-            )
-            last_tick = tick
+            tempo_us = int(round(dt * 1e6))
+            tick = beat0_tick + i * ticks_per_beat
+            delta = tick - last_tick
+            if delta > 0:
+                tempo_track.append(
+                    mido.MetaMessage("set_tempo", tempo=tempo_us, time=delta)
+                )
+                last_tick = tick
         tempo_track.append(mido.MetaMessage("end_of_track", time=0))
 
         # 5. Pistas de instrumento
