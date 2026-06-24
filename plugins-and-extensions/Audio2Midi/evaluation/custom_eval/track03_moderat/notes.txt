@@ -1,0 +1,22 @@
+Track 03 — Moderat: "A New Error"
+Original: Moderat - A New Error.mp3
+Género: Electronic / IDM / Techno-pop
+Dificultad AMT: Media-alta — síntesis electrónica, percusión programada, texturas
+Tamaño: 13.1 MB
+
+Contenido musical esperado:
+  Batería electrónica (kick, snare, hihat programados), sintetizadores, bajo sintetizado.
+  Voz con efectos. Los modelos AMT entrenados en acústico/MIDI pueden tener dificultad
+  con timbres electrónicos muy procesados.
+
+Métricas de comparación (sin GT — solo escucha subjetiva):
+  YourMT3+:   yourmt3.mp3   / yourmt3.mid   — 24.2 KB, 12 instr, 3233 notas pitched
+  MIROS:      miros.mp3     / miros.mid     — 62.2 KB
+  Compound v2: compound_v2.mp3 / compound_v2.mid — 26.6 KB, 12 instr + drums (1118 notas drums)
+
+Preguntas para la escucha:
+  - ¿Los modelos detectan el kick/snare electrónico correctamente?
+  - ¿MIROS sobregenera (62 KB vs ~25 KB de los otros)?
+  - ¿La síntesis del bajo electrónico se transcribe como Bass?
+
+Resultado subjetivo (escucha en REAPER): pendiente

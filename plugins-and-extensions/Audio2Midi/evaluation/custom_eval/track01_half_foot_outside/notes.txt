@@ -1,0 +1,21 @@
+Track 01 — Half Foot Outside: "In-Out"
+Original: Half Foot Outside - In-Out.mp3
+Género: Jazz contemporáneo / funk
+Dificultad AMT: Alta — multi-instrumento real (batería, bajo, guitarra, piano, voz)
+Tamaño: 9.4 MB
+
+Contenido musical esperado:
+  Batería acústica compleja, bajo eléctrico, guitarra eléctrica, piano/Rhodes
+  Posible voz/coro. Ritmos sincopados, swing. Muy retador para AMT.
+
+Métricas de comparación (sin GT — solo escucha subjetiva):
+  YourMT3+:   yourmt3.mp3   / yourmt3.mid   — 36.6 KB, 12 instr, 4682 notas pitched
+  MIROS:      miros.mp3     / miros.mid     — 38.3 KB
+  Compound v2: compound_v2.mp3 / compound_v2.mid — 41.0 KB, 12 instr + drums (2122 notas drums)
+
+Preguntas para la escucha:
+  - ¿Quién detecta mejor el bajo?
+  - ¿La batería de compound_v2 (ADTOF) es reconocible o es ruido?
+  - ¿MIROS y YourMT3+ coinciden en la detección de instrumentos?
+
+Resultado subjetivo (escucha en REAPER): pendiente

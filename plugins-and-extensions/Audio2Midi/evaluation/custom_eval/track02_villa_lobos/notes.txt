@@ -1,0 +1,21 @@
+Track 02 — Villa-Lobos: Bachianas brasileiras No. 5 (Live)
+Original: Villa-Lobos: Bachianas brasileiras No. 5, W. 389 - 1. Aria (Cantilena) (Live).mp3
+Género: Música clásica brasileña — soprano + ensemble de cellos
+Dificultad AMT: Media — pocas voces pero timbre inusual (soprano lírica + cellos)
+Tamaño: 13.7 MB
+
+Contenido musical esperado:
+  Voz soprano (línea melódica principal), ensemble de cellos (armonía y contrapunto).
+  Sin batería. Dinámica clásica, vibrato, ornamentación.
+
+Métricas de comparación (sin GT — solo escucha subjetiva):
+  YourMT3+:   yourmt3.mp3   / yourmt3.mid   — 14.9 KB, 7 instr, 1864 notas
+  MIROS:      miros.mp3     / miros.mid     — 8.2 KB
+  Compound v2: compound_v2.mp3 / compound_v2.mid — 12.1 KB (2 notas drums aisladas — casi nada)
+
+Preguntas para la escucha:
+  - ¿Quién transcribe mejor la línea de soprano?
+  - ¿Se distingue la voz del acompañamiento de cellos?
+  - ¿MIROS o YourMT3+ generan menos "ruido" de notas fantasma?
+
+Resultado subjetivo (escucha en REAPER): pendiente

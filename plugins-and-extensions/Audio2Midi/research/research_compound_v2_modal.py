@@ -99,11 +99,16 @@ app = modal.App("compound-v2-pipeline", image=image)
 def _separate_stems(audio_bytes: bytes) -> dict[str, bytes]:
     """
     Separa un audio en stems usando Demucs htdemucs_6s.
+    Soporta WAV y MP3 (detectado por magic bytes).
     Returns: dict stem_name → WAV bytes
     """
     from demucs.separate import main as demucs_main
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+    suffix = ".wav"
+    if len(audio_bytes) >= 3 and (audio_bytes[:3] == b"ID3" or audio_bytes[:2] == b"\xff\xfb"):
+        suffix = ".mp3"
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(audio_bytes)
         audio_path = tmp.name
 
