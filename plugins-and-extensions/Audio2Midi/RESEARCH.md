@@ -344,22 +344,17 @@ Carpeta: `evaluation/custom_eval/track{01,02,03}/`.
 
 **Conclusión evaluación subjetiva:** MIROS supera a YourMT3+ en música real (especialmente melodía). La detección de patrones rítmicos es mediocre en los tres modelos — limitación estructural de la AMT actual. La batería de compound_v2 está fuera de tiempo: consecuencia de mezclar dos transcripciones independientes (YourMT3+ y ADTOF) sin referencia de tempo compartida.
 
-**Implicación para la elección de pipeline:**
-MIROS es candidato a revisitar como pipeline de producción (mejor subjetivo en música real), aunque en benchmarks Slakh empata o pierde vs YourMT3+. YourMT3+ sigue siendo más robusto en tests objetivos.
+**Decisión de pipeline (2026-06-24): MIROS + beat tracking.**
 
 Ver `evaluation/custom_eval/track*/notes.txt` para notas por tema.
 
 ### Próximos pasos
 
-1. **Ejecutar compound v2** (2026-06-24): scripts listos, ejecutar:
-
-   ```bash
-   cd Audio2Midi/research
-   modal run research_adtof_modal.py::setup
-   modal run research_compound_v2_modal.py::eval_all --only 4,5,7,8
-   bash ../evaluation/render_mp3.sh
-   uv run python ../evaluation/compute_f1.py --only compound_v2/
-   ```
+1. **Beat tracking en el pipeline MIROS** (próxima sesión): añadir detección de tempo
+   (librosa / madmom / essentia) como paso de post-procesamiento que escriba el tempo map
+   correcto en el MIDI antes de entregarlo a REAPER. Esto convierte la transcripción en
+   material editable y cuantizable en el DAW.
+2. **Bridge Lua REAPER** — una vez integrado el beat tracking en el pipeline MIROS.
 
 2. **Integración en REAPER**: bridge Lua para el pipeline ganador una vez cerrado compound v2.
 
