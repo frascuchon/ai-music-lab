@@ -1,0 +1,153 @@
+{
+  "_comment": "Prompts oficiales extraídos de los demos y model cards de cada modelo. Usar para smoke test al inicio de cada sesión de evaluación: correr estos prompts primero y comparar con los demos oficiales del modelo para verificar que el script funciona correctamente antes de lanzar eval_all con prompts.json.",
+  "_nota_foundation_1": "Foundation-1 usa formato de ETIQUETAS separadas por coma (instrumento, timbre, FX, genre, bars, BPM, key), NO frases en lenguaje natural. Usar SIEMPRE estos prompts para Foundation-1, NO los de prompts.json.",
+
+  "stable_audio_open": {
+    "_source": "HuggingFace model card stabilityai/stable-audio-open-1.0",
+    "_space_referencia": "https://huggingface.co/spaces/artificialguybr/Stable-Audio-Open-Zero",
+    "_nota": "Modelo gated — requiere secret HF. Usar el Space para escuchar calidad esperada antes del smoke test.",
+    "prompts": [
+      {
+        "id": "sao_smoke_01",
+        "text": "128 BPM tech house drum loop",
+        "seconds": 8.0,
+        "bpm": 128,
+        "notes": "Prompt canónico del model card. Output esperado: drum loop de house, 4/4, punchy."
+      },
+      {
+        "id": "sao_smoke_02",
+        "text": "The sound of a hammer hitting a wooden surface.",
+        "seconds": 3.0,
+        "bpm": null,
+        "notes": "Ejemplo SFX del model card. Output esperado: impacto percutivo claro, decay corto."
+      },
+      {
+        "id": "sao_smoke_03",
+        "text": "Lo-fi slow BPM electro chill with organic samples",
+        "seconds": 20.0,
+        "bpm": null,
+        "notes": "Demo comunitario ampliamente citado. Output esperado: textura lo-fi relajada, elementos orgánicos."
+      }
+    ]
+  },
+
+  "foundation_1": {
+    "_source": "HuggingFace model card RoyalCities/Foundation-1 y ejemplos en /examples/",
+    "_space_referencia": "https://huggingface.co/spaces/multimodalart/Foundation-1",
+    "_audio_referencia": "evaluation/foundation_1/demos/ (descargado con fetch_foundation1_demos.sh)",
+    "_formato_prompt": "Etiquetas separadas por coma: instrumento, timbre, FX, genre tags, bars, BPM, key. NO usar frases.",
+    "prompts": [
+      {
+        "id": "f1_smoke_01",
+        "text": "Bass, FM Bass, Medium Delay, Medium Reverb, Phaser, Acid, Gritty, Dubstep, 8 Bars, 140 BPM, E minor",
+        "seconds": 13.71,
+        "bpm": 140,
+        "bars": 8,
+        "notes": "Prompt del model card (acid bass 303-style). Comparar con compare_example_1_a.mp3."
+      },
+      {
+        "id": "f1_smoke_02",
+        "text": "Drums, 808 Kick, Clap, Closed Hi-Hat, Open Hi-Hat, Tight, Dry, Minimal, House, 4 Bars, 120 BPM",
+        "seconds": 8.0,
+        "bpm": 120,
+        "bars": 4,
+        "notes": "Drum loop house minimal. Verificar sincronización al BPM."
+      },
+      {
+        "id": "f1_smoke_03",
+        "text": "Lead Synth, Saw Wave, Short Delay, Short Reverb, Arpeggio, Bright, Wide, 4 Bars, 128 BPM, A minor",
+        "seconds": 7.5,
+        "bpm": 128,
+        "bars": 4,
+        "notes": "Lead arpegiado. Verificar coherencia melódica y sincronización."
+      }
+    ]
+  },
+
+  "musicgen": {
+    "_source": "AudioCraft README y HuggingFace model cards facebook/musicgen-*",
+    "_space_referencia": "https://huggingface.co/spaces/facebook/MusicGen",
+    "_nota": "Pesos CC-BY-NC. Para melody, se necesita además un clip WAV de referencia (~5 s).",
+    "prompts": [
+      {
+        "id": "mg_smoke_01",
+        "text": "An 80s driving pop song with heavy drums and synth pads in the background",
+        "seconds": 15.0,
+        "bpm": null,
+        "model_variant": "musicgen-medium",
+        "notes": "Prompt canónico del AudioCraft README. Output esperado: pop con synthwave feel."
+      },
+      {
+        "id": "mg_smoke_02",
+        "text": "A cheerful country song with acoustic guitars, banjo, and light drums",
+        "seconds": 10.0,
+        "bpm": null,
+        "model_variant": "musicgen-medium",
+        "notes": "Demo del AudioCraft README. Instrumentación clara esperada."
+      },
+      {
+        "id": "mg_smoke_03",
+        "text": "Jazz music with piano, acoustic bass, and brushed drums. Melancholic mood.",
+        "seconds": 15.0,
+        "bpm": null,
+        "model_variant": "musicgen-melody",
+        "melody_conditioning": null,
+        "notes": "Para musicgen-melody sin condicionamiento de audio. Añadir melody_wav en sesión S3."
+      }
+    ]
+  },
+
+  "magnet": {
+    "_source": "HuggingFace model card facebook/magnet-small-10secs y facebook/magnet-medium-10secs",
+    "_nota": "No hay Space oficial de Meta. Demo local: python -m demos.magnet_app --share. Pesos CC-BY-NC.",
+    "prompts": [
+      {
+        "id": "mag_smoke_01",
+        "text": "happy rock",
+        "seconds": 10.0,
+        "model_variant": "facebook/magnet-medium-10secs",
+        "notes": "Prompt del model card. Simple y directo. Output esperado: rock energético."
+      },
+      {
+        "id": "mag_smoke_02",
+        "text": "energetic EDM, upbeat, driving beat",
+        "seconds": 10.0,
+        "model_variant": "facebook/magnet-medium-10secs",
+        "notes": "Prompt del model card. Verificar velocidad de inferencia (criterio clave de MAGNeT)."
+      },
+      {
+        "id": "mag_smoke_03",
+        "text": "melodic lo-fi hip hop, chill, slow tempo",
+        "seconds": 10.0,
+        "model_variant": "facebook/magnet-medium-10secs",
+        "notes": "Textura relajada. Mismo género que sao_smoke_03 para comparación cross-modelo."
+      }
+    ]
+  },
+
+  "audiogen": {
+    "_source": "Paper AudioGen (Kreuk et al.) y HuggingFace model card facebook/audiogen-medium",
+    "_space_referencia": "https://huggingface.co/spaces/fffiloni/audiogen",
+    "_nota": "Entrenado en SFX y ambientes, NO en música. Máximo 5 s. Pesos CC-BY-NC.",
+    "prompts": [
+      {
+        "id": "ag_smoke_01",
+        "text": "Footsteps walking on a wooden floor, indoors, quiet environment",
+        "seconds": 5.0,
+        "notes": "Prompt del paper. Output esperado: pasos claros, no música ni ruido."
+      },
+      {
+        "id": "ag_smoke_02",
+        "text": "Heavy rain falling on a window, with distant thunder rumbling",
+        "seconds": 5.0,
+        "notes": "Demo clásico de AudioCaps. Ambiente lluvia + tormenta."
+      },
+      {
+        "id": "ag_smoke_03",
+        "text": "A crowd of people cheering and applauding in a large stadium",
+        "seconds": 5.0,
+        "notes": "Ambiente de multitud. Buena prueba de densidad y espacialización."
+      }
+    ]
+  }
+}

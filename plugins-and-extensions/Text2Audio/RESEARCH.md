@@ -40,6 +40,44 @@ definitiva al integrar (mismo criterio que Audio2Midi con MIROS sin LICENSE).
 
 ---
 
+## Plan de evaluación por sesiones
+
+Cada sesión evalúa un solo modelo siguiendo el mismo flujo de trabajo. El orden es de mayor
+a menor prioridad para el plugin de producción:
+
+| Sesión | Modelo | Script PoC | HF Space (referencia manual) | Duración est. |
+| --- | --- | --- | --- | --- |
+| **S1** | Stable Audio Open 1.0 | `research_stable_audio_open_modal.py` | [stabilityai/stable-audio-open-1.0](https://huggingface.co/spaces/artificialguybr/Stable-Audio-Open-Zero) | 2-3 h |
+| **S2** | Foundation-1 | `research_foundation1_modal.py` | [multimodalart/Foundation-1](https://huggingface.co/spaces/multimodalart/Foundation-1) | 1-2 h |
+| **S3** | MusicGen melody+stereo | `research_musicgen_modal.py` _(por crear)_ | [facebook/MusicGen](https://huggingface.co/spaces/facebook/MusicGen) | 2-3 h |
+| **S4** | MAGNeT | `research_magnet_modal.py` _(por crear)_ | AudioCraft local (`python -m demos.magnet_app`) | 1-2 h |
+| **S5** | AudioGen | `research_audiogen_modal.py` _(por crear)_ | [fffiloni/audiogen](https://huggingface.co/spaces/fffiloni/audiogen) | 1-2 h |
+
+### Flujo estándar de cada sesión
+
+```
+1. fetch demos oficiales   →  evaluation/fetch_<model>_demos.sh
+                               (descarga 2-3 audios de referencia del modelo)
+2. smoke test              →  modal run research_<model>_modal.py::setup
+                               modal run ...::main --prompt "<prompt_oficial>"
+                               comparar output.wav con referencia descargada
+3. eval completo           →  modal run ...::eval_all --prompts-json ../evaluation/prompts.json
+4. render                  →  bash ../evaluation/render_norm.sh
+5. métricas objetivas      →  uv run python ../evaluation/compute_metrics.py
+6. escucha en REAPER        →  puntuación 0-5 en notes.txt por prompt
+7. actualizar RESEARCH.md  →  rellenar tabla de resultados + veredicto
+```
+
+El **smoke test** (paso 2) es el paso de verificación: si el output del prompt oficial
+es comparable en calidad al audio de referencia descargado, el script funciona correctamente.
+
+> **Nota Foundation-1:** usa un formato de prompt radicalmente diferente al resto de los
+> modelos — etiquetas separadas por comas (`instrumento, timbre, FX, BPM, clave, compases`)
+> en lugar de frases en lenguaje natural. Las sesiones S2 usan `prompts_official.json`
+> con prompts en formato tag; las demás usan `prompts.json`.
+
+---
+
 ## Evaluación detallada de candidatos elegidos
 
 ### Stable Audio Open 1.0 — TOP CANDIDATO para samples & loops
@@ -70,7 +108,37 @@ definitiva al integrar (mismo criterio que Audio2Midi con MIROS sin LICENSE).
 - **Script Modal:** `research/research_stable_audio_open_modal.py`
 - **Carpeta evaluación:** `evaluation/stable_audio_open/`
 
-#### Resultados evaluación (pendiente)
+#### Benchmark de referencia — SAO 1.0 (Sesión S1)
+
+**Recurso de referencia manual:** Space público (sin token necesario):
+<https://huggingface.co/spaces/artificialguybr/Stable-Audio-Open-Zero>
+
+**Prompts oficiales** (del model card, para smoke test — en `evaluation/prompts_official.json`):
+
+```
+"128 BPM tech house drum loop"
+"The sound of a hammer hitting a wooden surface."
+"Lo-fi slow BPM electro chill with organic samples"
+```
+
+**Métricas de referencia del paper** (Evans et al., ICASSP 2025, evaluación sobre AudioCaps):
+
+| Métrica | Valor paper | Descripción |
+| --- | --- | --- |
+| FD_openl3 | 78.24 | Fréchet Distance en espacio OpenL3. Menor = mejor. |
+| KL_passt | 2.14 | Divergencia KL en distribución de etiquetas. Menor = mejor. |
+| CLAP score | 0.29 | Cosine similarity texto-audio LAION-CLAP. Mayor = mejor. |
+
+**Criterio de éxito del script** (smoke test S1):
+
+- `output.wav` — WAV estéreo 44100 Hz, duración ≈ `seconds` solicitado (±0.5 s).
+- El prompt `"128 BPM tech house drum loop"` genera algo que suena a drum loop, no a ruido ni silencio.
+- CLAP ≥ 0.20 (bajo ese umbral el pipeline está roto o el modelo no cargó correctamente).
+- Tiempo de inferencia en A10G: < 60 s para 8 s de audio con 100 steps.
+
+**Audio de referencia descargable:** no disponible (repo gated). Comparar cualitativamente con el Space.
+
+#### Resultados evaluación SAO 1.0 (pendiente)
 
 *Pendiente de ejecución. Ver `evaluation/stable_audio_open/` y `evaluation/README.md`.*
 
@@ -93,6 +161,14 @@ definitiva al integrar (mismo criterio que Audio2Midi con MIROS sin LICENSE).
   - Menor calidad subjetiva que SAO 1.0 (trade-off tamaño/calidad esperado).
 - **Script Modal:** reutiliza `research/research_stable_audio_open_modal.py` (flag `--model small`).
 - **Carpeta evaluación:** `evaluation/stable_audio_open_small/`
+
+#### Benchmark de referencia — SAO Small (evaluar dentro de Sesión S1)
+
+Mismo benchmark que SAO 1.0 — los mismos 3 prompts oficiales, mismo Space de referencia.
+El objetivo es comparar calidad subjetiva y CLAP entre SAO 1.0 y Small para el mismo prompt,
+cuantificando el trade-off calidad/velocidad que justificaría usar Small como preview local.
+
+**Criterio de éxito adicional:** latencia de inferencia MPS (local Mac) < 120 s para 8 s de audio.
 
 #### Resultados evaluación SAO Small (pendiente)
 
@@ -140,14 +216,50 @@ _Pendiente. Evaluar head-to-head con SAO 1.0 en los mismos prompts._
   2. Si la ganancia es significativa, plantear el pipeline de fine-tuning propio
      como una fase posterior del plugin (análoga a la integración de LoRA en ChatMusician).
 
-- **Script Modal:** reutiliza `research/research_stable_audio_open_modal.py` apuntando
-  al repo `RoyalCities/Foundation-1` en lugar de `stabilityai/stable-audio-open-1.0`.
-  Los pesos son públicos (no gated) — no necesita secret HF.
+- **Script Modal:** `research/research_foundation1_modal.py` (sin secret HF — pesos públicos).
 - **Carpeta evaluación:** `evaluation/foundation_1/`
+
+#### Benchmark de referencia — Foundation-1 (Sesión S2)
+
+**Recurso de referencia manual:** Space público:
+<https://huggingface.co/spaces/multimodalart/Foundation-1>
+
+**Audio de referencia descargable** (ejemplos oficiales del repo HF, públicos):
+
+```bash
+# Descarga automática con fetch_foundation1_demos.sh:
+bash evaluation/fetch_foundation1_demos.sh
+# Coloca los archivos en evaluation/foundation_1/demos/
+```
+
+Los 3 archivos de referencia (`compare_example_1_a/b/c.mp3`) están generados con los prompts
+oficiales del model card. Son el benchmark concreto: si nuestro script genera algo de calidad
+comparable, el pipeline funciona.
+
+**Prompts oficiales** (formato tag — Foundation-1 NO usa frases en lenguaje natural):
+
+```
+"Bass, FM Bass, Medium Delay, Medium Reverb, Phaser, Acid, Gritty, Dubstep, 8 Bars, 140 BPM, E minor"
+"Drums, 808 Kick, Clap, Hi-Hat, Tight, Dry, Minimal, House, 4 Bars, 120 BPM"
+"Lead Synth, Saw Wave, Short Delay, Arpeggio, Bright, 4 Bars, 128 BPM, A minor"
+```
+
+Disponibles en `evaluation/prompts_official.json` bajo `"foundation_1"`.
+
+> **Importante:** Foundation-1 usa etiquetas estructuradas, NO frases. El `prompts.json`
+> estándar con frases en inglés NO funcionará bien — usar siempre `prompts_official.json`
+> para la sesión S2.
+
+**Criterio de éxito del script** (smoke test S2):
+
+- `output.wav` — WAV estéreo 44100 Hz, duración ≈ bars×(60/BPM)×4 s.
+- El prompt acid bass genera algo que suena a línea de bajo acid (303), no a ruido.
+- Calidad subjetiva comparable con `compare_example_1_a.mp3` descargado.
+- Sin métricas de paper de referencia (no hay paper) — comparación cualitativa es el criterio.
 
 #### Resultados evaluación Foundation-1 (pendiente)
 
-_Pendiente. Evaluar head-to-head con SAO 1.0 en prompts de electrónica (prompt01, 02, 03, 09)._
+_Pendiente. Evaluar head-to-head con SAO 1.0 en prompts de electrónica equivalentes._
 
 ---
 
@@ -186,7 +298,46 @@ model.set_generation_params(duration=8.0, top_k=250, top_p=0.0, temperature=1.0)
 wav = model.generate_with_chroma(["prompt text"], melody_wavs=[melody_wav], melody_sample_rate=sr)
 ```
 
-#### Resultados evaluación (pendiente)
+#### Benchmark de referencia — MusicGen (Sesión S3)
+
+**Recurso de referencia manual:** Space oficial Meta:
+<https://huggingface.co/spaces/facebook/MusicGen>
+
+**Audio de referencia:** el Space es interactivo, no hay archivos descargables directos del repo.
+Usar el Space para escuchar la calidad esperada antes de ejecutar el script.
+
+**Prompts oficiales** (del AudioCraft README y model card, para smoke test):
+
+```
+"An 80s driving pop song with heavy drums and synth pads in the background"
+"A cheerful country song with acoustic guitars, banjo, and light drums"
+"Jazz music with piano, acoustic bass, and brushed drums. Melancholic mood."
+```
+
+Para el condicionamiento melody, se necesita además un clip WAV de referencia.
+La sesión S3 debe preparar un clip de melodía de ~5 s para probar `musicgen-melody`.
+
+Disponibles en `evaluation/prompts_official.json` bajo `"musicgen"`.
+
+**Métricas de referencia del paper** (Copet et al., NeurIPS 2023, sobre MusicCaps):
+
+| Modelo | FAD | KL | CLAP |
+| --- | --- | --- | --- |
+| MusicGen-small | 4.88 | 1.40 | 0.28 |
+| MusicGen-medium | 3.79 | 1.38 | 0.29 |
+| MusicGen-large | 3.30 | 1.35 | 0.32 |
+| MusicGen-melody | 4.09 | 1.51 | 0.31 |
+
+FAD en escala AudioCraft (VGGish, MusicCaps como referencia). Menor = mejor.
+
+**Criterio de éxito del script** (smoke test S3):
+
+- `output.wav` es WAV mono o estéreo según variante, duración ≈ `duration` configurado.
+- El prompt `"An 80s driving pop song with heavy drums"` genera música reconocible, no ruido.
+- CLAP ≥ 0.25 (referencia del paper para `medium`).
+- Para `melody`: la melodía generada comparte el contorno de alturas del clip de referencia.
+
+#### Resultados evaluación MusicGen (pendiente)
 
 *Pendiente. Evaluar head-to-head con SAO 1.0 en los mismos prompts.*
 
@@ -214,7 +365,43 @@ wav = model.generate_with_chroma(["prompt text"], melody_wavs=[melody_wav], melo
 - **Script Modal:** `research/research_magnet_modal.py` _(pendiente de crear)_
 - **Carpeta evaluación:** `evaluation/magnet/`
 
-#### Resultados evaluación (pendiente)
+#### Benchmark de referencia — MAGNeT (Sesión S4)
+
+**Recurso de referencia manual:** no hay Space oficial de Meta para MAGNeT.
+Ejecutar el demo local de AudioCraft como referencia:
+
+```bash
+pip install audiocraft
+python -m demos.magnet_app --share   # abre Gradio en localhost
+```
+
+**Prompts oficiales** (del HF model card `facebook/magnet-small-10secs`):
+
+```
+"happy rock"
+"energetic EDM, upbeat"
+"melodic lo-fi hip hop"
+```
+
+Disponibles en `evaluation/prompts_official.json` bajo `"magnet"`.
+
+**Métricas de referencia del paper** (Ziv et al., ICML 2024, sobre MusicCaps):
+
+| Modelo | FAD | CLAP | Tiempo generación (10 s) |
+| --- | --- | --- | --- |
+| MAGNeT-small | 7.5 | 0.27 | ~0.5 s A100 |
+| MAGNeT-medium | 5.5 | 0.28 | ~1.2 s A100 |
+| MusicGen-medium (ref) | 3.79 | 0.29 | ~7.0 s A100 |
+
+MAGNeT es ~7× más rápido que MusicGen a igual duración, con FAD ligeramente mayor.
+
+**Criterio de éxito del script** (smoke test S4):
+
+- `output.wav` generado. El prompt `"happy rock"` suena a algo reconocible.
+- **El criterio principal de MAGNeT es la velocidad**: inferencia < 5 s en A10G para 10 s de audio.
+- CLAP ≥ 0.22 (ligeramente inferior a MusicGen es esperado y aceptable).
+
+#### Resultados evaluación MAGNeT (pendiente)
 
 *Pendiente.*
 
@@ -240,7 +427,42 @@ wav = model.generate_with_chroma(["prompt text"], melody_wavs=[melody_wav], melo
 - **Script Modal:** reutiliza `research/research_musicgen_modal.py` (AudioCraft unifica los modelos).
 - **Carpeta evaluación:** `evaluation/audiogen/`
 
-#### Resultados evaluación (pendiente)
+#### Benchmark de referencia — AudioGen (Sesión S5)
+
+**Recurso de referencia manual:** Space comunitario:
+<https://huggingface.co/spaces/fffiloni/audiogen>
+
+**Dataset de referencia:** AudioCaps — subconjunto de YouTube con etiquetas de sonidos.
+Es el dataset de evaluación estándar del paper. Para calcular FAD:
+
+```bash
+# Descargar subset de evaluación de AudioCaps (~50 clips, 10 s c/u):
+# Ver fetch_reference_set.sh — sección AudioCaps (misma herramienta yt-dlp)
+```
+
+**Prompts oficiales** (del paper AudioGen, para smoke test):
+
+```
+"Footsteps walking on a wooden floor, indoors"
+"Heavy rain falling on a window, with distant thunder"
+"A crowd of people cheering in a stadium"
+```
+
+Disponibles en `evaluation/prompts_official.json` bajo `"audiogen"`.
+
+**Métricas de referencia del paper** (Kreuk et al., sobre AudioCaps, clips de 5 s):
+
+| Modelo | FAD | KL | CLAP |
+| --- | --- | --- | --- |
+| AudioGen-medium | 2.49 | 1.19 | 0.38 |
+
+**Criterio de éxito del script** (smoke test S5):
+
+- `output.wav` es WAV mono, 5 s, no es silencio.
+- El prompt `"Footsteps walking on a wooden floor"` genera algo que suena a pasos, no a música.
+- CLAP ≥ 0.30 (AudioGen tiene CLAP alto porque el dominio SFX tiene mejor alineación texto-audio).
+
+#### Resultados evaluación AudioGen (pendiente)
 
 *Pendiente.*
 

@@ -87,35 +87,76 @@ Observaciones:
   <texto libre>
 ```
 
-## Flujo de trabajo completo
+## Archivos de prompts
+
+| Archivo | Uso |
+| --- | --- |
+| `prompts.json` | 12 prompts DAW curados (frases en inglés). Usar para SAO 1.0, SAO Small, MusicGen, MAGNeT, AudioGen. |
+| `prompts_official.json` | Prompts extraídos de los demos oficiales de cada modelo. Usar para **smoke test** al inicio de cada sesión. Foundation-1 usa SIEMPRE este archivo (formato de etiquetas, no frases). |
+
+## Flujo estándar por sesión (un modelo = una sesión)
 
 ```bash
-# 1. (Una vez) Aceptar licencia SAO y crear el secret de HF en Modal
-#    Ver RESEARCH.md → "Requisitos previos"
+# ── PASO 0: preparar benchmark de referencia ──────────────────────────────
 
-# 2. Descargar pesos al Volume (una vez, ~3.4 GB):
+# Foundation-1 (único modelo con audio de referencia descargable):
+bash fetch_foundation1_demos.sh        # → foundation_1/demos/*.mp3
+
+# Para los demás: usar el HF Space del modelo (ver RESEARCH.md) como referencia manual.
+
+
+# ── PASO 1: smoke test — verificar que el script funciona ─────────────────
+
 cd research/
-modal run research_stable_audio_open_modal.py::setup
+modal run research_<model>_modal.py::setup   # descarga pesos (una vez)
 
-# 3. Generar todos los prompts:
-modal run research_stable_audio_open_modal.py::eval_all \
+# Ejecutar 2-3 prompts oficiales (de prompts_official.json):
+modal run research_<model>_modal.py::main \
+    --prompt "<prompt_oficial_del_modelo>" \
+    --seconds <segundos> \
+    --out-dir ../evaluation/<model>/smoke
+
+# Comparar output.wav con referencia:
+# - Foundation-1: comparar con foundation_1/demos/*_foundation1.mp3
+# - Resto: abrir el HF Space del modelo, generar el mismo prompt, comparar cualitativamente
+# Si el output es razonable → script OK → continuar al paso 2
+
+
+# ── PASO 2: evaluación completa ───────────────────────────────────────────
+
+# SAO 1.0, SAO Small, MusicGen, MAGNeT, AudioGen → prompts.json
+modal run research_<model>_modal.py::eval_all \
     --prompts-json ../evaluation/prompts.json \
-    --model-dir stable_audio_open
+    --model-dir <model>
 
-# 4. Renderizar output.wav → .mp3 para escucha:
-cd ../evaluation/
-bash render_norm.sh
+# Foundation-1 → prompts_official.json (formato tag)
+modal run research_foundation1_modal.py::eval_all \
+    --prompts-json ../evaluation/prompts_official.json \
+    --model-section foundation_1
 
-# 5. Calcular métricas objetivas:
-#    (Opcional: primero descarga el set de referencia FAD)
-bash fetch_reference_set.sh       # ~150 MB, gitignored
-cd ../research/
-uv run python ../evaluation/compute_metrics.py
 
-# 6. Escucha en REAPER:
-#    Abrir REAPER → arrastrar evaluation/<model>/promptNN/output.mp3 a una pista
-#    Ajustar tempo del proyecto al BPM del prompt (ver prompts.json)
-#    Rellenar notes.txt con puntuación subjetiva
+# ── PASO 3: render + métricas ─────────────────────────────────────────────
 
-# 7. Registrar resultados en RESEARCH.md
+bash render_norm.sh                                    # output.wav → .mp3
+bash fetch_reference_set.sh                            # set de referencia FAD (~150 MB, gitignored)
+uv run python compute_metrics.py                       # FAD + CLAP
+uv run python compute_metrics.py --only <model>        # solo un modelo
+uv run python compute_metrics.py --no-fad              # solo CLAP (sin _reference/)
+
+
+# ── PASO 4: escucha en REAPER ─────────────────────────────────────────────
+
+# 1. Abrir REAPER, crear proyecto vacío
+# 2. Arrastrar evaluation/<model>/promptNN/output.mp3 a una pista
+# 3. Ajustar tempo del proyecto al BPM del prompt (ver prompts.json → campo "bpm")
+# 4. Comparar side-by-side con otros modelos en pistas paralelas
+# 5. Rellenar notes.txt de cada prompt con la puntuación subjetiva
+
+
+# ── PASO 5: registrar resultados ──────────────────────────────────────────
+
+# Actualizar RESEARCH.md:
+# - Rellenar "#### Resultados evaluación <Modelo>"
+# - Actualizar la tabla "Estado de evaluación" con el veredicto
+# - Actualizar "Tabla comparativa de candidatos" si hay nuevo ELEGIDO/DESCARTADO
 ```
