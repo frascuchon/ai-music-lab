@@ -26,6 +26,7 @@ definitiva al integrar (mismo criterio que Audio2Midi con MIROS sin LICENSE).
 |---|---|---|---|---|---|---|---|
 | **Stable Audio Open 1.0** (Stability AI) | Música+SFX estéreo 44.1 kHz | Texto + **duración** | ≤47 s | ⚠️ lento | Stability Community (comercial <$1M rev) | ✅ ICASSP 2025 | **TOP CANDIDATO** |
 | **Stable Audio Open Small** (Stability AI) | Música+SFX estéreo 44.1 kHz | Texto + duración | ≤47 s | ✅ ARM nativo | Stability Community | ✅ 2025 | **Candidato MPS local** |
+| **Foundation-1** (RoyalCities) | Samples electrónicos estéreo 44.1 kHz | Texto + duración | ≤47 s | ⚠️ lento | Stability Community (hereda SAO) | ✅ 2025 | **Candidato fine-tune estilo propio** |
 | **MusicGen** (Meta AudioCraft) | Música estéreo/mono | Texto + **melodía** | ≤30 s | ⚠️ slow CPU | MIT (código) / **CC-BY-NC** (pesos) | ✅ NeurIPS 2023 | **Candidato (flujo melodía)** |
 | **MAGNeT** (Meta AudioCraft) | Música | Texto | ≤30 s | ⚠️ slow | MIT/CC-BY-NC | ✅ ICML 2024 | **Candidato baja latencia** |
 | **AudioGen** (Meta AudioCraft) | SFX / efectos | Texto | ≤5 s | ⚠️ slow | MIT/CC-BY-NC | ✅ arXiv 2022 | Candidato sub-flujo FX |
@@ -93,9 +94,60 @@ definitiva al integrar (mismo criterio que Audio2Midi con MIROS sin LICENSE).
 - **Script Modal:** reutiliza `research/research_stable_audio_open_modal.py` (flag `--model small`).
 - **Carpeta evaluación:** `evaluation/stable_audio_open_small/`
 
-#### Resultados evaluación (pendiente)
+#### Resultados evaluación SAO Small (pendiente)
 
-*Pendiente. Evaluar head-to-head con SAO 1.0 en los mismos prompts.*
+_Pendiente. Evaluar head-to-head con SAO 1.0 en los mismos prompts._
+
+---
+
+### Foundation-1 (RoyalCities) — Candidato fine-tune de estilo propio
+
+- **HuggingFace:** <https://huggingface.co/RoyalCities/Foundation-1>
+- **Paper / técnica:** Fine-tune de Stable Audio Open 1.0 realizado por RoyalCities sobre
+  su propia librería de samples electrónicos (acid, house, techno). Publicado en 2025.
+  No hay paper académico — el valor es el proceso, no el modelo en sí.
+- **Arquitectura:** idéntica a SAO 1.0 (DiT + VAE + T5-XXL). Solo los pesos del transformer
+  están ajustados al dominio de samples electrónicos.
+- **Dataset de entrenamiento:** librería privada de RoyalCities — samples propios de acid,
+  house y techno. No publicado, pero el método es replicable con `stable-audio-tools`.
+- **Soporte MPS:** igual que SAO 1.0 (lento, mismo pipeline).
+- **Output:** WAV estéreo 44.1 kHz, hasta 47 s. Mismo formato que SAO 1.0.
+- **Licencia:** hereda Stability AI Community License de SAO 1.0 (comercial <$1M rev).
+
+**Por qué es relevante — el ángulo de fine-tuning:**
+  Foundation-1 es, ante todo, una **prueba de concepto del pipeline de fine-tuning de SAO**.
+  Demuestra que es posible especializar el modelo en un dominio musical concreto entrenando
+  sobre una librería propia, sin modificar la arquitectura ni el pipeline de inferencia.
+  Esto abre una dirección muy interesante para el plugin:
+
+  > Fine-tunar SAO 1.0 con samples propios → generador de audio personalizado al estilo
+  > del compositor, no al estilo genérico de Freesound.
+
+  Analogía directa con el plan documentado en `MidiGenerator/RESEARCH.md` para ChatMusician:
+  "LoRA fine-tuning de estilo por autor (~20-50 piezas propias)". Aquí el equivalente sería
+  fine-tunar SAO con ~100-500 samples propios del estilo deseado.
+
+- **Limitaciones conocidas:**
+  - Los pesos de Foundation-1 están muy sesgados hacia música electrónica acid/house.
+    Para otros géneros (jazz, clásico, pop) los resultados serán pobres.
+  - El fine-tuning de SAO requiere CUDA A100/A10G (~20-50 horas de entrenamiento, ~$20-80
+    en Modal) y una librería de samples curada. No es trivial pero es reproducible.
+  - No hay paper que documente los hiperparámetros exactos usados por RoyalCities.
+
+- **Propuesta de evaluación:**
+  1. Comparar Foundation-1 vs SAO 1.0 en prompts de música electrónica (prompt01 drum loop,
+     prompt03 bassline, prompt09 arpeggio) → cuantificar ganancia de dominio.
+  2. Si la ganancia es significativa, plantear el pipeline de fine-tuning propio
+     como una fase posterior del plugin (análoga a la integración de LoRA en ChatMusician).
+
+- **Script Modal:** reutiliza `research/research_stable_audio_open_modal.py` apuntando
+  al repo `RoyalCities/Foundation-1` en lugar de `stabilityai/stable-audio-open-1.0`.
+  Los pesos son públicos (no gated) — no necesita secret HF.
+- **Carpeta evaluación:** `evaluation/foundation_1/`
+
+#### Resultados evaluación Foundation-1 (pendiente)
+
+_Pendiente. Evaluar head-to-head con SAO 1.0 en prompts de electrónica (prompt01, 02, 03, 09)._
 
 ---
 
@@ -241,6 +293,7 @@ Sin condicionamiento de duración. Solo 5 s. Descartado.
 |---|---|---|---|
 | **Stable Audio Open 1.0** | Samples & loops (texto+duración) | ⏳ Pendiente | **TOP CANDIDATO — evaluar primero** |
 | **Stable Audio Open Small** | Samples & loops (MPS local) | ⏳ Pendiente | Candidato MPS / preview |
+| **Foundation-1** (RoyalCities) | Samples electrónicos (fine-tune SAO) | ⏳ Pendiente | Candidato fine-tune estilo propio |
 | **MusicGen melody/stereo** | Samples + condicionamiento por melodía | ⏳ Pendiente | Candidato flujo 2 (melodía) |
 | **MAGNeT** | One-shots / baja latencia | ⏳ Pendiente | Candidato velocidad |
 | **AudioGen** | SFX y texturas de ambiente | ⏳ Pendiente | Candidato sub-flujo FX |
@@ -260,16 +313,24 @@ samples & loops DAW-native:
 MusicGen melody es el candidato prioritario para el **flujo de condicionamiento por melodía**
 (el usuario pasa un motivo de REAPER como referencia): capacidad única que SAO 1.0 no tiene.
 
+**Foundation-1 abre el flujo de personalización:** compararla con SAO 1.0 en prompts de
+electrónica cuantifica la ganancia del fine-tuning de dominio. Si la ganancia es relevante,
+el siguiente paso natural es fine-tunar SAO sobre la propia librería de samples del compositor
+(~100-500 archivos curados, ~$20-80 en Modal), produciendo un generador de audio personalizado
+al estilo propio — la misma dirección que se planteó con ChatMusician + LoRA para MIDI.
+
 ---
 
 ## Próximos pasos
 
 1. **Ejecutar PoC Stable Audio Open** — `modal run research/research_stable_audio_open_modal.py::setup`
    y `::eval_all` → generar `output.wav` para todos los prompts del `evaluation/prompts.json`.
-2. **Escucha subjetiva en REAPER** — abrir cada `output.wav` en REAPER, puntuar 0–5 por:
+2. **Evaluar Foundation-1** — reutilizar el mismo script apuntando a `RoyalCities/Foundation-1`
+   (no gated, sin secret HF), comparar head-to-head en prompts de electrónica (prompt01, 02, 03, 09).
+3. **Escucha subjetiva en REAPER** — abrir cada `output.wav` en REAPER, puntuar 0–5 por:
    fidelidad al prompt, calidad de audio, musicalidad, loopability, usabilidad en pista.
    Registrar en `notes.txt` de cada prompt y en la tabla de evaluación de este RESEARCH.md.
-3. **Calcular FAD + CLAP** — `uv run python ../evaluation/compute_metrics.py` vs set de referencia.
+4. **Calcular FAD + CLAP** — `uv run python ../evaluation/compute_metrics.py` vs set de referencia.
 4. **Añadir `research_musicgen_modal.py`** — MusicGen melody/stereo head-to-head con SAO.
 5. **Añadir `research_magnet_modal.py`** — MAGNeT para comparación de latencia.
 6. **Elegir modelo de producción** y diseñar el bridge Lua REAPER (analogía con Audio2Midi).
