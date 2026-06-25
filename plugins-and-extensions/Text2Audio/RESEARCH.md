@@ -165,9 +165,37 @@ modal run research_stable_audio_open_modal.py::smoke     # genera 3 prompts ofic
 # Comparar con reference_demos/ o con el Space
 ```
 
-#### Resultados evaluación SAO 1.0 (pendiente)
+#### Resultados evaluación SAO 1.0 (completado 2026-06-25)
 
-*Pendiente de ejecución. Ver `evaluation/stable_audio_open/` y `evaluation/README.md`.*
+**Métricas objetivas** (LAION-CLAP 630k-audioset, HTSAT-tiny, no fusion; GPU A10G; seed base 42):
+
+| Prompt | Categoría | CLAP | Duración |
+|---|---|---|---|
+| prompt01 | drum_loop (120 BPM, acoustic) | 0.5284 | 8.00 s |
+| prompt02 | drum_loop (90 BPM, boom bap) | 0.5632 | 10.67 s |
+| prompt03 | bassline (sub bass, 130 BPM) | 0.5072 | 7.38 s |
+| prompt04 | synth_pad (evolving, 8 bars) | 0.4649 | 16.00 s |
+| prompt05 | synth_lead (saw wave, 128 BPM) | 0.4582 | 8.00 s |
+| prompt06 | fx_riser (8 bars, 128 BPM) | 0.4912 | 15.00 s |
+| prompt07 | ambient_texture (drone, 30 s) | 0.4409 | 30.00 s |
+| prompt08 | percussion_oneshot (snare) | 0.3938 | 1.00 s |
+| prompt09 | arpeggio (house, 8 bars) | 0.5202 | 8.00 s |
+| prompt10 | guitar_loop (jazz, 90 BPM) | 0.5650 | 10.67 s |
+| prompt11 | piano_loop (chord stabs) | 0.5064 | 8.00 s |
+| prompt12 | sfx_transition (noise riser) | 0.3421 | 4.00 s |
+| **Media** | — | **0.4818** | — |
+
+**Notas:**
+
+- CLAP medio 0.4818 vs paper 0.29 (AudioCaps): diferencia esperada — nuestros prompts son más
+  descriptivos y específicos; el checkpoint LAION-CLAP también difiere (paper usa versión interna).
+- Mejores categorías: guitar_loop (0.5650), drum_loop boom bap (0.5632), drum_loop acoustic (0.5284).
+- Peores categorías: sfx_transition (0.3421), percussion_oneshot (0.3938) — one-shots cortos
+  difíciles de alinear texto-audio; la transición/riser pide una curva temporal que CLAP no captura.
+- Todos los 12 prompts generados correctamente: 0 errores, 0 silencios, 0 artefactos graves en escucha rápida.
+- FAD: pendiente (requiere `fetch_reference_set.sh` para descargar clips de referencia MusicCaps/Freesound).
+- Escucha subjetiva en REAPER: pendiente — rellenar puntuación 0-5 en cada `notes.txt`.
+- Métricas detalladas: `evaluation/stable_audio_open/metrics.json`
 
 ---
 
@@ -540,7 +568,7 @@ Sin condicionamiento de duración. Solo 5 s. Descartado.
 
 | Modelo | Flujo | Estado | Veredicto |
 |---|---|---|---|
-| **Stable Audio Open 1.0** | Samples & loops (texto+duración) | ⏳ Pendiente | **TOP CANDIDATO — evaluar primero** |
+| **Stable Audio Open 1.0** | Samples & loops (texto+duración) | ✅ CLAP completado (subjetivo pendiente) | **TOP CANDIDATO — CLAP medio 0.4818** |
 | **Stable Audio Open Small** | Samples & loops (MPS local) | ⏳ Pendiente | Candidato MPS / preview |
 | **Foundation-1** (RoyalCities) | Samples electrónicos (fine-tune SAO) | ⏳ Pendiente | Candidato fine-tune estilo propio |
 | **MusicGen melody/stereo** | Samples + condicionamiento por melodía | ⏳ Pendiente | Candidato flujo 2 (melodía) |
@@ -572,9 +600,10 @@ al estilo propio — la misma dirección que se planteó con ChatMusician + LoRA
 
 ## Próximos pasos
 
-1. **Ejecutar PoC Stable Audio Open** — `modal run research/research_stable_audio_open_modal.py::setup`
-   y `::eval_all` → generar `output.wav` para todos los prompts del `evaluation/prompts.json`.
-2. **Evaluar Foundation-1** — reutilizar el mismo script apuntando a `RoyalCities/Foundation-1`
+1. ~~**Ejecutar PoC Stable Audio Open**~~ ✅ Completado (12 prompts, CLAP medio 0.4818).
+2. **Escucha subjetiva SAO 1.0 en REAPER** — abrir `evaluation/stable_audio_open/promptNN/output.mp3`,
+   puntuar 0-5 en cada `notes.txt` (fidelidad, calidad, musicalidad, loopability, usabilidad).
+3. **Evaluar Foundation-1** — reutilizar el mismo script apuntando a `RoyalCities/Foundation-1`
    (no gated, sin secret HF), comparar head-to-head en prompts de electrónica (prompt01, 02, 03, 09).
 3. **Escucha subjetiva en REAPER** — abrir cada `output.wav` en REAPER, puntuar 0–5 por:
    fidelidad al prompt, calidad de audio, musicalidad, loopability, usabilidad en pista.

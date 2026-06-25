@@ -92,9 +92,12 @@ def _load_clap_model():
         print("ERROR: laion-clap no instalado. Ejecutar: uv add laion-clap>=1.1.4")
         sys.exit(1)
 
-    model = laion_clap.CLAP_Module(enable_fusion=False, amodel="HTSAT-base")
-    # Checkpoint especializado en música (mejor que el genérico)
-    model.load_ckpt(model_id=3)  # music_audioset_epoch_15_esc_90.14
+    # model_id=0: 630k-best.pt (HTSAT-tiny, no fusion)
+    # model_id=1: 630k-audioset-best.pt (HTSAT-tiny, no fusion) ← mejor opción sin fusion
+    # model_id=2: 630k-fusion-best.pt (HTSAT-tiny, fusion) → requiere enable_fusion=True
+    # model_id=3: 630k-audioset-fusion-best.pt (HTSAT-tiny, fusion) → requiere enable_fusion=True
+    model = laion_clap.CLAP_Module(enable_fusion=False, amodel="HTSAT-tiny")
+    model.load_ckpt(model_id=1)  # 630k-audioset-best.pt
     model.eval()
     return model
 
@@ -314,9 +317,10 @@ def main() -> None:
         all_results.append(model_result)
 
         mean_clap = model_result.mean_clap
+        clap_str = f"{mean_clap:.4f}" if mean_clap is not None else "N/A"
+        fad_str = f"{fad_score:.4f}" if fad_score is not None else str(fad_error)
         print(f"  Resumen: {model_result.n_generated}/{len(prompts)} prompts | "
-              f"CLAP medio={mean_clap:.4f if mean_clap else 'N/A'} | "
-              f"FAD={fad_score:.4f if fad_score is not None else fad_error}")
+              f"CLAP medio={clap_str} | FAD={fad_str}")
         print("")
 
     # Tabla resumen

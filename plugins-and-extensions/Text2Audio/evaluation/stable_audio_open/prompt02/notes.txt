@@ -1,0 +1,29 @@
+Prompt 02 — drum_loop: hip-hop drum loop, 90 BPM, boom bap, swung 16th hi-hats, dee
+Texto completo:  "hip-hop drum loop, 90 BPM, boom bap, swung 16th hi-hats, deep 808 kick, fat snare with room reverb"
+BPM objetivo:    90
+Duración:        10.667 s (4 compases)
+Modelo:          stable_audio_open 1.0
+Fecha:           2026-06-25
+GPU:             A10G
+Seed:            43
+
+Resultado (output.wav):
+  Tamaño:        1837 KB
+  Duration real: 10.67 s
+
+Notas del prompt: 4 compases @ 90 BPM = 10.667 s. Boom bap clásico.
+
+Métricas objetivas:
+  CLAP score:    0.5632
+  FAD:           pendiente (requiere fetch_reference_set.sh)
+
+Métricas subjetivas (escucha en REAPER):
+  Fidelidad al prompt:  /5
+  Calidad de audio:     /5
+  Musicalidad:          /5   (¿melodía/ritmo/armonía coherentes?)
+  Loopability:          /5   (¿el loop cierra sin click?)
+  Usabilidad:           /5
+  Media:                /5
+
+Observaciones:
+  pendiente

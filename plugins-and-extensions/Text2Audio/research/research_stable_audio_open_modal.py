@@ -131,8 +131,8 @@ image = (
 app = modal.App("stable-audio-open-inference", image=image)
 
 # Secret con HF_TOKEN — OBLIGATORIO para modelo gated.
-# Crear con: modal secret create huggingface HF_TOKEN=<tu_token>
-hf_secret = modal.Secret.from_name("huggingface")
+# Crear con: modal secret create huggingface-secret HF_TOKEN=<tu_token>
+hf_secret = modal.Secret.from_name("huggingface-secret")
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ def setup():
     if not hf_token:
         raise RuntimeError(
             "HF_TOKEN no encontrado. Crear secret: "
-            "modal secret create huggingface HF_TOKEN=<tu_token>"
+            "modal secret create huggingface-secret HF_TOKEN=<tu_token>"
         )
 
     dest = f"{WEIGHTS_MOUNT}/stable-audio-open-1.0"
@@ -248,9 +248,8 @@ def _generate_one(
 
     output = pipe(
         text,
-        seconds_total=seconds,
-        num_inference_steps=num_inference_steps,
         audio_end_in_s=seconds,
+        num_inference_steps=num_inference_steps,
         generator=generator,
     )
     # output.audios: tensor shape (batch, channels, samples)

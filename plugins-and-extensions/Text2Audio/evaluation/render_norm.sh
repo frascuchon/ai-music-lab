@@ -44,8 +44,13 @@ while IFS= read -r wav; do
         -codec:a libmp3lame -qscale:a 2 \
         "$mp3" -y -loglevel error \
         && total=$((total + 1))
-done < <(find "$ROOT"/{stable_audio_open,stable_audio_open_small,musicgen,magnet,audiogen} \
-         -name "output.wav" 2>/dev/null | sort)
+done < <(find "$ROOT" -maxdepth 5 \
+         \( -path "*/stable_audio_open/*" \
+            -o -path "*/stable_audio_open_small/*" \
+            -o -path "*/musicgen/*" \
+            -o -path "*/magnet/*" \
+            -o -path "*/audiogen/*" \
+         \) -name "output.wav" 2>/dev/null | sort)
 
 echo ""
 echo "Renderizados: $total  |  Ya existían: $skipped"

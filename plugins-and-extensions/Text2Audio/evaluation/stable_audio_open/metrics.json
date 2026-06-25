@@ -1,0 +1,109 @@
+{
+  "models": [
+    {
+      "model": "stable_audio_open",
+      "n_generated": 12,
+      "mean_clap": 0.4817977075775464,
+      "fad": null,
+      "fad_error": "omitido (--no-fad)",
+      "prompts": [
+        {
+          "prompt_id": "prompt01",
+          "model": "stable_audio_open",
+          "text": "tight acoustic drum loop, 120 BPM, four on the floor kick, snare on 2 and 4, hi-hat eighth notes, dry studio sound",
+          "clap_score": 0.5283833146095276,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt01/output.wav",
+          "error": null
+        },
+        {
+          "prompt_id": "prompt02",
+          "model": "stable_audio_open",
+          "text": "hip-hop drum loop, 90 BPM, boom bap, swung 16th hi-hats, deep 808 kick, fat snare with room reverb",
+          "clap_score": 0.5632111430168152,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt02/output.wav",
+          "error": null
+        },
+        {
+          "prompt_id": "prompt03",
+          "model": "stable_audio_open",
+          "text": "funk electric bass loop, 100 BPM, slap bass, syncopated groove, C minor, tight and percussive",
+          "clap_score": 0.5072382092475891,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt03/output.wav",
+          "error": null
+        },
+        {
+          "prompt_id": "prompt04",
+          "model": "stable_audio_open",
+          "text": "lush ambient synth pad, slow attack slow release, C major, ethereal and warm, long evolving texture, no rhythm",
+          "clap_score": 0.46488872170448303,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt04/output.wav",
+          "error": null
+        },
+        {
+          "prompt_id": "prompt05",
+          "model": "stable_audio_open",
+          "text": "analog synth lead melody, 120 BPM, saw wave, slight vibrato, A minor scale, punchy attack, 80s style",
+          "clap_score": 0.4582153558731079,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt05/output.wav",
+          "error": null
+        },
+        {
+          "prompt_id": "prompt06",
+          "model": "stable_audio_open",
+          "text": "cinematic riser sound effect, 8 seconds, builds from quiet to loud, white noise sweep, ascending pitch, tension",
+          "clap_score": 0.49117109179496765,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt06/output.wav",
+          "error": null
+        },
+        {
+          "prompt_id": "prompt07",
+          "model": "stable_audio_open",
+          "text": "dark ambient texture, industrial drone, slow modulation, deep rumble with high frequency shimmer, 20 seconds",
+          "clap_score": 0.44092005491256714,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt07/output.wav",
+          "error": null
+        },
+        {
+          "prompt_id": "prompt08",
+          "model": "stable_audio_open",
+          "text": "single snare drum hit, cracking, bright, studio recording, no reverb, natural decay",
+          "clap_score": 0.3938286006450653,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt08/output.wav",
+          "error": null
+        },
+        {
+          "prompt_id": "prompt09",
+          "model": "stable_audio_open",
+          "text": "electronic arpeggio, 120 BPM, 16th notes, E minor, sawtooth waveform, slightly detuned, driving and hypnotic",
+          "clap_score": 0.5201952457427979,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt09/output.wav",
+          "error": null
+        },
+        {
+          "prompt_id": "prompt10",
+          "model": "stable_audio_open",
+          "text": "clean electric guitar chord loop, 100 BPM, jazz chords, Cmaj7 Fmaj7 progression, warm tone, light compression",
+          "clap_score": 0.5649760961532593,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt10/output.wav",
+          "error": null
+        },
+        {
+          "prompt_id": "prompt11",
+          "model": "stable_audio_open",
+          "text": "upright piano loop, 85 BPM, melancholic chord progression, Am - F - C - G, light room reverb, intimate recording",
+          "clap_score": 0.5064098834991455,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt11/output.wav",
+          "error": null
+        },
+        {
+          "prompt_id": "prompt12",
+          "model": "stable_audio_open",
+          "text": "downlifter transition sound effect, whoosh downward sweep, 3 seconds, electronic music production, impactful",
+          "clap_score": 0.3421347737312317,
+          "output_path": "/Users/frascuchon/Projects/personal/music-ai/daw-integration/reaper-ai-assistant/plugins-and-extensions/Text2Audio/evaluation/stable_audio_open/prompt12/output.wav",
+          "error": null
+        }
+      ]
+    }
+  ]
+}

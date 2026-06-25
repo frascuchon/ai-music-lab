@@ -1,0 +1,29 @@
+Prompt 10 — guitar_loop: clean electric guitar chord loop, 100 BPM, jazz chords, Cmaj
+Texto completo:  "clean electric guitar chord loop, 100 BPM, jazz chords, Cmaj7 Fmaj7 progression, warm tone, light compression"
+BPM objetivo:    100
+Duración:        9.6 s (4 compases)
+Modelo:          stable_audio_open 1.0
+Fecha:           2026-06-25
+GPU:             A10G
+Seed:            51
+
+Resultado (output.wav):
+  Tamaño:        1653 KB
+  Duration real: 9.60 s
+
+Notas del prompt: Acordes de guitarra jazz. Comprobar si la progresión armónica es coherente.
+
+Métricas objetivas:
+  CLAP score:    0.5650
+  FAD:           pendiente (requiere fetch_reference_set.sh)
+
+Métricas subjetivas (escucha en REAPER):
+  Fidelidad al prompt:  /5
+  Calidad de audio:     /5
+  Musicalidad:          /5   (¿melodía/ritmo/armonía coherentes?)
+  Loopability:          /5   (¿el loop cierra sin click?)
+  Usabilidad:           /5
+  Media:                /5
+
+Observaciones:
+  pendiente
