@@ -1,0 +1,44 @@
+[project]
+name = "text2audio-research"
+version = "0.1.0"
+description = "Sandbox aislado para evaluar modelos text-to-audio antes de integrar en el plugin REAPER"
+requires-python = ">=3.10"
+dependencies = [
+    # Modal cloud
+    "modal>=0.64",
+    # ML framework (CPU wheels para uv sync local sin CUDA)
+    "torch>=2.2",
+    "torchaudio>=2.2",
+    # Audio I/O
+    "soundfile>=0.12",
+    "librosa>=0.10",
+    # HuggingFace
+    "huggingface_hub>=0.24",
+    "diffusers>=0.30",
+    "transformers>=4.44",
+    # Métricas objetivas (compute_metrics.py)
+    "fadtk>=0.1",             # Fréchet Audio Distance
+    "laion-clap>=1.1.4",      # CLAP score (text-audio alignment)
+    # Utilidades
+    "numpy>=1.26",
+    "psutil>=6.0",
+    "pyyaml>=6.0",
+]
+
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cpu"
+name = "pytorch-cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
