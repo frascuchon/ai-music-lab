@@ -136,7 +136,34 @@ es comparable en calidad al audio de referencia descargado, el script funciona c
 - CLAP ≥ 0.20 (bajo ese umbral el pipeline está roto o el modelo no cargó correctamente).
 - Tiempo de inferencia en A10G: < 60 s para 8 s de audio con 100 steps.
 
-**Audio de referencia descargable:** no disponible (repo gated). Comparar cualitativamente con el Space.
+**Audio de referencia descargable:**
+
+```bash
+# Requiere HF_TOKEN (aceptar licencia en HF + token read):
+cd plugins-and-extensions/Text2Audio/evaluation
+HF_TOKEN=<tu_token> bash fetch_stable_audio_open_demos.sh
+# → evaluation/stable_audio_open/reference_demos/*.wav
+
+# Alternativa pública (SAO 1.0 base, prompts Foundation-1 — sin token):
+bash fetch_foundation1_demos.sh
+# → evaluation/foundation_1/demos/compare_example_*_a__sao_base.mp3
+```
+
+Los archivos descargados sirven para calibrar la calidad esperada del modelo: si nuestro
+output es comparable en calidad, el script funciona correctamente.
+
+**Flujo smoke test S1:**
+
+```bash
+cd plugins-and-extensions/Text2Audio/evaluation
+HF_TOKEN=<token> bash fetch_stable_audio_open_demos.sh   # descarga referencia (una vez)
+
+cd ../research
+modal run research_stable_audio_open_modal.py::setup     # descarga pesos (una vez)
+modal run research_stable_audio_open_modal.py::smoke     # genera 3 prompts oficiales
+# → evaluation/stable_audio_open/smoke/sao_smoke_{01,02,03}/output.wav
+# Comparar con reference_demos/ o con el Space
+```
 
 #### Resultados evaluación SAO 1.0 (pendiente)
 

@@ -26,23 +26,26 @@ fi
 total=0
 skipped=0
 
-# Iterar sobre todos los output.wav en subcarpetas de modelos conocidos
-for wav in "$ROOT"/{stable_audio_open,stable_audio_open_small,musicgen,magnet,audiogen}/*/output.wav; do
+# Iterar sobre todos los output.wav en subcarpetas de modelos conocidos (profundidad 1 y 2)
+# Profundidad 1: evaluation/<model>/<prompt_id>/output.wav  (eval_all)
+# Profundidad 2: evaluation/<model>/smoke/<smoke_id>/output.wav  (smoke test)
+while IFS= read -r wav; do
     [[ -f "$wav" ]] || continue
     mp3="${wav%.wav}.mp3"
     if [[ -f "$mp3" ]]; then
         skipped=$((skipped + 1))
         continue
     fi
-    prompt_dir="$(basename "$(dirname "$wav")")"
-    model_dir="$(basename "$(dirname "$(dirname "$wav")")")"
-    echo "  rendering ${model_dir}/${prompt_dir}/output.wav …"
+    # Extraer ruta relativa desde ROOT para el log
+    rel="${wav#"${ROOT}/"}"
+    echo "  rendering ${rel} …"
     "$FFMPEG_BIN" -i "$wav" \
         -af "loudnorm=I=-14:LRA=11:TP=-1.0" \
         -codec:a libmp3lame -qscale:a 2 \
         "$mp3" -y -loglevel error \
         && total=$((total + 1))
-done
+done < <(find "$ROOT"/{stable_audio_open,stable_audio_open_small,musicgen,magnet,audiogen} \
+         -name "output.wav" 2>/dev/null | sort)
 
 echo ""
 echo "Renderizados: $total  |  Ya existían: $skipped"

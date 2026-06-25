@@ -1,0 +1,40 @@
+Smoke 03 — ambient_texture: Lo-fi slow BPM electro chill with organic samples
+Texto completo:  "Lo-fi slow BPM electro chill with organic samples"
+Origen:          Demo comunitario ampliamente citado para SAO 1.0
+BPM objetivo:    ~70-80 (slow)
+Duración:        20.0 s
+Modelo:          stable_audio_open 1.0
+Fecha:           pendiente
+GPU:             A10G
+Seed:            44  (seed base + 2)
+
+Resultado (output.wav):
+  Tamaño:        pendiente
+  Duration real: pendiente
+
+Métricas objetivas:
+  CLAP score:    pendiente  (umbral mínimo: ≥ 0.20)
+  Tiempo inf.:   pendiente  (umbral máximo: < 90 s en A10G — duración mayor)
+
+Métricas subjetivas (escucha en REAPER):
+  Fidelidad al prompt:  /5   (¿textura lo-fi relajada con elementos orgánicos?)
+  Calidad de audio:     /5   (¿ausencia de artefactos en los 20 s?)
+  Musicalidad:          /5   (¿la textura evoluciona de forma coherente?)
+  Loopability:          /5   (¿se puede loopear sin click?)
+  Usabilidad:           /5   (¿usable como capa de ambiente en un proyecto REAPER?)
+  Media:                /5
+
+Comparación con referencia:
+  Referencia descargable: evaluation/stable_audio_open/reference_demos/ (requiere HF_TOKEN)
+  Referencia manual:      https://huggingface.co/spaces/artificialguybr/Stable-Audio-Open-Zero
+  Prompt idéntico → comparar la textura, el carácter lo-fi y los elementos orgánicos.
+  Este prompt es el más citado en la comunidad SAO — buena señal si suena "como esperado".
+
+Criterio de éxito (smoke test):
+  ✓ WAV estéreo 44100 Hz, duración ≈ 20.0 s (±1.0 s)
+  ✓ El audio suena a música lo-fi relajada, no a ruido ni silencio
+  ✓ CLAP ≥ 0.20
+  ✓ Sin artefactos evidentes en los 20 s completos
+
+Observaciones:
+  pendiente

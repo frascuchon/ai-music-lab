@@ -31,17 +31,27 @@ audio. Text2Audio genera audio de forma **no determinista** a partir de texto: n
 evaluation/
 ├── README.md                         ← este archivo
 ├── prompts.json                      ← 12 prompts DAW curados, compartidos entre modelos
+├── prompts_official.json             ← prompts oficiales de cada modelo (smoke tests)
+├── fetch_stable_audio_open_demos.sh  ← descarga referencia SAO 1.0 (gated, requiere HF_TOKEN)
+├── fetch_foundation1_demos.sh        ← descarga demos Foundation-1 (públicos, sin token)
 ├── fetch_reference_set.sh            ← descarga set de referencia para FAD (~150 MB, gitignored)
 ├── compute_metrics.py                ← FAD + CLAP score por modelo/prompt
-├── render_norm.sh                    ← output.wav → .mp3 normalizado (idempotente)
+├── render_norm.sh                    ← output.wav → .mp3 normalizado (idempotente, recursivo)
 ├── _reference/                       ← gitignored (cache binaria del set de referencia FAD)
 ├── stable_audio_open/                ← resultados de Stable Audio Open 1.0
+│   ├── reference_demos/              ← gitignored (audio oficial descargado por fetch_stable_audio_open_demos.sh)
+│   ├── smoke/                        ← benchmark de verificación (3 prompts oficiales del model card)
+│   │   ├── sao_smoke_01/
+│   │   │   ├── output.wav            ← generado por ::smoke entrypoint
+│   │   │   ├── output.mp3            ← renderizado por render_norm.sh
+│   │   │   └── notes.txt             ← observaciones + CLAP + puntuación subjetiva
+│   │   ├── sao_smoke_02/
+│   │   └── sao_smoke_03/
 │   ├── prompt01/
-│   │   ├── output.wav                ← generado por research_stable_audio_open_modal.py
+│   │   ├── output.wav                ← generado por research_stable_audio_open_modal.py::eval_all
 │   │   ├── output.mp3                ← renderizado por render_norm.sh
 │   │   └── notes.txt                 ← observaciones + puntuación subjetiva
-│   ├── prompt02/ … prompt12/
-│   └── smoke/                        ← outputs de prueba libre (no parte de la eval formal)
+│   └── prompt02/ … prompt12/
 ├── stable_audio_open_small/          ← resultados de SAO Small (pendiente)
 ├── musicgen/                         ← resultados de MusicGen (pendiente)
 ├── magnet/                           ← resultados de MAGNeT (pendiente)
@@ -99,10 +109,13 @@ Observaciones:
 ```bash
 # ── PASO 0: preparar benchmark de referencia ──────────────────────────────
 
-# Foundation-1 (único modelo con audio de referencia descargable):
+# SAO 1.0 (gated — requiere HF_TOKEN; los pares *_sao_base.mp3 de Foundation-1 son alternativa pública):
+HF_TOKEN=<token> bash fetch_stable_audio_open_demos.sh  # → stable_audio_open/reference_demos/
+
+# Foundation-1 (público, sin token — incluye pares A/B con SAO 1.0 base):
 bash fetch_foundation1_demos.sh        # → foundation_1/demos/*.mp3
 
-# Para los demás: usar el HF Space del modelo (ver RESEARCH.md) como referencia manual.
+# Para los demás (MusicGen, MAGNeT, AudioGen): usar el HF Space como referencia manual.
 
 
 # ── PASO 1: smoke test — verificar que el script funciona ─────────────────
@@ -110,13 +123,18 @@ bash fetch_foundation1_demos.sh        # → foundation_1/demos/*.mp3
 cd research/
 modal run research_<model>_modal.py::setup   # descarga pesos (una vez)
 
-# Ejecutar 2-3 prompts oficiales (de prompts_official.json):
+# SAO 1.0: entrypoint dedicado (lee prompts_official.json automáticamente):
+modal run research_stable_audio_open_modal.py::smoke
+# → evaluation/stable_audio_open/smoke/sao_smoke_{01,02,03}/output.wav
+
+# Foundation-1 y demás: smoke manual con los prompts oficiales:
 modal run research_<model>_modal.py::main \
     --prompt "<prompt_oficial_del_modelo>" \
     --seconds <segundos> \
     --out-dir ../evaluation/<model>/smoke
 
 # Comparar output.wav con referencia:
+# - SAO 1.0: comparar con stable_audio_open/reference_demos/ (o con el HF Space)
 # - Foundation-1: comparar con foundation_1/demos/*_foundation1.mp3
 # - Resto: abrir el HF Space del modelo, generar el mismo prompt, comparar cualitativamente
 # Si el output es razonable → script OK → continuar al paso 2

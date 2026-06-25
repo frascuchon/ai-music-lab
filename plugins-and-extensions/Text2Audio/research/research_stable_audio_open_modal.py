@@ -367,6 +367,115 @@ def main(
 
 
 # ---------------------------------------------------------------------------
+# Entrypoint: smoke test — 3 prompts oficiales del model card
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def smoke(
+    prompts_json: str = "../evaluation/prompts_official.json",
+    eval_base: str = "../evaluation",
+    seed: int = DEFAULT_SEED,
+    force: bool = False,
+):
+    """
+    Ejecuta los 3 prompts oficiales del model card de SAO 1.0.
+
+    Genera evaluation/stable_audio_open/smoke/<id>/output.wav para cada
+    prompt en la sección "stable_audio_open" de prompts_official.json.
+    Usar para verificar que el script funciona antes de lanzar eval_all.
+
+    Criterios de éxito:
+      - sao_smoke_01 ('128 BPM tech house drum loop'):  drum loop reconocible, 8 s
+      - sao_smoke_02 ('The sound of a hammer...'):      impacto percutivo claro, ~3 s
+      - sao_smoke_03 ('Lo-fi slow BPM electro chill'): textura lo-fi relajada, ~20 s
+      - CLAP ≥ 0.20 para todos (verificar con compute_metrics.py --no-fad)
+      - Inferencia < 60 s por prompt en A10G con 100 steps
+
+    Comparar con:
+      - evaluation/stable_audio_open/reference_demos/  (si se ejecutó fetch_stable_audio_open_demos.sh)
+      - HF Space manual: https://huggingface.co/spaces/artificialguybr/Stable-Audio-Open-Zero
+
+    Ejemplo:
+        modal run research/research_stable_audio_open_modal.py::smoke
+        modal run research/research_stable_audio_open_modal.py::smoke \\
+            --prompts-json ../evaluation/prompts_official.json --force
+    """
+    prompts_path = Path(prompts_json).resolve()
+    if not prompts_path.exists():
+        print(f"ERROR: No existe {prompts_path}")
+        raise SystemExit(1)
+
+    with open(prompts_path) as f:
+        data = json.load(f)
+
+    if "stable_audio_open" not in data:
+        print(f"ERROR: sección 'stable_audio_open' no encontrada en {prompts_path}")
+        raise SystemExit(1)
+
+    smoke_prompts = data["stable_audio_open"]["prompts"]
+    eval_base_path = Path(eval_base).resolve()
+    smoke_dir = eval_base_path / "stable_audio_open" / "smoke"
+
+    pending: list[dict] = []
+    out_paths: list[Path] = []
+
+    for p in smoke_prompts:
+        out_dir = smoke_dir / p["id"]
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_wav = out_dir / "output.wav"
+
+        if out_wav.exists() and not force:
+            print(f"[skip] {p['id']}: ya tiene output.wav. Usa --force para regenerar.")
+            continue
+
+        pending.append({"text": p["text"], "seconds": float(p.get("seconds", 8.0))})
+        out_paths.append(out_wav)
+        print(f"[smoke] Encolado: {p['id']}  ({p.get('seconds', 8.0)}s)")
+        print(f"        Prompt: {p['text'][:80]}")
+
+    if not pending:
+        print("[smoke] Todos los prompts ya tienen output.wav. Usa --force para regenerar.")
+        return
+
+    print(f"\n[smoke] Enviando {len(pending)} prompts a Modal ({DEFAULT_GPU}) …")
+    t0 = time.time()
+
+    wav_bytes_list = generate_batch.remote(pending, seed=seed)
+
+    elapsed = time.time() - t0
+    print(f"[smoke] Batch completado en {elapsed:.0f}s  ({elapsed/len(pending):.0f}s/prompt)\n")
+
+    ok = 0
+    for i, (wav_bytes, out_wav) in enumerate(zip(wav_bytes_list, out_paths)):
+        if not wav_bytes:
+            print(f"[smoke] ERROR: prompt {i+1} devolvió vacío")
+            continue
+        out_wav.write_bytes(wav_bytes)
+        size_kb = len(wav_bytes) // 1024
+        print(f"[smoke] Guardado: {out_wav.parent.name}/output.wav ({size_kb} KB)")
+        ok += 1
+
+    print(f"\n[smoke] {ok}/{len(pending)} prompts generados.")
+    if ok == len(pending):
+        ref_dir = eval_base_path / "stable_audio_open" / "reference_demos"
+        print("\nSiguientes pasos:")
+        print("  1. Escuchar los outputs en REAPER o reproductor:")
+        for p in smoke_prompts:
+            print(f"       {smoke_dir / p['id'] / 'output.wav'}")
+        if ref_dir.is_dir() and any(ref_dir.iterdir()):
+            print(f"\n  2. Comparar con referencia en:")
+            print(f"       {ref_dir}/")
+        else:
+            print("\n  2. Comparar con el HF Space (no necesita token):")
+            print("       https://huggingface.co/spaces/artificialguybr/Stable-Audio-Open-Zero")
+            print("     O descargar referencia oficial (requiere HF_TOKEN):")
+            print("       bash ../evaluation/fetch_stable_audio_open_demos.sh")
+        print("\n  3. Si la calidad es comparable → continuar con eval_all:")
+        print("       modal run research_stable_audio_open_modal.py::eval_all \\")
+        print("           --prompts-json ../evaluation/prompts.json \\")
+        print("           --model-dir stable_audio_open")
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint: todos los prompts de prompts.json → evaluation/<model>/
 # ---------------------------------------------------------------------------
 @app.local_entrypoint()
