@@ -1,0 +1,26 @@
+Prompt 01 — drum_loop: tight acoustic drum loop, 120 BPM, four on the floor kick
+Texto completo:  "tight acoustic drum loop, 120 BPM, four on the floor kick, snare on 2 and 4, hi-hat eighth notes, dry studio sound"
+BPM objetivo:    120
+Duración:        8.0 s (4 compases)
+Modelo:          stable_audio_open
+Fecha:           pendiente
+GPU:             A10G
+
+Resultado (output.wav):
+  Tamaño:        pendiente
+  Duration real: pendiente
+
+Métricas objetivas:
+  CLAP score:    pendiente
+  FAD:           pendiente (requiere fetch_reference_set.sh)
+
+Métricas subjetivas (escucha en REAPER):
+  Fidelidad al prompt:  /5
+  Calidad de audio:     /5
+  Musicalidad:          /5
+  Loopability:          /5
+  Usabilidad:           /5
+  Media:                /5
+
+Observaciones:
+  pendiente
