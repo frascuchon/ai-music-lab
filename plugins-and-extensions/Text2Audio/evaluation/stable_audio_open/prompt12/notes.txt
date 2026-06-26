@@ -18,11 +18,11 @@ Métricas objetivas:
   FAD:           pendiente (requiere fetch_reference_set.sh)
 
 Métricas subjetivas (escucha en REAPER):
-  Fidelidad al prompt:  /5
-  Calidad de audio:     /5
+  Fidelidad al prompt:  4/5
+  Calidad de audio:     4/5
   Musicalidad:          N/A  (SFX)
   Loopability:          N/A  (no rítmico / one-shot)
-  Usabilidad:           /5
+  Usabilidad:           4/5
   Media:                /5
 
 Observaciones:
