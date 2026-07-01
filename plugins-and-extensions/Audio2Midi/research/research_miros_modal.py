@@ -239,36 +239,57 @@ def _transcribe_one(audio_bytes: bytes, beat_tracking: bool = True) -> bytes:
     """
     Transcribe un audio (bytes) a MIDI (bytes) llamando a miros_transcribe().
 
+    MIROS fue entrenado y validado exclusivamente con audio 16 kHz mono (todos los
+    fixtures de evaluación lo son). Clips con otro sample rate o en estéreo producen
+    MIDI vacío o con un span temporal incorrecto porque MusicFM desalinea los features.
+    Por eso normalizamos siempre a 16 kHz mono con librosa antes de invocar al modelo.
+
+    El audio original (audio_bytes) se pasa intacto a _apply_beat_tracking, que ya usa
+    librosa.load(..., sr=None) y es agnóstico al sample rate.
+
     transcribe.py::transcribe() recarga el modelo en cada llamada (~30s overhead).
     Aceptable frente a los ~2-3 min de inferencia por audio.
-    Para batch de 10 tests, el total de overhead de carga es ~5 min sobre ~30 min de inferencia.
     """
+    import librosa
+    import soundfile as sf
+
     from transcribe import transcribe as miros_transcribe
 
-    # Determinamos sufijo según primeros bytes (WAV=RIFF, MP3=ID3/0xFF)
+    # Escribir los bytes recibidos en un temp file para que librosa pueda leerlos
     suffix = ".wav"
     if audio_bytes[:3] == b"ID3" or audio_bytes[:2] == b"\xff\xfb":
         suffix = ".mp3"
 
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp_in:
-        tmp_in.write(audio_bytes)
-        audio_path = tmp_in.name
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp_raw:
+        tmp_raw.write(audio_bytes)
+        raw_path = tmp_raw.name
+
+    # Archivo 16 kHz mono que recibe el modelo
+    norm_fd, norm_path = tempfile.mkstemp(suffix=".wav")
+    os.close(norm_fd)
 
     midi_fd, midi_path = tempfile.mkstemp(suffix=".mid")
     os.close(midi_fd)
 
     try:
-        miros_transcribe(audio_path, midi_path)
+        # Normalizar a 16 kHz mono (no-op de calidad si ya lo es)
+        y, _ = librosa.load(raw_path, sr=16000, mono=True)
+        sf.write(norm_path, y, 16000, subtype="PCM_16")
+        print(f"[miros] Entrada normalizada a 16 kHz mono: {len(y) / 16000:.2f}s")
+
+        miros_transcribe(norm_path, midi_path)
         if os.path.exists(midi_path) and os.path.getsize(midi_path) > 0:
             with open(midi_path, "rb") as f:
                 midi_bytes = f.read()
             if beat_tracking:
+                # Beat tracking analiza el audio original (sr=None), independiente
+                # de la normalización hecha para el modelo.
                 midi_bytes = _apply_beat_tracking(audio_bytes, midi_bytes)
             return midi_bytes
         else:
             raise RuntimeError(f"MIROS no generó MIDI en: {midi_path}")
     finally:
-        for p in [audio_path, midi_path]:
+        for p in [raw_path, norm_path, midi_path]:
             if os.path.exists(p):
                 os.unlink(p)
 
@@ -312,11 +333,17 @@ def _apply_beat_tracking(audio_bytes: bytes, midi_bytes: bytes) -> bytes:
         )
         global_bpm = float(np.atleast_1d(tempo_arr)[0])
 
-        # Mantener en rango musical típico (60-180 BPM)
-        while global_bpm < 60:
-            global_bpm *= 2
-        while global_bpm > 180:
-            global_bpm /= 2
+        # Guard: BPM=0 o no finito (librosa falla en audio sin pulso claro o silencio)
+        # → sin este guard, while global_bpm < 60: global_bpm *= 2 es un bucle infinito.
+        if not (np.isfinite(global_bpm) and global_bpm > 0):
+            print(f"[beat_tracking] BPM inválido ({global_bpm}), usando fallback 120 BPM")
+            global_bpm = 120.0
+        else:
+            # Mantener en rango musical típico (60-180 BPM)
+            while global_bpm < 60:
+                global_bpm *= 2
+            while global_bpm > 180:
+                global_bpm /= 2
 
         print(f"[beat_tracking] BPM detectado: {global_bpm:.1f}")
 

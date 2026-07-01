@@ -94,3 +94,8 @@ El botón `...` permite elegir cualquier archivo WAV manualmente (sin capturar d
 - El MIDI resultante se renombra a `<fuente>__<modelo>.mid` antes de importarse.
 - Beat tracking: reescribe el tempo map del MIDI a un BPM constante detectado por
   librosa para que las notas queden alineadas al grid de REAPER.
+- **MIROS normaliza la entrada a 16 kHz mono** antes de la inferencia (dentro del
+  contenedor Modal, con `librosa.load(..., sr=16000, mono=True)`). Esto es necesario
+  porque MIROS fue entrenado con audio 16 kHz mono y produce MIDI vacío con cualquier
+  otro formato. La normalización es automática: el plugin funciona con clips REAPER de
+  44.1/48 kHz estéreo sin intervención del usuario.

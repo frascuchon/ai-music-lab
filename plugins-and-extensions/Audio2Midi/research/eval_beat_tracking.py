@@ -56,10 +56,16 @@ def _apply_beat_tracking(audio_bytes: bytes, midi_bytes: bytes) -> bytes:
             onset_envelope=onset_env, sr=sr, hop_length=512, units="frames"
         )
         global_bpm = float(np.atleast_1d(tempo_arr)[0])
-        while global_bpm < 60:
-            global_bpm *= 2
-        while global_bpm > 180:
-            global_bpm /= 2
+
+        # Guard: BPM=0 o no finito → bucle infinito sin esto
+        if not (np.isfinite(global_bpm) and global_bpm > 0):
+            print(f"  [beat_tracking] BPM inválido ({global_bpm}), usando fallback 120 BPM")
+            global_bpm = 120.0
+        else:
+            while global_bpm < 60:
+                global_bpm *= 2
+            while global_bpm > 180:
+                global_bpm /= 2
 
         pm = pretty_midi.PrettyMIDI(tmp_midi_in)
 
