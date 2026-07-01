@@ -175,59 +175,59 @@ local function detect_section(item, take, src)
   return is_section, start_offs, section_dur
 end
 
-local function grab_from_reaper()
-  local tcnt = reaper.CountSelectedTracks(0)
-  if tcnt > 0 then
-    local tr = reaper.GetSelectedTrack(0, 0)
+local function _set_src_from_item(item, context_label)
+  local take = reaper.GetActiveTake(item)
+  if not take then
+    reaper.MB("El item no tiene take activo.", "Stem Separator", 0); return false
+  end
+  local src   = reaper.GetMediaItemTake_Source(take)
+  local fname = reaper.GetMediaSourceFileName(src, "")
+  if not fname or fname == "" then return false end
+
+  local tr = reaper.GetMediaItemTrack(item)
+  if tr then
     local _, tname = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
     S.src_track_name = tname ~= "" and tname
       or ("Track " .. (reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") or "?"))
     S.src_track_idx = reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")
+  end
+
+  S.src = fname
+  local is_sec, offs, dur = detect_section(item, take, src)
+  local kind = is_sec and "split" or context_label
+  if is_sec then
+    add_log(string.format("Fuente (%s): %s [%.2fs → %.2fs]",
+      kind, fname:match("[^/\\]+$") or fname, offs, offs + dur))
+  else
+    add_log(string.format("Fuente (%s): %s", kind,
+      fname:match("[^/\\]+$") or fname))
+  end
+  return true
+end
+
+local function grab_from_reaper()
+  -- Item/split tiene prioridad: en REAPER seleccionar un item también selecciona
+  -- su pista, por lo que hay que comprobar items antes que pistas.
+  local n_items = reaper.CountSelectedMediaItems(0)
+  if n_items > 0 then
+    local item = reaper.GetSelectedMediaItem(0, 0)
+    _set_src_from_item(item, "item")
+    return
+  end
+
+  local tcnt = reaper.CountSelectedTracks(0)
+  if tcnt > 0 then
+    local tr = reaper.GetSelectedTrack(0, 0)
     local icnt = reaper.CountTrackMediaItems(tr)
     for i = 0, icnt - 1 do
       local item = reaper.GetTrackMediaItem(tr, i)
-      local take = reaper.GetActiveTake(item)
-      if take then
-        local src   = reaper.GetMediaItemTake_Source(take)
-        local fname = reaper.GetMediaSourceFileName(src, "")
-        if fname and fname ~= "" then
-          S.src = fname
-          local is_sec, offs, dur = detect_section(item, take, src)
-          if is_sec then
-            add_log(string.format("Fuente (pista): %s | %s [sec %.2fs → %.2fs]",
-              S.src_track_name, fname:match("[^/\\]+$") or fname, offs, offs + dur))
-          else
-            add_log("Fuente (pista): " .. S.src_track_name .. " | " .. fname)
-          end
-          return
-        end
-      end
+      if _set_src_from_item(item, "pista") then return end
     end
     reaper.MB("La pista seleccionada no tiene items de audio activos.", "Stem Separator", 0)
     return
   end
 
-  local n = reaper.CountSelectedMediaItems(0)
-  if n == 0 then
-    reaper.MB("No hay ningun item ni pista seleccionada en Reaper.", "Stem Separator", 0); return
-  end
-  local item = reaper.GetSelectedMediaItem(0, 0)
-  local take  = reaper.GetActiveTake(item)
-  if not take then
-    reaper.MB("El item no tiene take activo.", "Stem Separator", 0); return
-  end
-  local src   = reaper.GetMediaItemTake_Source(take)
-  local fname = reaper.GetMediaSourceFileName(src, "")
-  if fname and fname ~= "" then
-    S.src = fname; S.src_track_name = ""; S.src_track_idx = -1
-    local is_sec, offs, dur = detect_section(item, take, src)
-    if is_sec then
-      add_log(string.format("Fuente: %s [sec %.2fs → %.2fs]",
-        fname:match("[^/\\]+$") or fname, offs, offs + dur))
-    else
-      add_log("Fuente: " .. fname)
-    end
-  end
+  reaper.MB("No hay ningún item ni pista seleccionada en REAPER.", "Stem Separator", 0)
 end
 
 function import_stems()

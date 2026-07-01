@@ -265,6 +265,7 @@ function M.input_text(id, text, opts)
     w = rem
   end
   local x, y = ctx.x, ctx.y
+  local gy = y + (ctx.clip_y_off or 0)  -- screen Y (y is logical inside scroll_region)
 
   if not ctx.state[id] then
     ctx.state[id] = { caret = #text, blink_t = os.clock() }
@@ -275,7 +276,7 @@ function M.input_text(id, text, opts)
 
   -- Click to focus and position caret
   local hover_field = ctx.mx >= x and ctx.mx < x+w
-                   and ctx.my >= y and ctx.my < y+h
+                   and ctx.my >= gy and ctx.my < gy+h
                    and ctx.disabled_depth == 0 and not opts.readonly
   if hover_field and just_clicked() then
     ctx.focused_id = id
@@ -330,16 +331,21 @@ function M.input_text(id, text, opts)
 
   -- Draw
   local focused = (ctx.focused_id == id)
+  if ctx.clip_y1 and (gy + h < ctx.clip_y1 or gy > ctx.clip_y2) then
+    ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
+    ctx.x = t.PAD_X; ctx.y = y + h + t.SPACING_Y
+    return changed, new_text
+  end
   local bg = focused and t.C.FRAME_ACT or (hover_field and t.C.FRAME_HOV or t.C.FRAME)
   gfx.set(bg[1], bg[2], bg[3], 1)
-  gfx.rect(x, y, w, h, 1)
+  gfx.rect(x, gy, w, h, 1)
 
   if focused then
     local ac = t.C.ACCENT; gfx.set(ac[1], ac[2], ac[3], 0.5)
-    gfx.rect(x, y, w, 1, 1)
-    gfx.rect(x, y+h-1, w, 1, 1)
-    gfx.rect(x, y, 1, h, 1)
-    gfx.rect(x+w-1, y, 1, h, 1)
+    gfx.rect(x, gy, w, 1, 1)
+    gfx.rect(x, gy+h-1, w, 1, 1)
+    gfx.rect(x, gy, 1, h, 1)
+    gfx.rect(x+w-1, gy, 1, h, 1)
   end
 
   gfx.setfont(t.F.UI)
@@ -362,7 +368,7 @@ function M.input_text(id, text, opts)
     caret_px = gfx.measurestr(draw_disp:sub(1, s.caret - trim))
   end
   gfx.x = x + 4
-  gfx.y = y + math.floor((h - th) / 2)
+  gfx.y = gy + math.floor((h - th) / 2)
   gfx.drawstr(draw_disp)
 
   -- Blinking caret
@@ -371,7 +377,7 @@ function M.input_text(id, text, opts)
     if blink_on then
       local cx = x + 4 + caret_px
       local cc = t.C.FG; gfx.set(cc[1], cc[2], cc[3], 1)
-      gfx.line(cx, y+3, cx, y+h-3)
+      gfx.line(cx, gy+3, cx, gy+h-3)
     end
   end
 
