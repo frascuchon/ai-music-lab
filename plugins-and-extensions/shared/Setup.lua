@@ -273,6 +273,11 @@ local function loop()
   g.end_disabled()
   g.spacing()
   g.separator()
+
+  -- ── SCROLL REGION: todo el contenido de secciones ──────────────
+  local scroll_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y)
+  widgets.scroll_region("##setup_main", 0, scroll_h, function()
+
   g.spacing()
 
   -- ── SECCIÓN: ENTORNO COMÚN ─────────────────────────────────────
@@ -491,6 +496,9 @@ local function loop()
 
   g.spacing(); g.separator(); g.spacing()
   g.text_disabled("shared/ — Python: " .. PYTHON)
+  g.spacing()
+
+  end)  -- fin scroll_region
 
   gui.frame_end()
   reaper.defer(loop)
