@@ -289,15 +289,21 @@ function import_midi()
     reaper.GetSetMediaTrackInfo_String(new_track, "P_NAME", track_name, true)
     add_log("Importado: " .. track_name)
   else
-    -- Multi-instrumento: envolver en carpeta
+    -- Multi-instrumento: envolver en una carpeta con parent VACÍO.
     local folder_name = base_name .. " [MIDI " .. model_tag .. "]"
 
-    -- Renombrar la pista original (vacía) como carpeta
-    reaper.GetSetMediaTrackInfo_String(new_track, "P_NAME", folder_name, true)
-    reaper.SetMediaTrackInfo_Value(new_track, "I_FOLDERDEPTH", 1)
+    -- Insertar una pista-carpeta vacía ANTES del bloque importado.
+    -- InsertMedia ya puso el primer instrumento en new_track (tcnt_before);
+    -- al insertar aquí en tcnt_before, esa pista queda desplazada a
+    -- tcnt_before+1 y se convierte en la primera pista hija, no en la carpeta.
+    reaper.InsertTrackAtIndex(tcnt_before, true)
+    local folder_tr = reaper.GetTrack(0, tcnt_before)
+    reaper.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", folder_name, true)
+    reaper.SetMediaTrackInfo_Value(folder_tr, "I_FOLDERDEPTH", 1)
 
-    -- Nombrar las pistas MIDI creadas por InsertMedia
-    for i = 1, delta - 1 do
+    -- Nombrar las pistas de instrumentos (ahora en tcnt_before+1 .. tcnt_before+delta).
+    -- Se respeta el nombre que InsertMedia haya tomado del SMF si ya existe.
+    for i = 1, delta do
       local tr = reaper.GetTrack(0, tcnt_before + i)
       if tr then
         local _, existing = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
@@ -308,13 +314,13 @@ function import_midi()
       end
     end
 
-    -- Cerrar la carpeta en la última pista real
-    local last_tr = reaper.GetTrack(0, tcnt_after - 1)
+    -- Cerrar la carpeta en la última pista hija.
+    local last_tr = reaper.GetTrack(0, tcnt_before + delta)
     if last_tr then
       reaper.SetMediaTrackInfo_Value(last_tr, "I_FOLDERDEPTH", -1)
     end
 
-    add_log(string.format("Importado en carpeta '%s' (%d pistas)", folder_name, delta - 1))
+    add_log(string.format("Importado en carpeta '%s' (%d pistas)", folder_name, delta))
   end
 
   reaper.UpdateArrange()
