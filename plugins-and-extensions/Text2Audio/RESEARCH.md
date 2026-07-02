@@ -535,6 +535,146 @@ Disponibles en `evaluation/prompts_official.json` bajo `"audiogen"`.
 
 ---
 
+## Subtarea: edición/versionado audio→audio (sesiones E1–E6)
+
+**Objetivo:** dado un audio existente (loop, sample, fragmento de REAPER) y una instrucción de
+texto, generar una **versión editada o continuada** del mismo. Subtarea complementaria a la
+generación desde cero; especialmente útil como asistente de composición dentro del plugin DAW.
+
+Evaluado en la rama `feature/audio2audio-edit-benchmark` (desde `feature/text2audio-research`).
+Scripts, datos de inferencia y métricas listos para lanzar (PoC sin ejecutar — 2026-07-02).
+
+### Tabla comparativa de modelos de edición (E1–E6)
+
+| # | Modelo | Mecanismo de edición | Categorías soportadas | Knob de intensidad | Duración | Licencia | GPU |
+|---|---|---|---|---|---|---|---|
+| **E1** | **ACE-Step 1.5** (turbo, 2B) | `task_type="cover"`: `audio_cover_strength` (1.0=fiel, 0.1=libre); `repaint` para segmentos | style_transfer, instrumentation, mood_texture | `audio_cover_strength` 0.0–1.0 | full-song | Apache 2.0 | A10G |
+| **E2** | **Stable Audio Open 1.0** | SDEdit: `generate_diffusion_cond(init_audio=(sr, tensor), init_noise_level=N)` | style_transfer, instrumentation, mood_texture | `init_noise_level` (mayor=más cambio) | ≤47 s | Stability Community | A10G |
+| **E3** | **MusicGen-melody** | `generate_with_chroma(prompt, melody_wav)` — re-render del motivo en el estilo descrito | style_transfer, instrumentation, mood_texture | ninguno (condicionamiento fijo) | ≤30 s | MIT/CC-BY-NC | A10G |
+| **E4** | **MelodyFlow** (Meta, 1B t24) | Inversión latente regularizada (ReNoise sobre flow matching): `model.edit(...)` | style_transfer, instrumentation, mood_texture | `target_flowstep` (0.0=mayor cambio, 1.0=fiel) | 30 s (fijo) | MIT/CC-BY-NC | A10G |
+| **E5** | **ZETA** (ICML 2024) sobre AudioLDM2-music | Inversión DDPM zero-shot (`main_run.py --tstart --cfg_src --cfg_tar`) | style_transfer, instrumentation, mood_texture | `tstart` (mayor=más cambio) | ≤10 s | MIT / CC-BY-SA pesos | A10G |
+| **E6** | **InspireMusic** (1.5B-Long, 48 kHz) | Continuación guiada por texto: `model.inference("continuation", text, audio_prompt)` | continuation | sin knob (max_prompt_length=5 s) | ≤30 s gen. | Apache 2.0 | A10G |
+
+**Descartados** para esta subtarea: Mustango (sin entrada de audio), MusicGen-Style
+(extensión opcional E3b), MAGNeT/AudioGen (sin condicionamiento de audio).
+
+**Nota E4 — MelodyFlow:** no está en el repo principal de audiocraft. El código está en el
+Space oficial `facebook/MelodyFlow` (fork de audiocraft). Instalación:
+`pip install git+https://huggingface.co/spaces/facebook/MelodyFlow`.
+Pesos: `facebook/melodyflow-t24-30secs` (1B parámetros, 30 s estéreo 48 kHz).
+
+**Nota E6 — InspireMusic:** no edita el source — lo **continúa**. Se incluye como categoría
+propia (`continuation`) por su valor como asistente de composición en el plugin DAW.
+El output incluye el audio prompt al inicio seguido de la continuación; `compute_metrics_edit.py`
+recorta el prefix antes de medir.
+
+### Audios fuente compartidos
+
+5 audios oficiales en `evaluation/edit/source_audio/` (generados por `fetch_edit_sources.sh`):
+
+| ID | Fichero | Origen | Duración |
+|---|---|---|---|
+| `src01_bach` | `bach.mp3` | Asset oficial audiocraft (demo MusicGen-melody) | 10 s |
+| `src02_bolero` | `bolero_ravel.mp3` | Asset oficial audiocraft (demo MelodyFlow VERBATIM) | 10 s |
+| `src03_electronic` | `electronic.mp3` | Asset oficial audiocraft (demo MusicGen-Style) | 3 s |
+| `src04_beatbox` | `beatbox_loop_90bpm.wav` | Asset oficial audiocraft (CJ_Beatbox_Loop_05_90.wav) | 10.67 s |
+| `src05_sao_guitar` | `sao_guitar_loop.wav` | Generado por nosotros con SAO 1.0 S1 (prompt10) | 9.6 s |
+
+### Plan de sesiones E1–E6
+
+| Sesión | Modelo | Script Modal | Smoke oficial | Coste est. |
+|---|---|---|---|---|
+| **E1** | ACE-Step 1.5 | `research_acestep_edit_modal.py` | 2 pasos: text2music → cover (VERBATIM doc) | ~$0.10 setup + ~$0.05/gen |
+| **E2** | SAO 1.0 a2a | `research_sao_edit_modal.py` | beatbox_loop_90bpm + "90 BPM tech house drum loop" | reutiliza Volume existente |
+| **E3** | MusicGen-melody | `research_musicgen_melody_modal.py` | bach.mp3 + "An 80s driving pop song" (demo oficial) | ~$0.10 setup + ~$0.02/gen |
+| **E4** | MelodyFlow | `research_melodyflow_modal.py` | bolero_ravel.mp3 + "A cheerful country song" (VERBATIM app.py) | ~$0.15 setup + ~$0.05/gen |
+| **E5** | ZETA | `research_zeta_edit_modal.py` | electronic.mp3, "electronic" → "jazz with piano" (patrón ZETA page) | ~$0.05 setup + ~$0.08/gen |
+| **E6** | InspireMusic | `research_inspiremusic_modal.py` | sao_guitar_loop + "Continue to generate jazz music." (VERBATIM README) | ~$0.08 setup + ~$0.05/gen |
+
+### Casos de benchmark (`prompts_edit.json`)
+
+12 casos en 4 categorías, con audios fuente y parámetros oficiales:
+
+| case_id | source | categoría | target_prompt |
+|---|---|---|---|
+| `case01_bach_jazz` | bach | style_transfer | "jazz piano version, swing feel, relaxed tempo" |
+| `case02_bolero_country` | bolero | style_transfer | "A cheerful country song with acoustic guitars" (VERBATIM MelodyFlow) |
+| `case03_electronic_lofi` | electronic | style_transfer | "lo-fi hip hop remix, chill, dusty vinyl texture, slow tempo" |
+| `case04_electronic_orchestral` | electronic | style_transfer | "orchestral symphonic arrangement" (VERBATIM ACE-Step doc) |
+| `case05_bach_arcade` | bach | style_transfer | "8-bit chiptune arcade video game soundtrack version" |
+| `case06_bach_strings` | bach | instrumentation | "the same melody played by a string quartet" |
+| `case07_guitar_piano` | sao_guitar | instrumentation | "the same chord progression played on a grand piano, jazz voicings" |
+| `case08_beatbox_drumkit` | beatbox | instrumentation | "acoustic drum kit playing the same rhythm, 90 BPM" |
+| `case09_guitar_dark` | sao_guitar | mood_texture | "dark ambient version, heavy reverb, ominous and haunting mood" |
+| `case10_bolero_ambient` | bolero | mood_texture | "soft dreamy ambient rendition with gentle synth pads" |
+| `case11_guitar_continue_jazz` | sao_guitar | continuation | "Continue to generate jazz music." (VERBATIM InspireMusic README) |
+| `case12_electronic_continue` | electronic | continuation | "Continue to generate energetic electronic dance music." |
+
+### Métricas de evaluación
+
+3 métricas en `compute_metrics_edit.py` (reutiliza CLAP config de `compute_metrics.py`):
+
+| Métrica | Descripción | Eje |
+|---|---|---|
+| **CLAP text→output** | Cos-sim(target_prompt, output) — LAION-CLAP 630k-audioset | Adherencia a la edición |
+| **CLAP audio↔audio** | Cos-sim(source_audio, output) — mismo modelo CLAP | Preservación de contenido |
+| **Chroma correlation** | Mean cos-sim frame a frame entre cromagramas CQT (librosa) | Preservación melódico-armónica |
+
+Para casos `continuation`: se recorta el prefix del source del output antes de medir.
+Salida: `evaluation/edit/metrics_edit.json` + tabla resumen por modelo.
+
+### Flujo estándar de sesión de edición
+
+```bash
+# 0. Descargar audios fuente (una vez)
+cd plugins-and-extensions/Text2Audio/evaluation
+bash fetch_edit_sources.sh
+
+# 1. Setup pesos (una vez por modelo)
+cd ../research
+modal run research_<model>_modal.py::setup
+
+# 2. Smoke oficial (verificar condiciones reproducidas)
+modal run research_<model>_modal.py::smoke
+# → evaluation/edit/<model>/smoke/<id>/output.wav
+
+# 3. Benchmark completo
+modal run research_<model>_modal.py::eval_all
+# → evaluation/edit/<model>/<case_id>/output.wav
+
+# 4. Normalizar (render_norm.sh ya es recursivo)
+bash ../evaluation/render_norm.sh
+
+# 5. Métricas automáticas
+uv run python ../evaluation/compute_metrics_edit.py --only <model>
+# → evaluation/edit/metrics_edit.json
+
+# 6. Escucha en REAPER — puntuar en notes.txt (plantilla abajo)
+```
+
+### Plantilla notes.txt para edición
+
+```
+case_id: <case_id>
+model: <model>
+source: <source_id>
+target_prompt: "<texto>"
+
+Adherencia a la edición (¿el output suena al estilo/instrumento pedido?) /5:
+Preservación del tema original (¿se reconoce el source?) /5:
+Calidad de audio /5:
+Usabilidad en REAPER (ritmo/tono útil en producción) /5:
+
+Observaciones:
+```
+
+### Resultados evaluación edición (pendiente — sesiones E1–E6)
+
+_Pendiente. Lanzar sesiones por orden: E1 (ACE-Step) → E3 (MusicGen-melody) → E2 (SAO) →
+E4 (MelodyFlow) → E5 (ZETA) → E6 (InspireMusic)._
+
+---
+
 ## Candidatos secundarios mencionados
 
 ### Mustango — Control explícito de BPM/clave/acordes
@@ -547,14 +687,15 @@ Disponibles en `evaluation/prompts_official.json` bajo `"audiogen"`.
 - **Limitaciones:** licencia research/NC; duración ≤10 s; calidad general menor que SAO 1.0.
 - **Estado:** candidato de segunda iteración si el control de tempo/armónico resulta crítico.
 
-### ACE-Step 1.5 / InspireMusic — Puente a "tema completo"
+### ACE-Step 1.5 / InspireMusic — Promovidos a evaluación E1/E6
 
-- **ACE-Step 1.5** (StepFun, Apache 2.0): genera canciones completas con letras, condicionamiento
-  por tags de género/mood. Muy rápido (Step distillation). Orientado a "tema completo", no a loops.
-- **InspireMusic** (Alibaba, Apache 2.0): instrumental de alta calidad, pero sin control de
-  duración preciso. Candidato si en el futuro se abre un flujo "tema instrumental completo".
-- Ambos con licencia permisiva Apache 2.0 → buenos para producción, pero fuera del alcance
-  DAW-native de este plugin (samples & loops ≤47 s).
+- **ACE-Step 1.5** (StepFun, Apache 2.0): evaluado en sesión **E1** como modelo principal de
+  edición (task_type="cover"). Su mecanismo de cover + audio_cover_strength es el más versátil
+  de los 6 modelos de edición.
+- **InspireMusic** (Alibaba, Apache 2.0): evaluado en sesión **E6** para la subtarea de
+  continuación (asistente de composición: "¿cómo seguiría este loop?"). Licencia más permisiva
+  del conjunto para uso en producción.
+- Ambos están activamente evaluados en la rama `feature/audio2audio-edit-benchmark`.
 
 ---
 
@@ -587,7 +728,8 @@ Sin condicionamiento de duración. Solo 5 s. Descartado.
 | **MAGNeT** | One-shots / baja latencia | ⏳ Pendiente | Candidato velocidad |
 | **AudioGen** | SFX y texturas de ambiente | ⏳ Pendiente | Candidato sub-flujo FX |
 | Mustango | Control BPM/acordes | ⏳ Pendiente | 2ª iteración si necesario |
-| ACE-Step / InspireMusic | Tema completo (fuera de alcance hoy) | — | Puente a plugin futuro |
+| ACE-Step / InspireMusic | **Edición/continuación** (sesiones E1/E6) | ⏳ Pendiente | Evaluados en subtarea audio2audio |
+| MelodyFlow / ZETA | **Edición** (sesiones E4/E5) | ⏳ Pendiente | Evaluados en subtarea audio2audio |
 | Suno / Udio / Jen-1 / Riffusion | — | ❌ DESCARTADO | Sin pesos / calidad obsoleta |
 
 ### Veredicto provisional: Stable Audio Open 1.0 es el pipeline de referencia

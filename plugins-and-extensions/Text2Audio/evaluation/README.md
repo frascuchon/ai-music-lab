@@ -55,7 +55,29 @@ evaluation/
 ├── stable_audio_open_small/          ← resultados de SAO Small (pendiente)
 ├── musicgen/                         ← resultados de MusicGen (pendiente)
 ├── magnet/                           ← resultados de MAGNeT (pendiente)
-└── audiogen/                         ← resultados de AudioGen (pendiente)
+├── audiogen/                         ← resultados de AudioGen (pendiente)
+├── prompts_edit.json                 ← benchmark audio2audio: sources + 12 casos de edición/continuación
+├── fetch_edit_sources.sh             ← descarga los 5 audios fuente compartidos (gitignored)
+├── compute_metrics_edit.py           ← CLAP_text + CLAP_audio + chroma_corr por modelo/caso
+└── edit/                             ← subtarea edición/versionado audio→audio
+    ├── source_audio/                 ← gitignored (generado por fetch_edit_sources.sh)
+    │   ├── bach.mp3
+    │   ├── bolero_ravel.mp3
+    │   ├── electronic.mp3
+    │   ├── beatbox_loop_90bpm.wav
+    │   └── sao_guitar_loop.wav
+    ├── metrics_edit.json             ← generado por compute_metrics_edit.py
+    ├── acestep15/                    ← resultados ACE-Step 1.5 (sesión E1)
+    │   ├── smoke/
+    │   │   ├── ace_smoke_01_source/output.wav
+    │   │   └── ace_smoke_02_cover/output.wav
+    │   ├── case01_bach_jazz/output.wav
+    │   └── case02_bolero_country/output.wav  … (10 casos)
+    ├── sao_a2a/                      ← resultados SAO 1.0 style transfer (sesión E2)
+    ├── musicgen_melody/              ← resultados MusicGen-melody (sesión E3)
+    ├── melodyflow/                   ← resultados MelodyFlow (sesión E4)
+    ├── zeta_audioldm2/               ← resultados ZETA sobre AudioLDM2 (sesión E5)
+    └── inspiremusic/                 ← resultados InspireMusic continuación (sesión E6)
 ```
 
 ## Cómo comparar modelos
@@ -103,6 +125,43 @@ Observaciones:
 | --- | --- |
 | `prompts.json` | 12 prompts DAW curados (frases en inglés). Usar para SAO 1.0, SAO Small, MusicGen, MAGNeT, AudioGen. |
 | `prompts_official.json` | Prompts extraídos de los demos oficiales de cada modelo. Usar para **smoke test** al inicio de cada sesión. Foundation-1 usa SIEMPRE este archivo (formato de etiquetas, no frases). |
+| `prompts_edit.json` | Benchmark de **edición/versionado audio→audio** (12 casos, 5 fuentes). Lo consumen los 6 scripts `research_*_edit_modal.py` y `compute_metrics_edit.py`. |
+
+## Flujo estándar por sesión de edición (subtarea audio→audio)
+
+```bash
+# ── PASO 0: audios fuente compartidos (una vez) ───────────────────────────
+cd plugins-and-extensions/Text2Audio/evaluation
+bash fetch_edit_sources.sh    # → edit/source_audio/ (5 archivos, gitignored)
+
+
+# ── PASO 1: smoke oficial (condiciones del paper replicadas) ─────────────
+cd ../research
+modal run research_<model>_edit_modal.py::setup   # descarga pesos (una vez)
+modal run research_<model>_edit_modal.py::smoke   # → edit/<model>/smoke/*/output.wav
+# Verificar que el smoke suena coherente con lo documentado en cada script.
+
+
+# ── PASO 2: benchmark completo ─────────────────────────────────────────────
+modal run research_<model>_edit_modal.py::eval_all
+# → edit/<model>/<case_id>/output.wav
+# Solo los casos soportados (cada script filtra por categoría).
+
+
+# ── PASO 3: render + métricas ─────────────────────────────────────────────
+bash render_norm.sh                                   # recursivo, cubre edit/ automáticamente
+uv run python compute_metrics_edit.py                 # CLAP_text + CLAP_audio + chroma
+uv run python compute_metrics_edit.py --only <model>  # solo un modelo
+uv run python compute_metrics_edit.py --no-chroma     # solo CLAP (sin librosa)
+
+
+# ── PASO 4: escucha en REAPER ─────────────────────────────────────────────
+# 1. Abrir REAPER, importar source y output en pistas paralelas:
+#    - edit/source_audio/<src> → pista 1 (referencia)
+#    - edit/<model>/<case_id>/output.mp3 → pista 2 (versión editada)
+# 2. Puntuar Adherencia a la edición / Preservación del tema / Calidad / Usabilidad (0-5)
+# 3. Rellenar notes.txt (plantilla en RESEARCH.md → sección E1–E6)
+```
 
 ## Flujo estándar por sesión (un modelo = una sesión)
 
