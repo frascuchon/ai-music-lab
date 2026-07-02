@@ -13,10 +13,13 @@ Punto de entrada DAW:
   - Licencia: MIT (código) / CC-BY-NC (pesos) — solo investigación hasta decidir integración.
 
 Condiciones oficiales replicadas (verificado 2026-07-02):
-  https://github.com/facebookresearch/audiocraft/blob/main/docs/MUSICGEN.md
+  https://huggingface.co/docs/transformers/main/en/model_doc/musicgen_melody
   https://huggingface.co/facebook/musicgen-melody
-  - API oficial: MusicGen.get_pretrained("facebook/musicgen-melody") +
-    set_generation_params(duration=…, top_k=250) + generate_with_chroma(...).
+  - API oficial (transformers): MusicgenMelodyForConditionalGeneration.from_pretrained() +
+    AutoProcessor + generate(do_sample=True, guidance_scale=3, max_new_tokens=seconds*50).
+  - generate() devuelve audio_values (forma de onda directa, no tokens).
+    Sampling rate de salida: model.config.audio_encoder.sampling_rate (32000 Hz).
+  - Frame rate de EnCodec = 50 Hz → max_new_tokens = int(seconds * 50).
   - Audio de referencia del demo oficial: assets/bach.mp3 (el mismo que descarga
     fetch_edit_sources.sh como src01_bach).
   - Métricas del paper (Copet et al., NeurIPS 2023, MusicCaps): FAD 4.09, CLAP 0.31
@@ -77,16 +80,17 @@ MAX_SECONDS = 30.0  # límite del modelo
 # ---------------------------------------------------------------------------
 # Container image
 # ---------------------------------------------------------------------------
+# transformers implementa MusicgenMelodyForConditionalGeneration con soporte nativo
+# para facebook/musicgen-melody. Evita audiocraft + xformers (que requieren CUDA headers
+# en tiempo de compilación y causaban el blocker en la sesión anterior).
 image = (
     modal.Image.debian_slim(python_version="3.10")
-    # PyAV (dep de audiocraft/encodec) requiere libav headers y pkg-config para compilar.
-    .apt_install([
-        "git", "ffmpeg", "libsndfile1",
-        "pkg-config",
-        "libavformat-dev", "libavdevice-dev", "libavcodec-dev",
-        "libavutil-dev", "libswresample-dev", "libavfilter-dev",
-    ])
-    .pip_install("audiocraft>=1.3.0", "soundfile>=0.12.1")
+    .apt_install(["git", "ffmpeg", "libsndfile1"])
+    .pip_install(
+        "torch", "torchaudio",
+        "transformers>=4.39.0",
+        "soundfile>=0.12.1",
+    )
     .env({
         "HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache",
         "TORCH_HOME": f"{WEIGHTS_MOUNT}/torch-cache",
@@ -106,10 +110,11 @@ def setup(variant: str = DEFAULT_VARIANT):
         modal run research_musicgen_melody_modal.py::setup
     Pesos públicos en HF — sin token.
     """
-    from audiocraft.models import MusicGen
+    from transformers import AutoProcessor, MusicgenMelodyForConditionalGeneration
 
     t0 = time.time()
-    MusicGen.get_pretrained(variant)
+    AutoProcessor.from_pretrained(variant)
+    MusicgenMelodyForConditionalGeneration.from_pretrained(variant)
     print(f"[setup] {variant} descargado y cargado en {time.time()-t0:.0f}s")
     weights_vol.commit()
     print("[setup] Volume commiteado.")
@@ -126,19 +131,20 @@ def generate_batch(
 ) -> list[bytes]:
     """
     Cada job: {"text", "melody_bytes", "seconds"}.
-    Params oficiales del README: top_k=250 (resto por defecto).
-    Returns: list[bytes] WAV mono 32 kHz (b"" si falló).
+    Usa la API oficial de transformers: MusicgenMelodyForConditionalGeneration.
+    Returns: list[bytes] WAV (b"" si falló).
     """
     import io
 
     import soundfile as sf
     import torch
-    import torchaudio
-    from audiocraft.models import MusicGen
+    from transformers import AutoProcessor, MusicgenMelodyForConditionalGeneration
 
     t0 = time.time()
-    model = MusicGen.get_pretrained(variant)
-    weights_vol.commit()  # persistir pesos si el setup no se ejecutó antes
+    processor = AutoProcessor.from_pretrained(variant)
+    model = MusicgenMelodyForConditionalGeneration.from_pretrained(variant)
+    model.to("cuda")
+    sr_out = model.config.audio_encoder.sampling_rate  # 32000 Hz
     print(f"[load_model] {variant} listo ({time.time()-t0:.1f}s)")
 
     results = []
@@ -146,22 +152,36 @@ def generate_batch(
         t0 = time.time()
         try:
             seconds = min(float(job.get("seconds") or 10.0), MAX_SECONDS)
-            model.set_generation_params(duration=seconds, top_k=250)
             torch.manual_seed(seed + i)
 
-            melody, sr = torchaudio.load(io.BytesIO(job["melody_bytes"]))
-            wav = model.generate_with_chroma(
-                descriptions=[job["text"]],
-                melody_wavs=[melody],
-                melody_sample_rate=sr,
+            # Cargar audio de referencia como array mono 1D (lo que espera el processor)
+            melody, sr = sf.read(io.BytesIO(job["melody_bytes"]))
+            if melody.ndim > 1:
+                melody = melody.mean(axis=1)  # stereo → mono
+
+            # API oficial (transformers musicgen_melody):
+            # text debe ser una lista de strings; audio es el array numpy (samples,)
+            inputs = processor(
+                audio=melody,
+                sampling_rate=sr,
+                text=[job["text"]],
+                return_tensors="pt",
+                padding=True,
+            ).to("cuda")
+
+            # generate() devuelve audio_values (forma de onda), NO tokens.
+            # max_new_tokens = seconds × 50 (frame rate de EnCodec, según doc oficial).
+            audio_values = model.generate(
+                **inputs,
+                do_sample=True,
+                guidance_scale=3,
+                max_new_tokens=int(seconds * 50),
             )
-            audio = wav[0].to(torch.float32).cpu()  # (channels, samples)
-            max_val = audio.abs().max()
-            if max_val > 1.0:
-                audio = audio / max_val
+            # audio_values: (batch=1, channels, samples) → primer elemento del batch
+            audio = audio_values[0].cpu().to(torch.float32)  # (channels, samples)
 
             buf = io.BytesIO()
-            sf.write(buf, audio.numpy().T, samplerate=model.sample_rate, format="WAV", subtype="PCM_16")
+            sf.write(buf, audio.numpy().T, samplerate=sr_out, format="WAV", subtype="PCM_16")
             buf.seek(0)
             wav_bytes = buf.read()
             print(
