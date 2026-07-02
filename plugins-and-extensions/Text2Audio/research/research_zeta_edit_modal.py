@@ -100,8 +100,21 @@ image = (
     .apt_install(["git", "ffmpeg", "libsndfile1"])
     .run_commands(f"git clone {REPO_URL} {REPO_DIR}")
     .run_commands(f"pip install -r {REPO_DIR}/requirements.txt")
+    # requirements.txt instala diffusers 0.38.0 + transformers 5.x, incompatibles entre sí.
+    # diffusers 0.27.0 usa cached_download (eliminado de huggingface_hub ≥ 0.24).
+    # diffusers 0.31.0 (Oct 2024) + transformers 4.46.3: sin cached_download y AutoImageProcessor
+    # en su ubicación original. VQModel/UNet2DModel siguen disponibles en 0.31.x.
+    .run_commands("pip install 'diffusers==0.31.0' 'transformers==4.46.3'")
+    # torchaudio >= 2.1 requiere torchcodec para torchaudio.load()
+    .run_commands("pip install torchcodec")
     .pip_install("soundfile>=0.12.1")
-    .env({"HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache"})
+    .env({
+        "HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache",
+        # main_run.py llama wandb.login() a nivel de módulo; WANDB_DISABLED evita el
+        # prompt de autenticación en el contenedor.
+        "WANDB_DISABLED": "true",
+        "WANDB_MODE": "offline",
+    })
 )
 
 app = modal.App("zeta-edit-inference", image=image)
@@ -159,11 +172,19 @@ def generate_batch(jobs: list[dict], model_id: str = DEFAULT_MODEL_ID, seed: int
         workdir = tempfile.mkdtemp(prefix="zeta_")
         try:
             suffix = Path(job.get("source_name", "src.wav")).suffix or ".wav"
-            src_path = os.path.join(workdir, f"source{suffix}")
-            with open(src_path, "wb") as f:
+            # ZETA usa wave.open() (Python stdlib) para get_duration, que solo acepta
+            # RIFF WAV. Convertir siempre a mono 22050 Hz WAV via ffmpeg (instalado).
+            tmp_in = os.path.join(workdir, f"input{suffix}")
+            with open(tmp_in, "wb") as f:
                 f.write(job["source_bytes"])
+            src_path = os.path.join(workdir, "source.wav")
+            subprocess.run(
+                ["ffmpeg", "-i", tmp_in, "-ac", "1", "-ar", "22050", src_path, "-y"],
+                check=True, capture_output=True,
+            )
 
             results_path = os.path.join(workdir, "out")
+            os.makedirs(results_path, exist_ok=True)  # asegurar que el directorio existe
             cfg_src = job.get("cfg_src", DEFAULT_CFG_SRC)
             if "stable-audio" in model_id:
                 cfg_src = 1.0  # recomendación oficial del repo para SAO
@@ -183,18 +204,24 @@ def generate_batch(jobs: list[dict], model_id: str = DEFAULT_MODEL_ID, seed: int
             if job.get("source_prompt"):
                 cmd += ["--source_prompt", job["source_prompt"]]
 
-            print(f"[generate] [{i+1}/{len(jobs)}] {' '.join(cmd[:6])} …")
+            print(f"[generate] [{i+1}/{len(jobs)}] {' '.join(cmd[:8])} …")
             proc = subprocess.run(cmd, cwd=code_dir, capture_output=True, text=True)
             if proc.returncode != 0:
-                raise RuntimeError(f"main_run.py falló:\n{proc.stdout[-1500:]}\n{proc.stderr[-1500:]}")
+                raise RuntimeError(
+                    f"main_run.py falló:\n{proc.stdout[-1500:]}\n{proc.stderr[-1500:]}"
+                )
 
-            # El repo guarda <results_path>/<nested>/cfg_e_*.wav + orig.wav
-            edited = [
-                p for p in Path(results_path).rglob("*.wav")
-                if p.name != "orig.wav"
-            ]
+            # main_run.py antepone './' a results_path (que es un mkdtemp absoluto y único
+            # por job), por lo que el WAV editado cae en:
+            #   code_dir/<results_path_sin_slash_inicial>/…/cfg_e_*.wav
+            # Buscar acotado al subárbol único de este job para evitar contaminación cruzada.
+            nested_root = Path(code_dir) / str(results_path).lstrip("/")
+            edited = [p for p in nested_root.rglob("*.wav") if p.name != "orig.wav"]
             if not edited:
-                raise RuntimeError(f"sin WAV editado en {results_path}")
+                raise RuntimeError(
+                    f"sin WAV editado en {nested_root}.\n"
+                    f"STDOUT:\n{proc.stdout[-2000:]}\nSTDERR:\n{proc.stderr[-2000:]}"
+                )
             edited_path = max(edited, key=lambda p: p.stat().st_mtime)
             wav_bytes = edited_path.read_bytes()
             print(
