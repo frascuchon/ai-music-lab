@@ -79,7 +79,13 @@ MAX_SECONDS = 30.0  # límite del modelo
 # ---------------------------------------------------------------------------
 image = (
     modal.Image.debian_slim(python_version="3.10")
-    .apt_install(["git", "ffmpeg", "libsndfile1"])
+    # PyAV (dep de audiocraft/encodec) requiere libav headers y pkg-config para compilar.
+    .apt_install([
+        "git", "ffmpeg", "libsndfile1",
+        "pkg-config",
+        "libavformat-dev", "libavdevice-dev", "libavcodec-dev",
+        "libavutil-dev", "libswresample-dev", "libavfilter-dev",
+    ])
     .pip_install("audiocraft>=1.3.0", "soundfile>=0.12.1")
     .env({
         "HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache",

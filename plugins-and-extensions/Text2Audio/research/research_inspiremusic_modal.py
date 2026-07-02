@@ -84,7 +84,13 @@ image = (
     modal.Image.debian_slim(python_version="3.10")
     .apt_install(["git", "ffmpeg", "libsndfile1", "sox", "libsox-dev"])
     .run_commands(f"git clone --recursive {REPO_URL} {REPO_DIR}")
-    .run_commands(f"pip install -r {REPO_DIR}/requirements.txt")
+    # flash-attn requiere CUDA headers en build time (no disponibles durante image build).
+    # Se omite de requirements.txt ya que es una optimización opcional, no requerida
+    # para la inferencia de continuación. El resto de dependencias se instala sin cambios.
+    .run_commands(
+        f"grep -v 'flash[_-]attn' {REPO_DIR}/requirements.txt > /tmp/req_im.txt && "
+        "pip install -r /tmp/req_im.txt"
+    )
     .pip_install("soundfile>=0.12.1", "huggingface_hub>=0.24.0")
     .env({
         "HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache",

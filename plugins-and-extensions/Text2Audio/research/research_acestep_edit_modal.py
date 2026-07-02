@@ -85,11 +85,31 @@ STRENGTH_MAP = {"subtle": 0.9, "moderate": 0.7, "strong": 0.4}
 # ---------------------------------------------------------------------------
 # Container image
 # ---------------------------------------------------------------------------
-# ACE-Step 1.5 requiere Python 3.11-3.12 (README). Instalamos el paquete desde git.
+# ACE-Step 1.5 requiere Python 3.11-3.12 (README).
+# Instalamos desde repo clonado, eliminando nano-vllm (paquete interno de StepFun que
+# no existe en PyPI para Linux pero es dependencia de ace-step; solo se necesita para
+# las fases LLM que este script deshabilita explícitamente).
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install(["git", "ffmpeg", "libsndfile1"])
-    .pip_install("git+https://github.com/ace-step/ACE-Step-1.5.git")
+    # Pasos de instalación separados para claridad y para que Modal cachee cada capa:
+    # 1. Clonar repo y filtrar deps incompatibles con el mirror de Modal:
+    #    - nano-vllm: paquete interno de StepFun, no en PyPI; solo necesario para fases LLM
+    #      que este script deshabilita.
+    #    - torch==X.Y+cuNNN: CUDA build custom que no existe en pypi-mirror.modal.local;
+    #      pre-instalamos torch estándar antes.
+    # 2. Pre-instalar torch (satisface la dep antes de que pip intente el cu-build custom).
+    # 3. Instalar ace-step desde el repo local (torch ya satisfecho, nano-vllm eliminado).
+    .run_commands(
+        "git clone --depth 1 https://github.com/ace-step/ACE-Step-1.5.git /root/ACEStep && "
+        # Eliminar deps problemáticas del pyproject.toml antes de instalar:
+        #   +cu<NNN>: pinnings CUDA custom (torch, torchaudio, torchvision) que no existen en
+        #             el mirror de Modal; instalamos torch estándar en el paso siguiente.
+        #   nano-vllm: paquete interno de StepFun no disponible en PyPI; solo para fases LLM.
+        "sed -i '/+cu[0-9]/d; /nano-vllm/d' /root/ACEStep/pyproject.toml"
+    )
+    .pip_install("torch", "torchaudio", "torchvision")  # pre-instalar antes de ace-step
+    .run_commands("pip install /root/ACEStep")
     .pip_install("soundfile>=0.12.1")
     .env({"HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache"})
 )

@@ -92,8 +92,22 @@ STRENGTH_MAP = {"subtle": 0.10, "moderate": 0.05, "strong": 0.0}
 # audiocraft con MelodyFlow instalado desde el Space oficial (repo git de HF).
 image = (
     modal.Image.debian_slim(python_version="3.10")
-    .apt_install(["git", "ffmpeg", "libsndfile1"])
-    .pip_install("git+https://huggingface.co/spaces/facebook/MelodyFlow")
+    # PyAV (dep de audiocraft/encodec) requiere libav headers y pkg-config.
+    # GIT_LFS_SKIP_SMUDGE=1 evita que pip falle al clonar el Space HF que tiene archivos LFS.
+    .apt_install([
+        "git", "ffmpeg", "libsndfile1",
+        "pkg-config",
+        "libavformat-dev", "libavdevice-dev", "libavcodec-dev",
+        "libavutil-dev", "libswresample-dev", "libavfilter-dev",
+    ])
+    # pip install git+<hf_space_url> usa internamente git clone --filter=blob:none que
+    # el servidor git de HF Spaces no soporta (exit 128). Solución: clonar primero
+    # manualmente (sin --filter) e instalar desde la ruta local.
+    # GIT_LFS_SKIP_SMUDGE=1 evita la descarga de archivos LFS del Space.
+    .run_commands(
+        "GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/spaces/facebook/MelodyFlow /root/MelodyFlow && "
+        "pip install /root/MelodyFlow"
+    )
     .pip_install("soundfile>=0.12.1")
     .env({
         "HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache",
