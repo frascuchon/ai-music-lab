@@ -88,7 +88,9 @@ image = (
     .apt_install(["git", "ffmpeg", "libsndfile1"])
     .pip_install(
         "torch", "torchaudio",
-        "transformers>=4.39.0",
+        # Pinear a 4.x: MusicgenMelody fue diseñado para transformers 4.x;
+        # transformers 5.x rompe la API de generate() devolviendo listas en vez de tensores.
+        "transformers>=4.39.0,<5.0",
         "soundfile>=0.12.1",
     )
     .env({
@@ -154,19 +156,25 @@ def generate_batch(
             seconds = min(float(job.get("seconds") or 10.0), MAX_SECONDS)
             torch.manual_seed(seed + i)
 
-            # Cargar audio de referencia como array mono 1D (lo que espera el processor)
-            melody, sr = sf.read(io.BytesIO(job["melody_bytes"]))
-            if melody.ndim > 1:
-                melody = melody.mean(axis=1)  # stereo → mono
+            # Cargar audio de referencia como torch.Tensor (channels, samples).
+            # IMPORTANTE: en transformers ≥ 4.50, processing_utils.py envuelve numpy arrays
+            # en listas antes de dispatchar a la feature extractor, lo que rompe
+            # torchaudio.functional.resample (espera Tensor, no lista). Pasar directamente
+            # como Tensor — idéntico a lo que haría torchaudio.load() en los ejemplos del
+            # model card oficial.
+            melody_np, sr = sf.read(io.BytesIO(job["melody_bytes"]))
+            if melody_np.ndim > 1:
+                melody_np = melody_np.mean(axis=1)  # stereo → mono
+            melody_tensor = torch.from_numpy(melody_np.astype("float32")).unsqueeze(0)
+            # melody_tensor: (1, samples) = (channels, samples) — lo que espera el extractor
 
             # API oficial (transformers musicgen_melody):
-            # text debe ser una lista de strings; audio es el array numpy (samples,)
+            # audio debe ser un Tensor (channels, samples); text lista de strings.
             inputs = processor(
-                audio=melody,
+                audio=melody_tensor,
                 sampling_rate=sr,
                 text=[job["text"]],
                 return_tensors="pt",
-                padding=True,
             ).to("cuda")
 
             # generate() devuelve audio_values (forma de onda), NO tokens.
@@ -190,7 +198,9 @@ def generate_batch(
             )
             results.append(wav_bytes)
         except Exception as exc:
+            import traceback
             print(f"[generate] [{i+1}/{len(jobs)}] ERROR: {exc}")
+            print(traceback.format_exc())
             results.append(b"")
 
     return results
