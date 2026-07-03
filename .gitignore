@@ -3,3 +3,10 @@ __pycache__/
 *.pyc
 stemsep_setup*.txt
 stemsep_setup.log
+
+# ReaPack — índice local generado por serve-reapack-local.sh
+index.local.xml
+
+# Repos clonados para research (demasiado grandes para el repo)
+plugins-and-extensions/MidiGenerator/research/midi_llm_repo/
+plugins-and-extensions/MidiGenerator/research/text2midi/
