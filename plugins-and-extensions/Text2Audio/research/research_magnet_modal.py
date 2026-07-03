@@ -55,8 +55,16 @@ MAX_SECONDS = 30.0
 # Container image
 # ---------------------------------------------------------------------------
 # MAGNeT no está en transformers — usa la librería audiocraft de Facebook.
-# audiocraft requiere compilar av (PyAV) desde fuente → necesita las cabeceras
-# de desarrollo de FFmpeg vía apt.
+#
+# Problema de versiones:
+#   audiocraft pina torch==2.1.0 en su setup.py, lo que downgrade torch si ya
+#   está instalado. Luego transformers (también en deps de audiocraft) requiere
+#   torch>=2.4 en versiones recientes → ImportError en T5EncoderModel.
+#
+# Solución: dejar que audiocraft instale torch==2.1.0, luego hacer upgrade
+#   de torch a la versión actual de Modal (>=2.4). audiocraft funciona en
+#   runtime con torch más nuevo; xformers (ligado a 2.1.0) puede dar warning
+#   pero MAGNeT no lo usa para la generación de audio.
 image = (
     modal.Image.debian_slim(python_version="3.10")
     .apt_install([
@@ -64,8 +72,10 @@ image = (
         "libavcodec-dev", "libavformat-dev", "libavdevice-dev",
         "libavutil-dev", "libswscale-dev", "libswresample-dev",
     ])
-    .pip_install("torch", "torchaudio")
+    # 1. audiocraft instala torch==2.1.0 + xformers==0.0.22 + resto de deps
     .pip_install("audiocraft")
+    # 2. Upgrade torch a versión actual (satisface transformers >=2.4 requirement)
+    .run_commands("pip install --upgrade torch torchaudio torchvision")
     .pip_install("soundfile>=0.12.1")
     .env({
         "HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache",
