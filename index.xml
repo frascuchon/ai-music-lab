@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ReaPack repository index for REAPER AI Plugins.
+
+  To use this repository in ReaPack:
+    Extensions → ReaPack → Manage repositories → Import a repository
+    URL: https://raw.githubusercontent.com/USER/REPO/main/index.xml
+
+  To regenerate this index after updates, install reapack-index and run:
+    reapack-index --output index.xml --url https://raw.githubusercontent.com/USER/REPO/main
+
+  Script source URLs follow the pattern:
+    https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/...
+  Replace USER/REPO with your actual GitHub username and repository name.
+-->
+<index version="1" name="REAPER AI Plugins" commit="50f01171a9e208c481ba9cd4a1e1a5ffecf91b5a">
+
+  <category name="reaper-ai-plugins">
+
+    <!-- ── Shared Library (required by all other plugins) ── -->
+    <reapack name="reaper-ai-plugins-shared" type="script"
+             desc="Shared library for REAPER AI Plugins">
+      <metadata>
+        <description><![CDATA[Common UI widgets, theme, and setup helpers shared by all REAPER AI Plugins.
+
+This package is installed automatically as a dependency when you install any of the AI plugins. It provides:
+  · Native gfx widget toolkit (gui.lua, widgets_extra.lua, theme.lua)
+  · Common utilities (common.lua)
+  · Setup wizard (Setup.lua) with uv + Modal configuration
+  · Python dependency manifest (pyproject.toml)]]></description>
+      </metadata>
+      <version name="1.0.0" author="IAClaude" time="2026-07-03T00:00:00Z">
+        <changelog><![CDATA[Initial release]]></changelog>
+        <source file="reaper-ai-plugins/shared/Setup.lua">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/shared/Setup.lua</source>
+        <source file="reaper-ai-plugins/shared/setup_helpers.py">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/shared/setup_helpers.py</source>
+        <source file="reaper-ai-plugins/shared/pyproject.toml">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/shared/pyproject.toml</source>
+        <source file="reaper-ai-plugins/shared/lib/common.lua">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/shared/lib/common.lua</source>
+        <source file="reaper-ai-plugins/shared/lib/gui.lua">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/shared/lib/gui.lua</source>
+        <source file="reaper-ai-plugins/shared/lib/theme.lua">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/shared/lib/theme.lua</source>
+        <source file="reaper-ai-plugins/shared/lib/widgets_extra.lua">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/shared/lib/widgets_extra.lua</source>
+      </version>
+    </reapack>
+
+    <!-- ── Audio2Midi ── -->
+    <reapack name="Audio2Midi" type="script"
+             desc="Audio to MIDI transcription with AI (MIROS, YourMT3+)">
+      <metadata>
+        <description><![CDATA[Transcribe un track, item o sección de audio a MIDI usando modelos de IA en la nube (Modal). Soporta MIROS y YourMT3+.
+
+Input: pista, item o split (sección) seleccionado en REAPER.
+Output: una pista MIDI nueva (mono-instrumento) o carpeta de pistas (multi-instrumento), insertadas en la posición del audio fuente.
+UI nativa gfx: sin dependencias externas de extensiones REAPER.
+
+Requirements: Python 3.11+, uv, Modal account (free tier sufficient)]]></description>
+        <link rel="website">https://github.com/USER/REPO</link>
+      </metadata>
+      <version name="1.0.0" author="IAClaude" time="2026-07-03T00:00:00Z">
+        <changelog><![CDATA[Initial release — MIROS beat-tracking + YourMT3+ multi-instrument]]></changelog>
+        <source file="reaper-ai-plugins/Audio2Midi/Audio2Midi.lua">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/Audio2Midi/Audio2Midi.lua</source>
+        <source file="reaper-ai-plugins/Audio2Midi/transcribe.py">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/Audio2Midi/transcribe.py</source>
+        <dependency name="reaper-ai-plugins-shared" type="script"/>
+      </version>
+    </reapack>
+
+    <!-- ── MidiGenerator ── -->
+    <reapack name="MidiGenerator" type="script"
+             desc="MIDI generation from text or seed MIDI with AI (6 models)">
+      <metadata>
+        <description><![CDATA[Genera MIDI desde texto o seed MIDI usando 6 modelos evaluados en la nube (Modal CUDA).
+
+Modelos disponibles:
+  · Amadeus — mejor instrumentación general
+  · text2midi — generación desde descripción de texto
+  · MIDI-LLM — LLM especializado en MIDI
+  · ChatMusician — notación ABC vía LLM
+  · MuseCoco — control simbólico de atributos
+  · Anticipatory MT — acompañamiento y continuación desde seed
+
+UI nativa gfx; sin dependencias de extensiones REAPER.
+
+Requirements: Python 3.11+, uv, Modal account]]></description>
+        <link rel="website">https://github.com/USER/REPO</link>
+      </metadata>
+      <version name="1.0.0" author="IAClaude" time="2026-07-03T00:00:00Z">
+        <changelog><![CDATA[Initial release — 6 evaluated MIDI generation models]]></changelog>
+        <source file="reaper-ai-plugins/MidiGenerator/MidiGenerator.lua">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/MidiGenerator/MidiGenerator.lua</source>
+        <source file="reaper-ai-plugins/MidiGenerator/midigen.py">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/MidiGenerator/midigen.py</source>
+        <source file="reaper-ai-plugins/MidiGenerator/prompt_adapters.py">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/MidiGenerator/prompt_adapters.py</source>
+        <dependency name="reaper-ai-plugins-shared" type="script"/>
+      </version>
+    </reapack>
+
+    <!-- ── Text2Audio ── -->
+    <reapack name="Text2Audio" type="script"
+             desc="Text to audio generation and audio editing with AI (8+ models)">
+      <metadata>
+        <description><![CDATA[Genera audio desde texto o edita un audio existente usando modelos de IA en la nube (Modal). Dos modos:
+
+Generar (texto → WAV estéreo):
+  · SAO 1.0 (top CLAP score), Foundation-1, ACE-Step 1.5
+  · InspireMusic, Mustango, AudioGen, MusicGen, MAGNeT
+
+Editar (audio + intención → WAV transformado):
+  · SAO style transfer, ACE-Step 1.5, MusicGen-melody
+  · MelodyFlow, ZETA/AudioLDM2, InspireMusic continuation
+
+Input edición: pista, item o split (sección) seleccionado en REAPER.
+Output: pista de audio nueva con el WAV generado.
+UI nativa gfx: sin dependencias externas.
+
+Requirements: Python 3.11+, uv, Modal account]]></description>
+        <link rel="website">https://github.com/USER/REPO</link>
+      </metadata>
+      <version name="1.1.0" author="IAClaude" time="2026-07-03T00:00:00Z">
+        <changelog><![CDATA[Generate and Edit modes with 8+ models; native gfx UI]]></changelog>
+        <source file="reaper-ai-plugins/Text2Audio/Text2Audio.lua">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/Text2Audio/Text2Audio.lua</source>
+        <source file="reaper-ai-plugins/Text2Audio/text2audio.py">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/Text2Audio/text2audio.py</source>
+        <dependency name="reaper-ai-plugins-shared" type="script"/>
+      </version>
+    </reapack>
+
+    <!-- ── StemsSeparator ── -->
+    <reapack name="StemsSeparator" type="script"
+             desc="Stem separation with Demucs (local) and SAM Audio (cloud)">
+      <metadata>
+        <description><![CDATA[Separación de stems con Demucs (local) y SAM Audio (Modal cloud).
+
+Modos:
+  · Demucs — separación local en CPU/GPU (vocals, bass, drums, other)
+  · SAM Audio — separación en la nube con modelos avanzados (Modal)
+
+Input: pista, item o split (sección) seleccionada en REAPER.
+Output: pistas de audio separadas insertadas en el proyecto.
+UI nativa gfx: sin dependencias externas de extensiones REAPER.
+
+Requirements: Python 3.11+, uv
+For SAM Audio mode: Modal account]]></description>
+        <link rel="website">https://github.com/USER/REPO</link>
+      </metadata>
+      <version name="3.0.0" author="IAClaude" time="2026-07-03T00:00:00Z">
+        <changelog><![CDATA[Native gfx UI — no external extension dependencies; Demucs local + SAM Audio cloud]]></changelog>
+        <source file="reaper-ai-plugins/StemsSeparator/StemSeparator.lua">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/StemsSeparator/StemSeparator.lua</source>
+        <source file="reaper-ai-plugins/StemsSeparator/separate_demucs.py">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/StemsSeparator/separate_demucs.py</source>
+        <source file="reaper-ai-plugins/StemsSeparator/separate_sam.py">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/StemsSeparator/separate_sam.py</source>
+        <source file="reaper-ai-plugins/StemsSeparator/modal_sam_audio.py">https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/StemsSeparator/modal_sam_audio.py</source>
+        <dependency name="reaper-ai-plugins-shared" type="script"/>
+      </version>
+    </reapack>
+
+  </category>
+
+</index>
