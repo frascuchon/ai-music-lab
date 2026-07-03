@@ -487,8 +487,7 @@ local function loop()
     g.text_disabled("Describe el audio: instrumento, BPM, género, duración, tonalidad...")
     g.spacing()
 
-    local changed_p, new_p = widgets.input_textarea("##gen_prompt", S.prompt,
-      { height = t.sc(72) })
+    local changed_p, new_p = widgets.input_textarea("##gen_prompt", S.prompt, 4)
     if changed_p then S.prompt = new_p end
 
     -- Hint Foundation-1
@@ -567,8 +566,7 @@ local function loop()
     g.text_disabled("Describe cómo transformar el audio (ej. 'versión jazz con piano')")
     g.spacing()
 
-    local changed_ep, new_ep = widgets.input_textarea("##edit_prompt", S.edit_prompt,
-      { height = t.sc(60) })
+    local changed_ep, new_ep = widgets.input_textarea("##edit_prompt", S.edit_prompt, 3)
     if changed_ep then S.edit_prompt = new_ep end
     g.spacing()
 
