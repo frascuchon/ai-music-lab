@@ -1,6 +1,6 @@
--- @description Text2Audio — Generación y edición de audio con IA
+-- @description AI Music Lab - Text2Audio — Generación y edición de audio con IA
 -- @version 1.1
--- @author IAClaude
+-- @author AI Music Lab
 -- @about Genera audio desde texto o edita un audio existente usando modelos de IA
 --        en la nube (Modal). Dos modos:
 --          · Generar: prompt de texto → WAV estéreo

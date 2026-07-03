@@ -1,6 +1,6 @@
--- @description Stem Separator - Demucs + SAM Audio
+-- @description AI Music Lab - Stem Separator — Demucs + SAM Audio
 -- @version 3.0
--- @author IAClaude
+-- @author AI Music Lab
 -- @about Separacion de stems con Demucs (local) y SAM Audio (Modal cloud).
 --        UI nativa gfx: sin dependencias externas de extensiones REAPER.
 

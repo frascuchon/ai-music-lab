@@ -1,6 +1,6 @@
--- @description MidiGenerator — Generación de MIDI con IA
+-- @description AI Music Lab - MidiGenerator — Generación de MIDI con IA
 -- @version 1.0
--- @author IAClaude
+-- @author AI Music Lab
 -- @about Genera MIDI desde texto o seed MIDI usando 6 modelos evaluados en la nube
 --        (Modal CUDA). Soporta: Amadeus, MIDI-LLM, text2midi, ChatMusician,
 --        MuseCoco, y Anticipatory (acompañamiento/continuación).

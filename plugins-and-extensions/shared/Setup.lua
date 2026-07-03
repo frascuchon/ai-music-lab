@@ -1,6 +1,6 @@
--- @description REAPER AI Plugins — Configuración global
+-- @description AI Music Lab - Setup — Configuración global
 -- @version 1.0
--- @author IAClaude
+-- @author AI Music Lab
 -- @about Wizard de configuración global para todos los plugins REAPER AI.
 --        Gestiona el entorno común (uv, Modal) y los extras de cada plugin
 --        (StemsSeparator: demucs, HF secret, SAM prewarm;

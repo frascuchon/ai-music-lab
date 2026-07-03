@@ -1,6 +1,6 @@
--- @description Audio2Midi — Transcripción de audio a MIDI
+-- @description AI Music Lab - Audio2Midi — Transcripción de audio a MIDI
 -- @version 1.0
--- @author IAClaude
+-- @author AI Music Lab
 -- @about Transcribe un track, item o sección de audio a MIDI usando modelos
 --        de IA en la nube (Modal). Soporta MIROS y YourMT3+.
 --        Input: pista, item o split (sección) seleccionado en REAPER.
