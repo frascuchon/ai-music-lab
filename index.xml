@@ -13,9 +13,9 @@
     https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/...
   Replace USER/REPO with your actual GitHub username and repository name.
 -->
-<index version="1" name="REAPER AI Plugins" commit="50f01171a9e208c481ba9cd4a1e1a5ffecf91b5a">
+<index version="1" name="reaper-ai-plugins" commit="50f01171a9e208c481ba9cd4a1e1a5ffecf91b5a">
 
-  <category name="reaper-ai-plugins">
+  <category name="scripts">
 
     <!-- ── Shared Library (required by all other plugins) ── -->
     <reapack name="reaper-ai-plugins-shared" type="script"
