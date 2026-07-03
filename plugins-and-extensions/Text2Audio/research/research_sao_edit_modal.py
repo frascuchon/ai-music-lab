@@ -101,7 +101,12 @@ image = (
         "stable-audio-tools>=0.0.16",
         "soundfile>=0.12.1",
         "huggingface_hub>=0.24.0",
+        # stable-audio-tools/models/lora/callbacks.py require pytorch_lightning
+        "pytorch_lightning>=2.0.0",
     )
+    # torch==2.4.0 fue compilado contra numpy 1.x; stable-audio-tools instala numpy 2.x →
+    # "numpy.dtype size changed" en runtime. Downgrade en paso separado para no deshacer torch.
+    .run_commands("pip install 'numpy<2.0'")
 )
 
 app = modal.App("stable-audio-open-a2a-inference", image=image)

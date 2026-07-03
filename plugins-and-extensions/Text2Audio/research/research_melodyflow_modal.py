@@ -121,6 +121,21 @@ app = modal.App("melodyflow-edit-inference", image=image)
 # ---------------------------------------------------------------------------
 # Setup — descarga pesos al Volume
 # ---------------------------------------------------------------------------
+def _patch_torch_load_weights_only():
+    """
+    Torch ≥ 2.6 usa weights_only=True por defecto en torch.load, lo que rechaza los
+    tipos omegaconf serializados en los checkpoints de audiocraft/MelodyFlow.
+    Monkey-patch a weights_only=False (seguro porque los checkpoints son de Meta/HF).
+    Más robusto que enumerar todos los tipos omegaconf necesarios.
+    """
+    import torch
+    _orig = torch.load
+    def _load(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return _orig(*args, **kwargs)
+    torch.load = _load
+
+
 @app.function(volumes={WEIGHTS_MOUNT: weights_vol}, gpu=DEFAULT_GPU, timeout=3600)
 def setup():
     """
@@ -128,6 +143,7 @@ def setup():
         modal run research_melodyflow_modal.py::setup
     Pesos públicos en HF — sin token.
     """
+    _patch_torch_load_weights_only()
     from audiocraft.models import MelodyFlow
 
     t0 = time.time()
@@ -155,6 +171,7 @@ def generate_batch(jobs: list[dict], seed: int = DEFAULT_SEED) -> list[bytes]:
     from audiocraft.data.audio_utils import convert_audio
     from audiocraft.models import MelodyFlow
 
+    _patch_torch_load_weights_only()
     t0 = time.time()
     model = MelodyFlow.get_pretrained(MODEL_ID)
     weights_vol.commit()  # persistir pesos si el setup no se ejecutó antes

@@ -92,6 +92,17 @@ image = (
         "pip install -r /tmp/req_im.txt"
     )
     .pip_install("soundfile>=0.12.1", "huggingface_hub>=0.24.0")
+    # torchaudio >= 2.1 requiere torchcodec para torchaudio.load()
+    .run_commands("pip install torchcodec")
+    # requirements.txt instala peft==0.13.2 pero inspiremusic/flow/flow_matching.py requiere
+    # peft>=0.17.0. Upgrade en paso separado.
+    .run_commands("pip install 'peft>=0.17.0'")
+    # qwen_encoder.py usa flash_attention_2 (hardcodeado); flash_attn no se puede compilar
+    # sin CUDA headers. Reemplazar por 'sdpa' (Scaled Dot Product, nativo en PyTorch ≥ 2.0).
+    .run_commands(
+        f"sed -i 's/attn_implementation=\"flash_attention_2\"/attn_implementation=\"sdpa\"/g'"
+        f" {REPO_DIR}/inspiremusic/transformer/qwen_encoder.py"
+    )
     .env({
         "HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache",
         "PYTHONPATH": f"{REPO_DIR}:{REPO_DIR}/third_party/Matcha-TTS",
@@ -141,9 +152,29 @@ def generate_batch(jobs: list[dict], seed: int = DEFAULT_SEED) -> list[bytes]:
 
     import torch
 
+    import torchaudio
+    # torchaudio >= 2.1 eliminó set_audio_backend (fue deprecated en 0.12).
+    # inspiremusic/dataset/processor.py la llama en module-level.
+    if not hasattr(torchaudio, "set_audio_backend"):
+        torchaudio.set_audio_backend = lambda *a, **kw: None
+
     from inspiremusic.cli.inference import InspireMusicModel, env_variables
 
     env_variables()
+
+    # El YAML del modelo usa `../../pretrained_models/<MODEL_NAME>/` como ruta del Qwen
+    # encoder — ruta relativa que transformers.from_pretrained() resuelve desde el CWD,
+    # que en Modal es / o /root/, no el directorio del YAML.
+    # Fix: parchear los .yaml del modelo para usar la ruta absoluta en el Volume.
+    model_dir_path = Path(MODEL_LOCAL_DIR)
+    for yaml_path in model_dir_path.glob("*.yaml"):
+        content = yaml_path.read_text()
+        rel_ref = f"../../pretrained_models/{MODEL_NAME}/"
+        if rel_ref in content:
+            content = content.replace(rel_ref, f"{MODEL_LOCAL_DIR}/")
+            yaml_path.write_text(content)
+            print(f"[patch] {yaml_path.name}: rutas relativas → absolutas")
+
     t0 = time.time()
     result_dir = tempfile.mkdtemp(prefix="inspiremusic_out_")
     model = InspireMusicModel(
