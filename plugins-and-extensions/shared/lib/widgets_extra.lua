@@ -35,8 +35,9 @@ function M.tab_bar(id, active_idx, tabs)
     local tx = x + off_x
     local tw = tab_widths[i]
     local is_active = (i == active_idx)
+    local scy_tab = y + ctx.clip_y_off
     local hover = ctx.mx >= tx and ctx.mx < tx + tw
-               and ctx.my >= y and ctx.my < y + tab_h
+               and ctx.my >= scy_tab and ctx.my < scy_tab + tab_h
                and ctx.disabled_depth == 0 and not ctx.popup
 
     if hover and ctx.mb == 1 and ctx.mb_prev == 0 then
@@ -88,8 +89,9 @@ function M.collapsing_header(label, default_open)
   end
   local is_open = ctx.state[sid]
 
+  local scy_hdr = y + ctx.clip_y_off
   local hover = ctx.mx >= x and ctx.mx < x + w
-             and ctx.my >= y and ctx.my < y + h
+             and ctx.my >= scy_hdr and ctx.my < scy_hdr + h
              and ctx.disabled_depth == 0
 
   if hover and ctx.mb == 1 and ctx.mb_prev == 0 then
@@ -148,8 +150,9 @@ function M.combo(id, idx, items)
 
   local a = ctx.disabled_depth > 0 and 0.38 or 1.0
   local popup_mine = ctx.popup and ctx.popup.id == id
+  local scy = y + ctx.clip_y_off
   local hover = ctx.mx >= x and ctx.mx < x+w
-             and ctx.my >= y and ctx.my < y+h
+             and ctx.my >= scy and ctx.my < scy+h
              and ctx.disabled_depth == 0
 
   -- Background
@@ -180,8 +183,8 @@ function M.combo(id, idx, items)
     local item_h = h + 2
     local pad_y  = 4
     local p_h    = #items * item_h + 2 * pad_y
-    local p_y    = y + h + 2
-    if p_y + p_h > gfx.h - 4 then p_y = y - p_h - 2 end
+    local p_y    = scy + h + 2  -- scy is already screen Y
+    if p_y + p_h > gfx.h - 4 then p_y = scy - p_h - 2 end
     ctx.popup = {
       id      = id,
       x       = x, y = p_y, w = w, h = p_h,

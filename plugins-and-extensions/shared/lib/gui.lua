@@ -72,7 +72,8 @@ local function af()
 end
 
 local function in_rect(x, y, w, h)
-  return ctx.mx >= x and ctx.mx < x+w and ctx.my >= y and ctx.my < y+h
+  local scy = y + ctx.clip_y_off  -- convert logical Y to screen Y (clip_y_off=0 outside scroll regions)
+  return ctx.mx >= x and ctx.mx < x+w and ctx.my >= scy and ctx.my < scy+h
 end
 
 local function just_clicked()
@@ -385,7 +386,7 @@ function M.button(label, w, h, opts)
 
   local x, y = ctx.x, ctx.y
   local a = af()
-  local hover   = in_rect(x, y, w, h) and ctx.disabled_depth == 0 and not ctx.popup
+  local hover   = in_rect(x, y, w, h) and not clipped(y, h) and ctx.disabled_depth == 0 and not ctx.popup
   local pressed = hover and ctx.mb == 1
   local clicked = hover and just_clicked()
 
@@ -430,7 +431,7 @@ function M.checkbox(label, value)
   local w = bs + 6 + lw
 
   local a = af()
-  local hover   = in_rect(x, y, w, h) and ctx.disabled_depth == 0 and not ctx.popup
+  local hover   = in_rect(x, y, w, h) and not clipped(y, h) and ctx.disabled_depth == 0 and not ctx.popup
   local clicked = hover and just_clicked()
 
   if not clipped(y, h) then
@@ -516,7 +517,7 @@ local function draw_slider(id, val, vmin, vmax, fmt, is_int)
   local grab_w, grab_h = t.SLIDER_GRAB_W, t.SLIDER_GRAB_H
 
   local a = af()
-  local hover = in_rect(x, y, w, h) and ctx.disabled_depth == 0 and not ctx.popup
+  local hover = in_rect(x, y, w, h) and not clipped(y, h) and ctx.disabled_depth == 0 and not ctx.popup
 
   if hover and ctx.mb == 1 then ctx.active_id = id end
   local is_active = (ctx.active_id == id) and ctx.mb == 1
