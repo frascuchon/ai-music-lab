@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Backend CLI para MidiGenerator.lua — genera MIDI vía Modal cloud.
+"""Backend CLI for MidiGenerator.lua — generates MIDI via Modal cloud.
 
-Llamado por MidiGenerator.lua como proceso en background:
+Called by MidiGenerator.lua as a background process:
 
     python3 midigen.py
         --shared-dir <shared/>
         --script     <research_*_modal.py>
-        --model      <clave-modelo>
-        --out-dir    <directorio-salida>
-        --progress   <archivo-progreso>
-        [--prompt    <texto-libre>]
-        [--field-key <tonalidad>]  [--field-bpm <BPM>]
-        [--field-instruments <lista>]  [--field-chords <acordes>]
+        --model      <model-key>
+        --out-dir    <output-directory>
+        --progress   <progress-file>
+        [--prompt    <free-text>]
+        [--field-key <key>]  [--field-bpm <BPM>]
+        [--field-instruments <list>]  [--field-chords <chords>]
         [--n-outputs <1-4>]
         [--temperature <float>]
         [--gpu   <A10G|A100|T4|L4>]
         [--force]
-        # Solo para ChatMusician con armonización:
-        [--seed-file  <ruta.mid>]
-        # Solo para Anticipatory (AMT):
-        [--seed       <ruta.mid>]
+        # ChatMusician with harmonization only:
+        [--seed-file  <path.mid>]
+        # Anticipatory (AMT) only:
+        [--seed       <path.mid>]
         [--mode       <accompaniment|continuation>]
         [--prompt-length   <int>]
         [--clip-length     <int>]
@@ -28,26 +28,26 @@ Llamado por MidiGenerator.lua como proceso en background:
         [--multiplicity    <int>]
         [--melody-instrument <int>]
 
-Protocolo de progreso (--progress):
+Progress protocol (--progress):
     state|pct|msg\\n          state = running | done | error
-    [extra-lines]             rutas .mid + "INSTRUMENTS|n"
+    [extra-lines]             .mid paths + "INSTRUMENTS|n"
 
-Contratos de entrypoint por modelo (verificados en research_*_modal.py)
-------------------------------------------------------------------------
+Model entrypoint contracts (verified in research_*_modal.py)
+-------------------------------------------------------------
 text_dir  (amadeus, midi_llm, text2midi, chatmusician):
     ::main --prompt … --out-dir … [--n-outputs] [--temperature] [--gpu] [--force]
-    Salida: generated_cuda_v*.mid  (glob en out-dir)
+    Output: generated_cuda_v*.mid  (glob in out-dir)
 
 text_file (musecoco):
     ::main --prompt … --out <out-dir>/generated.mid [--n-samples] [--instruments "0,5"]
-    Salida: generated.mid (n=1) o generated.mid + generated_2.mid … (n>1)
+    Output: generated.mid (n=1) or generated.mid + generated_2.mid … (n>1)
 
 seed_file (anticipatory):
     ::main --input <seed.mid> --out <out-dir>/generated.mid
            --mode <accompaniment|continuation> --gpu …
            [--prompt-length] [--clip-length] [--top-p]
            [--multiplicity] [--melody-instrument]
-    Salida: generated.mid (mult=1) o generated_v0.mid … generated_v{N-1}.mid (mult>1)
+    Output: generated.mid (mult=1) or generated_v0.mid … generated_v{N-1}.mid (mult>1)
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Importar adaptadores (mismo directorio)
+# Import adapters (same directory)
 # ---------------------------------------------------------------------------
 _THIS_DIR = Path(__file__).parent
 sys.path.insert(0, str(_THIS_DIR))
@@ -68,7 +68,7 @@ from prompt_adapters import adapt, instruments_to_classids  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Qué tipo de contrato tiene cada modelo
+# Model contract type per model key
 # ---------------------------------------------------------------------------
 _MODEL_KIND: dict[str, str] = {
     "amadeus":      "text_dir",
@@ -79,15 +79,15 @@ _MODEL_KIND: dict[str, str] = {
     "anticipatory": "seed_file",
 }
 
-# Modelos cuyo ::main acepta --gpu (los demás lo ignoran)
+# Models whose ::main accepts --gpu (others ignore it)
 _SUPPORTS_GPU = {"midi_llm", "anticipatory"}
 
-# Modelos text_dir que aceptan --force (midi_llm no lo tiene)
+# text_dir models that accept --force (midi_llm does not)
 _SUPPORTS_FORCE = {"amadeus", "text2midi", "chatmusician"}
 
 
 # ---------------------------------------------------------------------------
-# Protocolo de progreso
+# Progress protocol
 # ---------------------------------------------------------------------------
 
 def write_progress(path: str, state: str, pct: float, msg: str,
@@ -117,7 +117,7 @@ def _find_uv() -> Path | None:
 
 
 def count_instruments(mid_path: Path) -> int:
-    """Cuenta instrumentos MIDI no vacíos; devuelve -1 si pretty_midi no está."""
+    """Count non-empty MIDI instruments; returns -1 if pretty_midi is unavailable."""
     try:
         import pretty_midi
         pm = pretty_midi.PrettyMIDI(str(mid_path))
@@ -127,16 +127,16 @@ def count_instruments(mid_path: Path) -> int:
 
 
 def _collect_outputs(out_dir: Path) -> list[Path]:
-    """Recoge todos los .mid generados en out_dir, ordenados.
-    Filtra ficheros demasiado pequeños (< 64 bytes) que suelen ser MIDIs
-    vacíos o inválidos producidos cuando el modelo genera texto en lugar de ABC.
-    Para AMT (seed_file), espera el patrón generated*.mid."""
+    """Collect all generated .mid files in out_dir, sorted.
+    Filters files that are too small (< 64 bytes) — usually empty or invalid
+    MIDIs produced when the model generates text instead of ABC notation.
+    For AMT (seed_file), expects the generated*.mid pattern."""
     mids = [m for m in sorted(out_dir.glob("*.mid")) if m.stat().st_size >= 64]
     return mids
 
 
 # ---------------------------------------------------------------------------
-# Construcción del comando modal run por modelo
+# Build modal run command per model
 # ---------------------------------------------------------------------------
 
 def _build_cmd(
@@ -148,7 +148,7 @@ def _build_cmd(
     adapted_prompt: str,
     instruments_str: str,
 ) -> list[str]:
-    """Devuelve la lista de tokens del comando modal run a ejecutar."""
+    """Return the token list for the modal run command to execute."""
 
     model = args.model.lower()
     kind  = _MODEL_KIND.get(model, "text_dir")
@@ -169,10 +169,10 @@ def _build_cmd(
             cmd += ["--force"]
         if model == "midi_llm" and args.gpu:
             cmd += ["--gpu", args.gpu]
-        # AMT (anticipatory) también acepta --gpu
+        # AMT (anticipatory) also accepts --gpu
         if model == "anticipatory" and args.gpu:
             cmd += ["--gpu", args.gpu]
-        # ChatMusician: seed opcional para armonización
+        # ChatMusician: optional seed for harmonization
         if model == "chatmusician" and args.seed_file and Path(args.seed_file).exists():
             cmd += ["--input-file", args.seed_file]
 
@@ -189,8 +189,8 @@ def _build_cmd(
     elif kind == "seed_file":
         if not args.seed or not Path(args.seed).exists():
             raise FileNotFoundError(
-                f"Anticipatory requiere un seed MIDI (--seed). "
-                f"Ruta especificada: {args.seed!r}"
+                f"Anticipatory requires a seed MIDI (--seed). "
+                f"Specified path: {args.seed!r}"
             )
         out_path = out_dir / "generated.mid"
         cmd = base + [
@@ -203,14 +203,14 @@ def _build_cmd(
             "--multiplicity",   str(args.n_outputs),
             "--melody-instrument", str(args.melody_instrument),
         ]
-        # continuation usa --duration, accompaniment usa --clip-length
+        # continuation uses --duration, accompaniment uses --clip-length
         if args.mode == "continuation":
             cmd += ["--duration", str(args.clip_length)]
         else:
             cmd += ["--clip-length", str(args.clip_length)]
 
     else:
-        raise ValueError(f"Tipo de contrato desconocido: {kind!r}")
+        raise ValueError(f"Unknown contract type: {kind!r}")
 
     return cmd
 
@@ -221,32 +221,32 @@ def _build_cmd(
 
 def main() -> int:
     p = argparse.ArgumentParser(
-        description="Genera MIDI vía Modal cloud (MidiGenerator.lua backend)."
+        description="Generate MIDI via Modal cloud (MidiGenerator.lua backend)."
     )
-    # Infraestructura
+    # Infrastructure
     p.add_argument("--shared-dir", required=True, dest="shared_dir")
     p.add_argument("--script",     required=True)
     p.add_argument("--model",      required=True)
     p.add_argument("--out-dir",    required=True, dest="out_dir")
     p.add_argument("--progress",   default="")
 
-    # Prompt y campos opcionales (para adaptadores MidiCaps)
+    # Prompt and optional fields (for MidiCaps adapters)
     p.add_argument("--prompt",             default="")
     p.add_argument("--field-key",          default="", dest="field_key")
     p.add_argument("--field-bpm",          default="", dest="field_bpm")
     p.add_argument("--field-instruments",  default="", dest="field_instruments")
     p.add_argument("--field-chords",       default="", dest="field_chords")
 
-    # Parámetros comunes de generación
+    # Common generation parameters
     p.add_argument("--n-outputs",   type=int,   default=2,   dest="n_outputs")
     p.add_argument("--temperature", type=float, default=1.0)
     p.add_argument("--gpu",         default="A10G")
     p.add_argument("--force",       action="store_true")
 
-    # ChatMusician: seed opcional para armonización
+    # ChatMusician: optional seed for harmonization
     p.add_argument("--seed-file", default="", dest="seed_file")
 
-    # Anticipatory (AMT): seed + parámetros de modo
+    # Anticipatory (AMT): seed + mode parameters
     p.add_argument("--seed",             default="")
     p.add_argument("--mode",             default="accompaniment")
     p.add_argument("--prompt-length",    type=int,   default=5, dest="prompt_length")
@@ -262,45 +262,45 @@ def main() -> int:
     script_path = Path(args.script)
     out_dir     = Path(args.out_dir)
 
-    write_progress(pf, "running", 0.02, "Preparando generación MIDI...")
+    write_progress(pf, "running", 0.02, "Preparing MIDI generation...")
 
-    # --- Validaciones básicas -----------------------------------------------
+    # --- Basic validations ---------------------------------------------------
     if not script_path.exists():
         write_progress(pf, "error", 0,
-                       f"Script Modal no encontrado: {script_path}")
+                       f"Modal script not found: {script_path}")
         return 1
     if not (shared_dir / "pyproject.toml").exists():
         write_progress(pf, "error", 0,
-                       f"shared/pyproject.toml no encontrado en: {shared_dir}")
+                       f"shared/pyproject.toml not found at: {shared_dir}")
         return 1
 
     kind = _MODEL_KIND.get(model_key)
     if kind is None:
-        write_progress(pf, "error", 0, f"Modelo desconocido: {model_key!r}")
+        write_progress(pf, "error", 0, f"Unknown model: {model_key!r}")
         return 1
 
     if kind in ("text_dir", "text_file") and not args.prompt.strip():
         write_progress(pf, "error", 0,
-                       "Este modelo requiere un prompt de texto (--prompt).")
+                       "This model requires a text prompt (--prompt).")
         return 1
 
     if kind == "seed_file" and not args.seed:
         write_progress(pf, "error", 0,
-                       "Anticipatory requiere un seed MIDI (selecciona un item "
-                       "MIDI en REAPER o elige un fichero .mid).")
+                       "Anticipatory requires a seed MIDI (select a MIDI item "
+                       "in REAPER or choose a .mid file).")
         return 1
 
-    # --- Localizar uv -------------------------------------------------------
+    # --- Locate uv ----------------------------------------------------------
     uv_bin = _find_uv()
     if uv_bin is None:
         write_progress(pf, "error", 0,
-                       "uv no encontrado. Instala con:\n"
+                       "uv not found. Install with:\n"
                        "curl -LsSf https://astral.sh/uv/install.sh | sh")
         return 1
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- Adaptar prompt + derivar instrumentos MuseCoco ---------------------
+    # --- Adapt prompt + derive MuseCoco instruments -------------------------
     fields: dict | None = None
     if kind in ("text_dir", "text_file") and any([
         args.field_key, args.field_bpm, args.field_instruments, args.field_chords,
@@ -319,9 +319,9 @@ def main() -> int:
         if cids:
             instruments_str = ",".join(str(c) for c in cids)
 
-    # --- Construir y lanzar comando modal -----------------------------------
+    # --- Build and launch modal command ------------------------------------
     write_progress(pf, "running", 0.06,
-                   f"Lanzando Modal ({model_key} · {args.gpu})...")
+                   f"Launching Modal ({model_key} · {args.gpu})...")
 
     try:
         cmd = _build_cmd(
@@ -333,10 +333,10 @@ def main() -> int:
         return 1
 
     env = os.environ.copy()
-    print(f"[midigen] Comando: {' '.join(cmd)}", flush=True)
-    print(f"[midigen] Modelo: {model_key}  kind={kind}", flush=True)
+    print(f"[midigen] Command: {' '.join(cmd)}", flush=True)
+    print(f"[midigen] Model: {model_key}  kind={kind}", flush=True)
     if kind in ("text_dir", "text_file"):
-        print(f"[midigen] Prompt adaptado: {adapted_prompt[:120]}", flush=True)
+        print(f"[midigen] Adapted prompt: {adapted_prompt[:120]}", flush=True)
     if instruments_str:
         print(f"[midigen] Instruments override: {instruments_str}", flush=True)
 
@@ -348,10 +348,10 @@ def main() -> int:
             text=True, bufsize=1, env=env,
         )
     except (FileNotFoundError, PermissionError) as exc:
-        write_progress(pf, "error", 0, f"No se pudo ejecutar uv: {exc}")
+        write_progress(pf, "error", 0, f"Could not execute uv: {exc}")
         return 1
 
-    # --- Parsear stdout para progreso ---------------------------------------
+    # --- Parse stdout for progress -----------------------------------------
     for line in iter(proc.stdout.readline, ""):
         line = line.rstrip()
         if not line:
@@ -372,7 +372,7 @@ def main() -> int:
                     pct = 0.10 + (n / total) * 0.80
             except (ValueError, IndexError):
                 pass
-        # AMT/MuseCoco indican progreso diferente; mantener pct incremental
+        # AMT/MuseCoco report progress differently; keep incremental pct
         elif "spawned" in line.lower() or "candidate" in line.lower():
             pct = 0.15
         elif "saved" in line.lower() or "→" in line:
@@ -384,25 +384,25 @@ def main() -> int:
 
     if proc.returncode != 0:
         write_progress(pf, "error", 0,
-                       f"Modal falló (código {proc.returncode}). "
-                       "Revisa el log para más detalles.")
+                       f"Modal failed (code {proc.returncode}). "
+                       "Check the log for details.")
         return 1
 
-    # --- Recoger salidas ---------------------------------------------------
-    write_progress(pf, "running", 0.95, "Recogiendo archivos MIDI...")
+    # --- Collect outputs ---------------------------------------------------
+    write_progress(pf, "running", 0.95, "Collecting MIDI files...")
 
     mids = _collect_outputs(out_dir)
     if not mids:
         write_progress(pf, "error", 0,
-                       f"No se encontraron ficheros .mid en {out_dir}. "
-                       "El proceso terminó sin error pero no produjo salida.")
+                       f"No .mid files found in {out_dir}. "
+                       "The process ended without error but produced no output.")
         return 1
 
-    # Contar instrumentos del primer candidato para el mensaje
+    # Count instruments on the first candidate for the status message
     n_instr = count_instruments(mids[0])
-    n_label = (f"{n_instr} instrumento{'s' if n_instr != 1 else ''}"
-               if n_instr >= 0 else "MIDI generado")
-    done_msg = f"Completado — {len(mids)} candidato{'s' if len(mids)!=1 else ''}, {n_label}"
+    n_label = (f"{n_instr} instrument{'s' if n_instr != 1 else ''}"
+               if n_instr >= 0 else "MIDI generated")
+    done_msg = f"Completed — {len(mids)} candidate{'s' if len(mids)!=1 else ''}, {n_label}"
 
     extra = [str(m) for m in mids] + [f"INSTRUMENTS|{n_instr if n_instr >= 0 else '?'}"]
     write_progress(pf, "done", 1.0, done_msg, extra)

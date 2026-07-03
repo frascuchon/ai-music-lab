@@ -1,14 +1,14 @@
 -- @description AI Music Lab - Stem Separator — Demucs + SAM Audio
 -- @version 3.0
 -- @author AI Music Lab
--- @about Separacion de stems con Demucs (local) y SAM Audio (Modal cloud).
---        UI nativa gfx: sin dependencias externas de extensiones REAPER.
+-- @about Stem separation with Demucs (local) and SAM Audio (Modal cloud).
+--        Native gfx UI: no external REAPER extension dependencies.
 
--- ── RUTAS + LIB ──────────────────────────────────────────────────
+-- ── PATHS + LIB ──────────────────────────────────────────────────
 local _info      = debug.getinfo(1, "S")
 local SCRIPT_DIR = _info.source:match("@?(.*[/\\])") or ""
 
--- shared/ es hermano de StemsSeparator/
+-- shared/ is sibling of StemsSeparator/
 local SHARED_DIR = SCRIPT_DIR .. "../shared/"
 package.path = SHARED_DIR .. "lib/?.lua;" .. package.path
 
@@ -31,7 +31,7 @@ if PYTHON_ERR then
   reaper.ShowConsoleMsg("Stem Separator - WARNING: " .. PYTHON_ERR .. "\n")
 end
 
--- ── CONSTANTES ───────────────────────────────────────────────────
+-- ── CONSTANTS ────────────────────────────────────────────────────
 local DM_MODELS = { "htdemucs", "htdemucs_ft", "htdemucs_6s", "mdx_extra" }
 local DM_LABELS = {
   "htdemucs  (4 stems)",
@@ -40,13 +40,13 @@ local DM_LABELS = {
   "mdx_extra  (4 stems, MDX-Net)",
 }
 local STEM_KEYS  = { "vocals", "drums", "bass", "other", "guitar", "piano" }
-local STEM_NAMES = { vocals="Vocales", drums="Batería", bass="Bajo",
-                     other="Otros", guitar="Guitarra*", piano="Piano*" }
+local STEM_NAMES = { vocals="Vocals", drums="Drums", bass="Bass",
+                     other="Other", guitar="Guitar*", piano="Piano*" }
 local SAM_MODELS = { "facebook/sam-audio-large", "facebook/sam-audio-base" }
 local SAM_GPUS   = { "A100", "A10G", "T4" }
 local ODE_METHODS= { "midpoint", "euler", "rk4" }
 
--- ── ESTADO ───────────────────────────────────────────────────────
+-- ── STATE ────────────────────────────────────────────────────────
 local S = {
   tab            = 1,
   src            = "",
@@ -75,13 +75,13 @@ local S = {
   running        = false,
   done           = false,
   progress       = 0.0,
-  status         = "Listo.",
+  status         = "Ready.",
   log            = {},
   out_files      = {},
   log_scroll_to_bottom = false,
 }
 
--- ── HELPERS CORE ─────────────────────────────────────────────────
+-- ── CORE HELPERS ─────────────────────────────────────────────────
 local function add_log(s)
   table.insert(S.log, tostring(s):sub(1, 200))
   if #S.log > 200 then table.remove(S.log, 1) end
@@ -90,7 +90,7 @@ end
 
 local function q(s) return common.q(s) end
 
--- ── SETUP CHECK (asíncrono al inicio) ────────────────────────────
+-- ── SETUP CHECK (async at startup) ───────────────────────────────
 local SETUP_CHECK_F = TMPDIR .. "reaperai_setup_check.txt"
 local SETUP_HELPER  = SHARED_DIR .. "setup_helpers.py"
 local setup_missing = {}
@@ -115,8 +115,8 @@ local function poll_setup_check()
     uv             = "uv",
     demucs         = "demucs",
     ["modal-cli"]  = "Modal CLI",
-    ["modal-auth"] = "Modal sin auth",
-    ["hf-secret"]  = "HF secret faltante",
+    ["modal-auth"] = "Modal not authenticated",
+    ["hf-secret"]  = "HF secret missing",
   }
   for _, line in ipairs(r.extra) do
     local name, status = line:match("^CHECK|([^|]+)|([^|]+)|")
@@ -126,7 +126,7 @@ local function poll_setup_check()
   end
 end
 
--- ── PROGRESO ─────────────────────────────────────────────────────
+-- ── PROGRESS ─────────────────────────────────────────────────────
 local function read_progress()
   local r = common.read_progress_file(PROGRESS_F)
   if not r then return end
@@ -147,7 +147,7 @@ local function read_progress()
       if p ~= "" then table.insert(S.out_files, p) end
     end
     if #S.out_files > 0 then
-      add_log("Archivos listos: " .. #S.out_files)
+      add_log("Files ready: " .. #S.out_files)
       import_stems()
     end
   elseif r.state == "error" and not S.done then
@@ -157,7 +157,7 @@ local function read_progress()
   end
 end
 
--- ── INTEGRACIÓN REAPER ───────────────────────────────────────────
+-- ── REAPER INTEGRATION ───────────────────────────────────────────
 local function detect_section(item, take, src)
   local item_pos   = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
   local item_len   = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
@@ -178,7 +178,7 @@ end
 local function _set_src_from_item(item, context_label)
   local take = reaper.GetActiveTake(item)
   if not take then
-    reaper.MB("El item no tiene take activo.", "Stem Separator", 0); return false
+    reaper.MB("Item has no active take.", "Stem Separator", 0); return false
   end
   local src   = reaper.GetMediaItemTake_Source(take)
   local fname = reaper.GetMediaSourceFileName(src, "")
@@ -196,18 +196,18 @@ local function _set_src_from_item(item, context_label)
   local is_sec, offs, dur = detect_section(item, take, src)
   local kind = is_sec and "split" or context_label
   if is_sec then
-    add_log(string.format("Fuente (%s): %s [%.2fs → %.2fs]",
+    add_log(string.format("Source (%s): %s [%.2fs → %.2fs]",
       kind, fname:match("[^/\\]+$") or fname, offs, offs + dur))
   else
-    add_log(string.format("Fuente (%s): %s", kind,
+    add_log(string.format("Source (%s): %s", kind,
       fname:match("[^/\\]+$") or fname))
   end
   return true
 end
 
 local function grab_from_reaper()
-  -- Item/split tiene prioridad: en REAPER seleccionar un item también selecciona
-  -- su pista, por lo que hay que comprobar items antes que pistas.
+  -- Item/split takes priority: in REAPER selecting an item also selects
+  -- its track, so we must check items before tracks.
   local n_items = reaper.CountSelectedMediaItems(0)
   if n_items > 0 then
     local item = reaper.GetSelectedMediaItem(0, 0)
@@ -221,13 +221,13 @@ local function grab_from_reaper()
     local icnt = reaper.CountTrackMediaItems(tr)
     for i = 0, icnt - 1 do
       local item = reaper.GetTrackMediaItem(tr, i)
-      if _set_src_from_item(item, "pista") then return end
+      if _set_src_from_item(item, "track") then return end
     end
-    reaper.MB("La pista seleccionada no tiene items de audio activos.", "Stem Separator", 0)
+    reaper.MB("Selected track has no active audio items.", "Stem Separator", 0)
     return
   end
 
-  reaper.MB("No hay ningún item ni pista seleccionada en REAPER.", "Stem Separator", 0)
+  reaper.MB("No item or track selected in REAPER.", "Stem Separator", 0)
 end
 
 function import_stems()
@@ -262,9 +262,9 @@ function import_stems()
       reaper.SetEditCurPos(cursor, false, false)
       reaper.InsertMedia(fp, 0)
       imported = imported + 1
-      add_log("Importado: " .. track_name)
+      add_log("Imported: " .. track_name)
     else
-      add_log("No encontrado: " .. fp)
+      add_log("Not found: " .. fp)
     end
   end
 
@@ -291,10 +291,10 @@ function import_stems()
   if imported == 0 then reaper.DeleteTrack(folder_tr) end
   reaper.UpdateArrange()
   reaper.Undo_EndBlock("Stem Separator: import stems to folder", -1)
-  add_log("Importados " .. imported .. " stems en '" .. folder_name .. "'")
+  add_log("Imported " .. imported .. " stems into '" .. folder_name .. "'")
 end
 
--- ── LANZAR PROCESOS ──────────────────────────────────────────────
+-- ── LAUNCH PROCESSES ─────────────────────────────────────────────
 local function clear_run(label)
   local f = io.open(PROGRESS_F, "w")
   if f then f:write("running|0.00|" .. label); f:close() end
@@ -310,23 +310,23 @@ end
 
 local function launch_demucs()
   if S.src == "" then
-    reaper.MB("Selecciona un archivo de audio primero.", "Stem Separator", 0); return
+    reaper.MB("Select an audio file first.", "Stem Separator", 0); return
   end
   local stems = {}
   for _, k in ipairs(STEM_KEYS) do
     if S.dm_stems[k] then table.insert(stems, k) end
   end
   if #stems == 0 then
-    reaper.MB("Selecciona al menos un stem.", "Stem Separator", 0); return
+    reaper.MB("Select at least one stem.", "Stem Separator", 0); return
   end
   local model = DM_MODELS[S.dm_idx]
-  clear_run("Iniciando Demucs (" .. model .. ")...")
-  add_log("Modelo: " .. model .. " | Stems: " .. table.concat(stems, ", "))
+  clear_run("Starting Demucs (" .. model .. ")...")
+  add_log("Model: " .. model .. " | Stems: " .. table.concat(stems, ", "))
   local section_args = ""
   if S.src_is_section then
     section_args = string.format(" --start %.6f --duration %.6f",
       S.src_start_offs, S.src_section_dur)
-    add_log(string.format("Sección: %.2fs → %.2fs",
+    add_log(string.format("Section: %.2fs → %.2fs",
       S.src_start_offs, S.src_start_offs + S.src_section_dur))
   end
   local cmd = string.format(
@@ -334,35 +334,35 @@ local function launch_demucs()
     q(PYTHON), q(DEMUCS_PY),
     q(S.src), q(model), table.concat(stems, ","),
     q(S.outdir), q(PYTHON), section_args, q(PROGRESS_F), q(LOG_F))
-  add_log("Lanzando proceso...")
+  add_log("Launching process...")
   os.execute(cmd)
 end
 
 local function launch_sam()
   if S.src == "" then
-    reaper.MB("Selecciona un archivo de audio primero.", "Stem Separator", 0); return
+    reaper.MB("Select an audio file first.", "Stem Separator", 0); return
   end
   if S.sam_prompt == "" then
-    reaper.MB("Escribe un prompt para SAM Audio.", "Stem Separator", 0); return
+    reaper.MB("Write a prompt for SAM Audio.", "Stem Separator", 0); return
   end
   local sam_script_path = SAM_DIR .. "/" .. SAM_SCRIPT
   local f = io.open(sam_script_path, "r")
   if not f then
-    reaper.MB("No encontrado: " .. sam_script_path ..
-      "\n\nEl plugin debe contener modal_sam_audio.py y pyproject.toml.\n" ..
-      "Revisa la instalacion del plugin StemsSeparator.",
+    reaper.MB("Not found: " .. sam_script_path ..
+      "\n\nThe plugin must contain modal_sam_audio.py and pyproject.toml.\n" ..
+      "Check the StemsSeparator plugin installation.",
       "Stem Separator", 0)
     return
   end
   f:close()
-  clear_run("Iniciando SAM Audio via Modal...")
+  clear_run("Starting SAM Audio via Modal...")
   add_log("Prompt: " .. S.sam_prompt)
-  add_log("Modelo: " .. SAM_MODELS[S.sam_midx] .. " | GPU: " .. SAM_GPUS[S.sam_gidx])
+  add_log("Model: " .. SAM_MODELS[S.sam_midx] .. " | GPU: " .. SAM_GPUS[S.sam_gidx])
   local section_args = ""
   if S.src_is_section then
     section_args = string.format(" --start %.6f --duration %.6f",
       S.src_start_offs, S.src_section_dur)
-    add_log(string.format("Sección: %.2fs → %.2fs",
+    add_log(string.format("Section: %.2fs → %.2fs",
       S.src_start_offs, S.src_start_offs + S.src_section_dur))
   end
   local cmd = string.format(
@@ -375,16 +375,16 @@ local function launch_sam()
     S.sam_steps, ODE_METHODS[S.sam_oidx],
     S.sam_chunk, S.sam_overlap, S.sam_conf, S.sam_cands,
     section_args, q(S.outdir), q(PROGRESS_F), q(LOG_F))
-  add_log("Lanzando proceso Modal...")
+  add_log("Launching Modal process...")
   os.execute(cmd)
 end
 
--- ── TAB DEMUCS ───────────────────────────────────────────────────
+-- ── DEMUCS TAB ───────────────────────────────────────────────────
 local function draw_demucs_tab()
   local g = gui
   local t = theme
 
-  g.row_label("Modelo:", t.sc(68))
+  g.row_label("Model:", t.sc(68))
   g.next_width(-1)
   S.dm_idx = widgets.combo("##dm_model", S.dm_idx, DM_LABELS)
   g.spacing()
@@ -409,20 +409,20 @@ local function draw_demucs_tab()
   g.end_disabled()
   if not is6s then
     g.same_line(t.sc(8))
-    g.text_disabled("(solo htdemucs_6s)")
+    g.text_disabled("(htdemucs_6s only)")
   end
 
   g.spacing()
-  if g.button("Todos", t.sc(70), t.ITEM_H) then
+  if g.button("All", t.sc(70), t.ITEM_H) then
     for _, k in ipairs(STEM_KEYS) do S.dm_stems[k] = true end
   end
   g.same_line()
-  if g.button("Ninguno", t.sc(70), t.ITEM_H) then
+  if g.button("None", t.sc(70), t.ITEM_H) then
     for _, k in ipairs(STEM_KEYS) do S.dm_stems[k] = false end
   end
 end
 
--- ── TAB SAM AUDIO ────────────────────────────────────────────────
+-- ── SAM AUDIO TAB ────────────────────────────────────────────────
 local function draw_sam_tab()
   local g = gui
   local t = theme
@@ -433,8 +433,8 @@ local function draw_sam_tab()
   local rv, nv = widgets.input_text("##prompt", S.sam_prompt)
   if rv then S.sam_prompt = nv end
 
-  -- Modelo
-  g.row_label("Modelo:", lw)
+  -- Model
+  g.row_label("Model:", lw)
   g.next_width(-1)
   S.sam_midx = widgets.combo("##sam_model", S.sam_midx, SAM_MODELS)
 
@@ -448,7 +448,7 @@ local function draw_sam_tab()
   g.next_width(-1)
   S.sam_oidx = widgets.combo("##sam_ode", S.sam_oidx, ODE_METHODS)
 
-  -- ODE steps + Confianza
+  -- ODE steps + Confidence
   g.row_label("ODE steps:", lw)
   g.next_width(t.sc(120))
   rv, nv = g.slider_int("##steps", S.sam_steps, 1, 128)
@@ -460,7 +460,7 @@ local function draw_sam_tab()
   rv, nv = g.slider_float("##conf", S.sam_conf, 0.0, 1.0, "%.2f")
   if rv then S.sam_conf = nv end
 
-  -- Chunk + Overlap + Candidatos
+  -- Chunk + Overlap + Candidates
   g.row_label("Chunk s:", lw)
   g.next_width(t.sc(90))
   rv, nv = g.slider_float("##chunk", S.sam_chunk, 1.0, 30.0, "%.1f")
@@ -479,7 +479,7 @@ local function draw_sam_tab()
   if rv then S.sam_cands = nv end
 
   g.spacing()
-  g.text_disabled("A100: ~$0.14/pista  |  A10G: ~$0.09/pista  |  Requiere cuenta Modal.com")
+  g.text_disabled("A100: ~$0.14/track  |  A10G: ~$0.09/track  |  Requires Modal.com account")
 end
 
 -- ── GFX INIT ─────────────────────────────────────────────────────
@@ -513,8 +513,8 @@ local function loop()
   -- Setup banner (async background check)
   poll_setup_check()
   if setup_checked and #setup_missing > 0 then
-    g.text_wrapped("⚠  Config. incompleta: " .. table.concat(setup_missing, " · "))
-    g.text_disabled("Carga Setup.lua en Actions > Load ReaScript para configurar.")
+    g.text_wrapped("⚠  Incomplete setup: " .. table.concat(setup_missing, " · "))
+    g.text_disabled("Load Setup.lua in Actions > Load ReaScript to configure.")
     g.spacing()
   end
 
@@ -528,7 +528,7 @@ local function loop()
   g.spacing()
 
   -- Source file row
-  g.row_label("Fuente:", t.sc(54))
+  g.row_label("Source:", t.sc(54))
   local display_src = (S.src_track_name ~= "")
     and (S.src_track_name .. "  (" .. (S.src:match("[^/\\]+$") or "") .. ")")
     or S.src
@@ -536,7 +536,7 @@ local function loop()
   widgets.input_text("##src_disp", display_src, { readonly = true })
   g.same_line()
   if g.button("...", t.sc(44), t.ITEM_H) then
-    local ok, fn = reaper.GetUserFileNameForRead("", "Abrir audio", "wav")
+    local ok, fn = reaper.GetUserFileNameForRead("", "Open audio", "wav")
     if ok then
       S.src = fn; S.src_track_name = ""; S.src_track_idx = -1
       S.src_is_section = false; S.src_item_pos = nil
@@ -546,12 +546,12 @@ local function loop()
   if g.button("R", t.sc(44), t.ITEM_H) then grab_from_reaper() end
 
   if S.src_track_name ~= "" then
-    g.text_disabled("Pista seleccionada  |  clic en R para actualizar")
+    g.text_disabled("Track selected  |  click R to update")
   else
-    g.text_disabled("Clic en R para usar pista/item activo de Reaper")
+    g.text_disabled("Click R to use the active Reaper track/item")
   end
   if S.src_is_section then
-    g.text_colored(string.format("Sección: %.2fs → %.2fs  (%.2fs)",
+    g.text_colored(string.format("Section: %.2fs → %.2fs  (%.2fs)",
       S.src_start_offs, S.src_start_offs + S.src_section_dur, S.src_section_dur),
       "YELLOW")
   end
@@ -568,7 +568,7 @@ local function loop()
   g.separator()
   g.spacing()
 
-  -- SEPARAR button — colors change per tab
+  -- SEPARATE button — colors change per tab
   local sep_colors
   if S.tab == 1 then
     sep_colors = {
@@ -583,8 +583,8 @@ local function loop()
       active = { 0x80/255, 0x33/255, 0xD1/255 },
     }
   end
-  local sep_lbl = S.running and "[ Procesando... ]"
-    or (S.tab == 1 and "SEPARAR  (Demucs)" or "SEPARAR  (SAM Audio)")
+  local sep_lbl = S.running and "[ Processing... ]"
+    or (S.tab == 1 and "SEPARATE  (Demucs)" or "SEPARATE  (SAM Audio)")
   g.begin_disabled(S.running)
   g.next_width(-1)
   if g.button(sep_lbl, nil, t.sc(36), { solid = sep_colors }) then
@@ -606,7 +606,7 @@ local function loop()
 
   -- Log area
   if widgets.collapsing_header("Logs", true) then
-    if g.button("Copiar log", t.sc(90), t.ITEM_H) then
+    if g.button("Copy log", t.sc(90), t.ITEM_H) then
       local ok, set_cb = pcall(function()
         reaper.CF_SetClipboard(table.concat(S.log, "\n"))
       end)
@@ -616,7 +616,7 @@ local function loop()
       end
     end
     g.same_line()
-    if g.button("Limpiar", t.sc(70), t.ITEM_H) then S.log = {} end
+    if g.button("Clear", t.sc(70), t.ITEM_H) then S.log = {} end
     g.spacing()
 
     -- Scroll to bottom if new lines arrived
@@ -646,8 +646,8 @@ local function loop()
   reaper.defer(loop)
 end
 
--- ── INICIO ───────────────────────────────────────────────────────
-add_log("Stem Separator listo.")
+-- ── STARTUP ──────────────────────────────────────────────────────
+add_log("Stem Separator ready.")
 add_log("Python: " .. PYTHON)
 add_log("SAM dir: " .. SAM_DIR)
 launch_setup_check()

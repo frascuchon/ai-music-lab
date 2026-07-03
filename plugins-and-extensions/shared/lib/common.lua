@@ -55,11 +55,11 @@ function M.read_progress_file(path)
   return r
 end
 
--- Writes "running|0.00|Iniciando..." to progress_path then launches:
+-- Writes "running|0.00|Starting..." to progress_path then launches:
 --   python script_path [extra_args] --progress progress_path >> log_path 2>&1 &
 function M.launch_async(python, script_path, extra_args, progress_path, log_path)
   local f = io.open(progress_path, "w")
-  if f then f:write("running|0.00|Iniciando..."); f:close() end
+  if f then f:write("running|0.00|Starting..."); f:close() end
   local q = M.q
   local cmd
   if reaper.GetOS():find("^Win") then

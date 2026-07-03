@@ -1,39 +1,39 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Adaptadores de prompt para cada modelo de generación MIDI.
+"""Prompt adapters for each MIDI generation model.
 
-Cada modelo tiene un contrato de entrada diferente. Este módulo traduce el
-prompt de texto libre del usuario a la forma que cada modelo espera, sin
-dependencias externas (solo stdlib).
+Each model has a different input contract. This module translates the user's
+free-text prompt into the form each model expects, with no external dependencies
+(stdlib only).
 
-API pública
------------
+Public API
+----------
     adapt(model_key, raw_prompt, fields=None) -> str
-        Devuelve el prompt listo para pasar a --prompt del entrypoint Modal.
+        Returns the prompt ready to pass as --prompt to the Modal entrypoint.
 
     instruments_to_classids(text) -> list[int]
-        Extrae class-IDs de instrumentos MuseCoco a partir de texto libre.
-        Devuelve lista vacía si no se detecta ninguno (stage-1 decide sola).
+        Extracts MuseCoco instrument class-IDs from free text.
+        Returns an empty list if none are detected (stage-1 decides on its own).
 
-Modelos y su estrategia
------------------------
-    amadeus      — caption estilo MidiCaps: enriquece con key/BPM/instrumentos
-                   si el usuario los proporcionó como campos opcionales.
-                   Sin campos extra → passthrough.
-    text2midi    — igual que amadeus (mismo encoder T5).
-    midi_llm     — passthrough: el research script antepone su SYSTEM_PROMPT.
-    chatmusician — passthrough: el research script construye "Human:/Assistant:".
-    musecoco     — passthrough + se recomienda usar instruments_to_classids()
-                   para derivar --instruments (ver midigen.py).
-    anticipatory — no tiene prompt; devuelve "" (sin uso).
+Models and their strategy
+-------------------------
+    amadeus      — MidiCaps-style caption: enriches with key/BPM/instruments
+                   if the user provided them as optional fields.
+                   No extra fields → passthrough.
+    text2midi    — same as amadeus (same T5 encoder).
+    midi_llm     — passthrough: the research script prepends its SYSTEM_PROMPT.
+    chatmusician — passthrough: the research script builds "Human:/Assistant:".
+    musecoco     — passthrough + recommended to use instruments_to_classids()
+                   to derive --instruments (see midigen.py).
+    anticipatory — no prompt; returns "" (unused).
 """
 
 from __future__ import annotations
 
 
 # ---------------------------------------------------------------------------
-# Mapa de instrumentos MuseCoco (28 clases, índice = class-ID)
-# Fuente: research_musecoco_modal.py:275-279
+# MuseCoco instrument map (28 classes, index = class-ID)
+# Source: research_musecoco_modal.py:275-279
 # ---------------------------------------------------------------------------
 _MUSECOCO_CLASSES: list[str] = [
     "piano",       # 0
@@ -66,32 +66,32 @@ _MUSECOCO_CLASSES: list[str] = [
     "drum",        # 27
 ]
 
-# Alias → class-ID (keywords en texto libre del usuario)
+# Alias → class-ID (keywords in user free text)
 _KEYWORD_TO_CLASS: dict[str, int] = {
-    # piano / teclado
+    # piano / keyboard
     "piano": 0, "grand piano": 0, "upright piano": 0,
     "keyboard": 1, "electric piano": 1, "clavier": 1, "harpsichord": 1,
     "organ": 3, "hammond": 3, "church organ": 3,
-    # cuerdas pulsadas
+    # plucked strings
     "guitar": 4, "electric guitar": 4, "acoustic guitar": 4,
     "bass guitar": 5, "bass": 5, "electric bass": 5, "upright bass": 5,
     "harp": 9,
-    # cuerdas frotadas
+    # bowed strings
     "violin": 6, "fiddle": 6,
     "viola": 7,
     "cello": 8,
     "strings": 10, "string ensemble": 10, "string quartet": 10,
     "orchestra": 10,
-    # voz
+    # voice
     "voice": 11, "vocals": 11, "vocal": 11, "choir": 11,
     "soprano": 11, "singing": 11,
-    # metal
+    # brass
     "trumpet": 12,
     "trombone": 13,
     "tuba": 14,
     "horn": 15, "french horn": 15,
     "brass": 16, "brass section": 16,
-    # madera
+    # woodwinds
     "sax": 17, "saxophone": 17, "alto sax": 17, "tenor sax": 17,
     "soprano sax": 17,
     "oboe": 18,
@@ -100,33 +100,32 @@ _KEYWORD_TO_CLASS: dict[str, int] = {
     "piccolo": 21,
     "flute": 22,
     "pipe": 23, "bagpipe": 23,
-    # sintetizadores / electrónica
+    # synthesizers / electronics
     "synth": 24, "synthesizer": 24, "pad": 24, "synth pad": 24,
     "lead synth": 24, "arpeggiator": 24,
-    # percusión
+    # percussion
     "drum": 27, "drums": 27, "drumkit": 27, "drum kit": 27,
     "percussion": 2, "bongo": 2, "conga": 2, "marimba": 2, "xylophone": 2,
     "vibraphone": 2, "timpani": 2,
-    # especial
+    # special
     "ethnic": 25, "sitar": 25, "shamisen": 25, "koto": 25,
     "sound effect": 26, "sfx": 26,
 }
 
 
 def instruments_to_classids(text: str) -> list[int]:
-    """Detecta class-IDs de instrumentos MuseCoco en texto libre.
+    """Detect MuseCoco instrument class-IDs in free text.
 
-    Devuelve lista de IDs únicos (orden de aparición), o lista vacía si no
-    detecta ninguno (en ese caso stage-1 de MuseCoco decide sola).
+    Returns a list of unique IDs (order of appearance), or an empty list if
+    none are detected (in that case MuseCoco stage-1 decides on its own).
 
-    Ejemplo:
+    Example:
         >>> instruments_to_classids("jazz sax trio with piano and drums")
         [0, 17, 27]
     """
     text_lower = text.lower()
     seen: list[int] = []
-    # Ordenar por longitud descendente para que "bass guitar" se pruebe antes
-    # que "bass" o "guitar" por separado.
+    # Sort by descending length so "bass guitar" is tried before "bass" or "guitar".
     for kw in sorted(_KEYWORD_TO_CLASS, key=len, reverse=True):
         cid = _KEYWORD_TO_CLASS[kw]
         if kw in text_lower and cid not in seen:
@@ -135,15 +134,15 @@ def instruments_to_classids(text: str) -> list[int]:
 
 
 # ---------------------------------------------------------------------------
-# Adaptadores de prompt por modelo
+# Prompt adapters per model
 # ---------------------------------------------------------------------------
 
 def _adapt_midicaps(raw_prompt: str, fields: dict | None) -> str:
-    """Construye una caption estilo MidiCaps.
+    """Build a MidiCaps-style caption.
 
-    Si el usuario no proporcionó campos opcionales, devuelve el prompt tal cual.
-    Si proporcionó key/BPM/instrumentos/acordes, los añade al final de forma
-    natural para enriquecer el contexto del encoder T5 de Amadeus/text2midi.
+    If the user provided no optional fields, returns the prompt as-is.
+    If they provided key/BPM/instruments/chords, appends them at the end
+    in a natural way to enrich the T5 encoder context for Amadeus/text2midi.
     """
     if not fields:
         return raw_prompt
@@ -159,7 +158,7 @@ def _adapt_midicaps(raw_prompt: str, fields: dict | None) -> str:
     if key:
         extras.append(f"in {key}")
     if bpm:
-        # Normalizar "120 BPM", "120bpm", "120" → "120 BPM"
+        # Normalize "120 BPM", "120bpm", "120" → "120 BPM"
         bpm_clean = bpm.upper().replace("BPM", "").strip()
         if bpm_clean.isdigit():
             extras.append(f"at {bpm_clean} BPM")
@@ -171,41 +170,41 @@ def _adapt_midicaps(raw_prompt: str, fields: dict | None) -> str:
     if not extras:
         return raw_prompt
 
-    # Añadir extras al final, puntuando limpiamente
+    # Append extras at the end with clean punctuation
     base = raw_prompt.rstrip(".").rstrip()
     return base + ", " + ", ".join(extras) + "."
 
 
 def adapt(model_key: str, raw_prompt: str, fields: dict | None = None) -> str:
-    """Adapta un prompt de texto libre a la nomenclatura del modelo indicado.
+    """Adapt a free-text prompt to the nomenclature of the specified model.
 
-    Parámetros
+    Parameters
     ----------
     model_key : str
-        Clave del modelo ("amadeus", "midi_llm", "text2midi", "chatmusician",
+        Model key ("amadeus", "midi_llm", "text2midi", "chatmusician",
         "musecoco", "anticipatory").
     raw_prompt : str
-        Texto libre tal como lo escribió el usuario en la UI de REAPER.
+        Free text as typed by the user in the REAPER UI.
     fields : dict | None
-        Campos opcionales de la UI: {"key": str, "bpm": str,
-        "instruments": str, "chords": str}. Usados por amadeus/text2midi.
+        Optional UI fields: {"key": str, "bpm": str,
+        "instruments": str, "chords": str}. Used by amadeus/text2midi.
 
-    Devuelve
-    --------
+    Returns
+    -------
     str
-        Prompt listo para pasar como --prompt al entrypoint Modal.
-        Para "anticipatory" devuelve "" (no usa prompt).
+        Prompt ready to pass as --prompt to the Modal entrypoint.
+        For "anticipatory" returns "" (no prompt used).
 
-    Notas por modelo
-    ----------------
-    - amadeus / text2midi  : caption MidiCaps enriquecida con campos opcionales.
-    - midi_llm             : passthrough — el research script antepone
+    Notes per model
+    ---------------
+    - amadeus / text2midi  : MidiCaps caption enriched with optional fields.
+    - midi_llm             : passthrough — the research script prepends
                              "You are a world-class composer..." (SYSTEM_PROMPT).
-    - chatmusician         : passthrough — el research script construye
+    - chatmusician         : passthrough — the research script builds
                              "Human: {prompt} </s> Assistant: ".
-    - musecoco             : passthrough — los instrumentos se pasan via
-                             --instruments (inferidos con instruments_to_classids).
-    - anticipatory         : sin prompt (seed MIDI + --mode); devuelve "".
+    - musecoco             : passthrough — instruments are passed via
+                             --instruments (inferred with instruments_to_classids).
+    - anticipatory         : no prompt (seed MIDI + --mode); returns "".
     """
     key = model_key.lower()
 
@@ -213,20 +212,20 @@ def adapt(model_key: str, raw_prompt: str, fields: dict | None = None) -> str:
         return _adapt_midicaps(raw_prompt, fields)
 
     elif key in ("midi_llm", "chatmusician", "musecoco"):
-        # El wrapping lo hace el propio research script
+        # Wrapping is done by the research script itself
         return raw_prompt.strip()
 
     elif key == "anticipatory":
-        # No usa --prompt; el entrypoint recibe --input (seed MIDI)
+        # Does not use --prompt; the entrypoint receives --input (seed MIDI)
         return ""
 
     else:
-        # Modelo desconocido: passthrough seguro
+        # Unknown model: safe passthrough
         return raw_prompt.strip()
 
 
 # ---------------------------------------------------------------------------
-# CLI de prueba (standalone, sin REAPER)
+# Test CLI (standalone, without REAPER)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import json

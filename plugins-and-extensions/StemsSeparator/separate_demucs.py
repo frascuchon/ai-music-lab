@@ -65,7 +65,7 @@ def main():
     process_path = input_path
     if args.start is not None and args.duration is not None:
         write_progress(pf, "running", 0.01,
-                       f"Extrayendo sección {args.start:.2f}s → "
+                       f"Extracting section {args.start:.2f}s → "
                        f"{args.start + args.duration:.2f}s...")
         try:
             temp_dir = tempfile.mkdtemp(prefix="stemsep_")
@@ -74,11 +74,11 @@ def main():
             process_path = section_file
             print(f"Section extracted to: {section_file}", flush=True)
         except Exception as exc:
-            write_progress(pf, "error", 0, f"Error extrayendo sección: {exc}")
+            write_progress(pf, "error", 0, f"Error extracting section: {exc}")
             return 1
 
     python_exe = args.python or sys.executable
-    write_progress(pf, "running", 0.02, "Iniciando Demucs...")
+    write_progress(pf, "running", 0.02, "Starting Demucs...")
 
     out_path = Path(args.outdir)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -93,7 +93,7 @@ def main():
     print("Running:", " ".join(cmd), flush=True)
 
     write_progress(pf, "running", 0.05,
-                   f"Separando con {args.model}...")
+                   f"Separating with {args.model}...")
 
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -125,7 +125,7 @@ def main():
     if proc.returncode != 0:
         write_progress(
             pf, "error", 0,
-            f"Demucs fallo con codigo {proc.returncode}",
+            f"Demucs failed with code {proc.returncode}",
         )
         return 1
 
@@ -138,11 +138,11 @@ def main():
         if sf.exists():
             output_files.append(str(sf))
         else:
-            print(f"Aviso: no encontrado {sf}", flush=True)
+            print(f"Warning: not found {sf}", flush=True)
 
     write_progress(
         pf, "done", 1.0,
-        f"Completado. {len(output_files)} stems extraidos.",
+        f"Completed. {len(output_files)} stems extracted.",
         output_files,
     )
     return 0

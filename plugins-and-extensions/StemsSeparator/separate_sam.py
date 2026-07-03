@@ -91,7 +91,7 @@ def main():
     args = p.parse_args()
 
     pf = args.progress
-    write_progress(pf, "running", 0.02, "Preparando entorno Modal via uv...")
+    write_progress(pf, "running", 0.02, "Preparing Modal environment via uv...")
 
     input_path = Path(args.input)
 
@@ -100,7 +100,7 @@ def main():
     process_path = input_path
     if args.start is not None and args.duration is not None:
         write_progress(pf, "running", 0.01,
-                       f"Extrayendo sección {args.start:.2f}s → "
+                       f"Extracting section {args.start:.2f}s → "
                        f"{args.start + args.duration:.2f}s...")
         try:
             temp_dir = tempfile.mkdtemp(prefix="stemsep_")
@@ -109,7 +109,7 @@ def main():
             process_path = section_file
             print(f"Section extracted to: {section_file}", flush=True)
         except Exception as exc:
-            write_progress(pf, "error", 0, f"Error extrayendo sección: {exc}")
+            write_progress(pf, "error", 0, f"Error extracting section: {exc}")
             return 1
 
     out_path = Path(args.outdir)
@@ -122,8 +122,8 @@ def main():
     uv_bin = _find_uv()
     if uv_bin is None:
         write_progress(pf, "error", 0,
-                       "No encontrado: 'uv' no esta en el PATH ni en "
-                       "~/.local/bin/uv. Instala uv con: "
+                       "'uv' not found in PATH or "
+                       "~/.local/bin/uv. Install uv with: "
                        "curl -LsSf https://astral.sh/uv/install.sh | sh")
         return 1
 
@@ -132,8 +132,8 @@ def main():
     sam_script = sam_dir / MODAL_SCRIPT
     if not sam_script.exists():
         write_progress(pf, "error", 0,
-                       f"No encontrado: {sam_script}. "
-                       f"Revisa que SAM_DIR/{MODAL_SCRIPT} existe.")
+                       f"Not found: {sam_script}. "
+                       f"Check that SAM_DIR/{MODAL_SCRIPT} exists.")
         return 1
 
     # shared_dir hosts the uv project (pyproject.toml + uv.lock).
@@ -169,7 +169,7 @@ def main():
     # --- run -----------------------------------------------------------------
     print("Running:", " ".join(cmd), flush=True)
     write_progress(pf, "running", 0.05,
-                   f"Lanzando uv run sobre {MODAL_SCRIPT}...")
+                   f"Launching uv run on {MODAL_SCRIPT}...")
 
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
@@ -177,11 +177,11 @@ def main():
                                 text=True, bufsize=1, env=env)
     except FileNotFoundError:
         write_progress(pf, "error", 0,
-                       f"No encontrado: '{uv_bin}' no se pudo ejecutar.")
+                       f"Not found: '{uv_bin}' could not be executed.")
         return 1
     except PermissionError:
         write_progress(pf, "error", 0,
-                       f"Permiso denegado: '{uv_bin}' no es ejecutable.")
+                       f"Permission denied: '{uv_bin}' is not executable.")
         return 1
 
     for line in iter(proc.stdout.readline, ""):
@@ -205,7 +205,7 @@ def main():
 
     if proc.returncode != 0:
         write_progress(pf, "error", 0,
-                       f"SAM Audio fallo con codigo {proc.returncode}")
+                       f"SAM Audio failed with code {proc.returncode}")
         return 1
 
     # --- discover output files -----------------------------------------------
@@ -222,7 +222,7 @@ def main():
         )
 
     write_progress(pf, "done", 1.0,
-                   f"Completado. {len(output_files)} archivos generados.",
+                   f"Completed. {len(output_files)} files generated.",
                    output_files)
     return 0
 

@@ -1,18 +1,18 @@
--- @description AI Music Lab - Audio2Midi — Transcripción de audio a MIDI
+-- @description AI Music Lab - Audio2Midi — Audio to MIDI transcription
 -- @version 1.0
 -- @author AI Music Lab
--- @about Transcribe un track, item o sección de audio a MIDI usando modelos
---        de IA en la nube (Modal). Soporta MIROS y YourMT3+.
---        Input: pista, item o split (sección) seleccionado en REAPER.
---        Output: una pista MIDI nueva (mono-instrumento) o carpeta de pistas
---        (multi-instrumento), insertadas en la posición del audio fuente.
---        UI nativa gfx: sin dependencias externas de extensiones REAPER.
+-- @about Transcribes a track, item or audio section to MIDI using cloud AI
+--        models (Modal). Supports MIROS and YourMT3+.
+--        Input: selected REAPER track, item or split (section).
+--        Output: a new MIDI track (mono-instrument) or a folder of tracks
+--        (multi-instrument), inserted at the source audio position.
+--        Native gfx UI: no external REAPER extension dependencies.
 
--- ── RUTAS + LIB ──────────────────────────────────────────────────
+-- ── PATHS + LIB ──────────────────────────────────────────────────
 local _info      = debug.getinfo(1, "S")
 local SCRIPT_DIR = _info.source:match("@?(.*[/\\])") or ""
 
--- shared/ es hermano de Audio2Midi/
+-- shared/ is sibling of Audio2Midi/
 local SHARED_DIR = SCRIPT_DIR .. "../shared/"
 package.path = SHARED_DIR .. "lib/?.lua;" .. package.path
 
@@ -28,27 +28,27 @@ if PYTHON_ERR then
   reaper.ShowConsoleMsg("Audio2Midi - WARNING: " .. PYTHON_ERR .. "\n")
 end
 
--- ── CONSTANTES ───────────────────────────────────────────────────
+-- ── CONSTANTS ────────────────────────────────────────────────────
 local A2M_MODELS  = { "miros", "yourmt3" }
 local A2M_LABELS  = {
-  "MIROS  (multi-instr., A10G, uso interno)",
+  "MIROS  (multi-instr., A10G, internal use)",
   "YourMT3+  (multi-instr., Apache 2.0)",
 }
 local A2M_SCRIPTS = {
   miros   = SCRIPT_DIR .. "research/research_miros_modal.py",
   yourmt3 = SCRIPT_DIR .. "research/research_yourmt3_modal.py",
 }
--- GPU mínima recomendada por modelo (A10G para MIROS; T4 suficiente para YourMT3+)
-local A2M_GPU_DEFAULT = { miros = 1, yourmt3 = 3 }  -- índice en A2M_GPUS
+-- Minimum recommended GPU per model (A10G for MIROS; T4 sufficient for YourMT3+)
+local A2M_GPU_DEFAULT = { miros = 1, yourmt3 = 3 }  -- index in A2M_GPUS
 local A2M_GPUS   = { "A10G", "A100", "T4" }
 
 local TRANSCRIBE_PY = SCRIPT_DIR .. "transcribe.py"
 local PROGRESS_F    = TMPDIR .. "a2m_progress.txt"
 local LOG_F         = TMPDIR .. "a2m.log"
 
--- ── ESTADO ───────────────────────────────────────────────────────
+-- ── STATE ────────────────────────────────────────────────────────
 local S = {
-  -- fuente
+  -- source
   src             = "",
   src_track_name  = "",
   src_track_idx   = -1,
@@ -56,7 +56,7 @@ local S = {
   src_section_dur = 0,
   src_item_pos    = nil,
   src_is_section  = false,
-  -- modelo
+  -- model
   model_idx       = 1,
   gpu_idx         = A2M_GPU_DEFAULT[A2M_MODELS[1]],
   beat_tracking   = true,
@@ -64,14 +64,14 @@ local S = {
   running         = false,
   done            = false,
   progress        = 0.0,
-  status          = "Listo.",
+  status          = "Ready.",
   log             = {},
   out_files       = {},
   n_instruments   = -1,
   log_scroll_to_bottom = false,
 }
 
--- ── HELPERS CORE ─────────────────────────────────────────────────
+-- ── CORE HELPERS ─────────────────────────────────────────────────
 local function add_log(s)
   table.insert(S.log, tostring(s):sub(1, 200))
   if #S.log > 200 then table.remove(S.log, 1) end
@@ -80,8 +80,8 @@ end
 
 local function q(s) return common.q(s) end
 
--- Generar un directorio temporal único para cada ejecución (evita el skip
--- de Modal cuando transcribed_cuda.mid ya existe).
+-- Generate a unique temp directory per run (avoids Modal skipping when
+-- transcribed_cuda.mid already exists).
 local _run_id = 0
 local function make_run_dir()
   _run_id = _run_id + 1
@@ -90,7 +90,7 @@ local function make_run_dir()
   return d
 end
 
--- ── SETUP CHECK (asíncrono al inicio) ────────────────────────────
+-- ── SETUP CHECK (async at startup) ───────────────────────────────
 local SETUP_CHECK_F = TMPDIR .. "reaperai_setup_check.txt"
 local SETUP_HELPER  = SHARED_DIR .. "setup_helpers.py"
 local setup_missing = {}
@@ -114,7 +114,7 @@ local function poll_setup_check()
     python        = "Python REAPER",
     uv            = "uv",
     ["modal-cli"] = "Modal CLI",
-    ["modal-auth"]= "Modal sin auth",
+    ["modal-auth"]= "Modal not authenticated",
   }
   for _, line in ipairs(r.extra) do
     local name, status = line:match("^CHECK|([^|]+)|([^|]+)|")
@@ -124,7 +124,7 @@ local function poll_setup_check()
   end
 end
 
--- ── PROGRESO ─────────────────────────────────────────────────────
+-- ── PROGRESS ─────────────────────────────────────────────────────
 local function read_progress()
   local r = common.read_progress_file(PROGRESS_F)
   if not r then return end
@@ -152,7 +152,7 @@ local function read_progress()
       end
     end
     if #S.out_files > 0 then
-      add_log(string.format("MIDI listo (%s instrumento%s)",
+      add_log(string.format("MIDI ready (%s instrument%s)",
         S.n_instruments >= 0 and tostring(S.n_instruments) or "?",
         S.n_instruments ~= 1 and "s" or ""))
       import_midi()
@@ -165,7 +165,7 @@ local function read_progress()
   end
 end
 
--- ── INTEGRACIÓN REAPER ───────────────────────────────────────────
+-- ── REAPER INTEGRATION ───────────────────────────────────────────
 local function detect_section(item, take, src)
   local item_pos   = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
   local item_len   = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
@@ -186,13 +186,13 @@ end
 local function _set_src_from_item(item, context_label)
   local take = reaper.GetActiveTake(item)
   if not take then
-    reaper.MB("El item no tiene take activo.", "Audio2Midi", 0); return false
+    reaper.MB("Item has no active take.", "Audio2Midi", 0); return false
   end
   local src   = reaper.GetMediaItemTake_Source(take)
   local fname = reaper.GetMediaSourceFileName(src, "")
   if not fname or fname == "" then return false end
 
-  -- Registrar pista padre para el nombre del output
+  -- Record parent track for naming the output
   local tr = reaper.GetMediaItemTrack(item)
   if tr then
     local _, tname = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
@@ -205,19 +205,19 @@ local function _set_src_from_item(item, context_label)
   local is_sec, offs, dur = detect_section(item, take, src)
   local kind = is_sec and "split" or context_label
   if is_sec then
-    add_log(string.format("Fuente (%s): %s [%.2fs → %.2fs]",
+    add_log(string.format("Source (%s): %s [%.2fs → %.2fs]",
       kind, fname:match("[^/\\]+$") or fname, offs, offs + dur))
   else
-    add_log(string.format("Fuente (%s): %s", kind,
+    add_log(string.format("Source (%s): %s", kind,
       fname:match("[^/\\]+$") or fname))
   end
   return true
 end
 
 local function grab_from_reaper()
-  -- Nivel 1/2: item o split seleccionado (prioridad sobre la pista, porque
-  -- en REAPER seleccionar un item también selecciona su pista — sin esta
-  -- prioridad siempre se cogería el primer item de la pista, no el seleccionado).
+  -- Level 1/2: selected item or split (priority over track, because in REAPER
+  -- selecting an item also selects its track — without this priority we would
+  -- always pick the first item on the track, not the selected one).
   local n_items = reaper.CountSelectedMediaItems(0)
   if n_items > 0 then
     local item = reaper.GetSelectedMediaItem(0, 0)
@@ -225,84 +225,84 @@ local function grab_from_reaper()
     return
   end
 
-  -- Nivel 3: pista seleccionada sin item activo → usar primer item de la pista
+  -- Level 3: selected track with no active item → use first track item
   local tcnt = reaper.CountSelectedTracks(0)
   if tcnt > 0 then
     local tr = reaper.GetSelectedTrack(0, 0)
     local icnt = reaper.CountTrackMediaItems(tr)
     for i = 0, icnt - 1 do
       local item = reaper.GetTrackMediaItem(tr, i)
-      if _set_src_from_item(item, "pista") then return end
+      if _set_src_from_item(item, "track") then return end
     end
-    reaper.MB("La pista seleccionada no tiene items de audio activos.", "Audio2Midi", 0)
+    reaper.MB("Selected track has no active audio items.", "Audio2Midi", 0)
     return
   end
 
-  reaper.MB("No hay ningún item ni pista seleccionada en REAPER.", "Audio2Midi", 0)
+  reaper.MB("No item or track selected in REAPER.", "Audio2Midi", 0)
 end
 
--- ── IMPORTAR MIDI ────────────────────────────────────────────────
+-- ── IMPORT MIDI ──────────────────────────────────────────────────
 function import_midi()
   if #S.out_files == 0 then return end
   local mid_path = S.out_files[1]
   local f = io.open(mid_path, "rb")
   if not f then
-    add_log("Error: no se puede leer " .. mid_path); return
+    add_log("Error: cannot read " .. mid_path); return
   end
   f:close()
 
   reaper.Undo_BeginBlock()
   local cursor = S.src_item_pos or reaper.GetCursorPosition()
 
-  -- Nombre base para la(s) pista(s)
+  -- Base name for the track(s)
   local base_name = S.src_track_name ~= "" and S.src_track_name
     or (S.src:match("([^/\\]+)%.%w+$") or "audio")
   local model_tag = A2M_MODELS[S.model_idx] or "midi"
 
-  -- Registrar número de pistas antes de importar
+  -- Record track count before import
   local tcnt_before = reaper.CountTracks(0)
 
-  -- Insertar una pista nueva y posicionar cursor
+  -- Insert a new track and position the cursor
   reaper.InsertTrackAtIndex(tcnt_before, true)
   local new_track = reaper.GetTrack(0, tcnt_before)
   reaper.SetOnlyTrackSelected(new_track)
   reaper.SetEditCurPos(cursor, false, false)
 
-  -- InsertMedia en la pista seleccionada
+  -- InsertMedia on the selected track
   reaper.InsertMedia(mid_path, 0)
 
-  -- Detectar cuántas pistas creó REAPER (MIDI multi-pista puede abrir varias)
+  -- Detect how many tracks REAPER created (multi-track MIDI can open several)
   local tcnt_after = reaper.CountTracks(0)
   local delta = tcnt_after - tcnt_before
 
   if delta <= 0 then
-    -- No se crearon pistas — InsertMedia falló o fue a una pista existente
-    add_log("Aviso: InsertMedia no añadió pistas nuevas.")
+    -- No tracks created — InsertMedia failed or went to an existing track
+    add_log("Warning: InsertMedia did not add new tracks.")
     reaper.DeleteTrack(new_track)
     reaper.Undo_EndBlock("Audio2Midi: import MIDI", -1)
     return
   end
 
   if delta == 1 then
-    -- Mono-instrumento: nombrar la pista limpiamente
+    -- Mono-instrument: name the track cleanly
     local track_name = base_name .. " [MIDI " .. model_tag .. "]"
     reaper.GetSetMediaTrackInfo_String(new_track, "P_NAME", track_name, true)
-    add_log("Importado: " .. track_name)
+    add_log("Imported: " .. track_name)
   else
-    -- Multi-instrumento: envolver en una carpeta con parent VACÍO.
+    -- Multi-instrument: wrap in a folder with an EMPTY parent.
     local folder_name = base_name .. " [MIDI " .. model_tag .. "]"
 
-    -- Insertar una pista-carpeta vacía ANTES del bloque importado.
-    -- InsertMedia ya puso el primer instrumento en new_track (tcnt_before);
-    -- al insertar aquí en tcnt_before, esa pista queda desplazada a
-    -- tcnt_before+1 y se convierte en la primera pista hija, no en la carpeta.
+    -- Insert an empty folder track BEFORE the imported block.
+    -- InsertMedia already placed the first instrument in new_track (tcnt_before);
+    -- inserting here at tcnt_before shifts that track to tcnt_before+1,
+    -- making it the first child, not the folder.
     reaper.InsertTrackAtIndex(tcnt_before, true)
     local folder_tr = reaper.GetTrack(0, tcnt_before)
     reaper.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", folder_name, true)
     reaper.SetMediaTrackInfo_Value(folder_tr, "I_FOLDERDEPTH", 1)
 
-    -- Nombrar las pistas de instrumentos (ahora en tcnt_before+1 .. tcnt_before+delta).
-    -- Se respeta el nombre que InsertMedia haya tomado del SMF si ya existe.
+    -- Name the instrument tracks (now at tcnt_before+1 .. tcnt_before+delta).
+    -- Preserve the name InsertMedia may have taken from the SMF if it exists.
     for i = 1, delta do
       local tr = reaper.GetTrack(0, tcnt_before + i)
       if tr then
@@ -314,20 +314,20 @@ function import_midi()
       end
     end
 
-    -- Cerrar la carpeta en la última pista hija.
+    -- Close the folder on the last child track.
     local last_tr = reaper.GetTrack(0, tcnt_before + delta)
     if last_tr then
       reaper.SetMediaTrackInfo_Value(last_tr, "I_FOLDERDEPTH", -1)
     end
 
-    add_log(string.format("Importado en carpeta '%s' (%d pistas)", folder_name, delta))
+    add_log(string.format("Imported into folder '%s' (%d tracks)", folder_name, delta))
   end
 
   reaper.UpdateArrange()
   reaper.Undo_EndBlock("Audio2Midi: import MIDI", -1)
 end
 
--- ── LANZAR TRANSCRIPCIÓN ─────────────────────────────────────────
+-- ── LAUNCH TRANSCRIPTION ─────────────────────────────────────────
 local function clear_run(label)
   local f = io.open(PROGRESS_F, "w")
   if f then f:write("running|0.00|" .. label); f:close() end
@@ -343,37 +343,37 @@ end
 
 local function launch_transcribe()
   if S.src == "" then
-    reaper.MB("Selecciona una pista, item o sección de audio primero.\n"
-      .. "Usa el botón R para capturar la selección de REAPER.", "Audio2Midi", 0)
+    reaper.MB("Select an audio track, item or section first.\n"
+      .. "Use the R button to capture the REAPER selection.", "Audio2Midi", 0)
     return
   end
 
   local model_key = A2M_MODELS[S.model_idx]
   local script    = A2M_SCRIPTS[model_key]
   if not script then
-    reaper.MB("Script del modelo no configurado: " .. tostring(model_key), "Audio2Midi", 0)
+    reaper.MB("Model script not configured: " .. tostring(model_key), "Audio2Midi", 0)
     return
   end
   local f = io.open(script, "r")
   if not f then
-    reaper.MB("Script del modelo no encontrado:\n" .. script ..
-      "\n\nComprueba que Audio2Midi/research/ está en su lugar.",
+    reaper.MB("Model script not found:\n" .. script ..
+      "\n\nCheck that Audio2Midi/research/ is in place.",
       "Audio2Midi", 0)
     return
   end
   f:close()
 
-  local label = "Iniciando " .. (A2M_LABELS[S.model_idx] or model_key) .. "..."
+  local label = "Starting " .. (A2M_LABELS[S.model_idx] or model_key) .. "..."
   clear_run(label)
-  add_log("Modelo: " .. (A2M_LABELS[S.model_idx] or model_key))
+  add_log("Model: " .. (A2M_LABELS[S.model_idx] or model_key))
   add_log("GPU: " .. A2M_GPUS[S.gpu_idx])
-  add_log("Beat tracking: " .. (S.beat_tracking and "sí" or "no"))
+  add_log("Beat tracking: " .. (S.beat_tracking and "yes" or "no"))
 
   local section_args = ""
   if S.src_is_section then
     section_args = string.format(" --start %.6f --duration %.6f",
       S.src_start_offs, S.src_section_dur)
-    add_log(string.format("Sección: %.2fs → %.2fs",
+    add_log(string.format("Section: %.2fs → %.2fs",
       S.src_start_offs, S.src_start_offs + S.src_section_dur))
   end
 
@@ -390,7 +390,7 @@ local function launch_transcribe()
     section_args, beat_arg,
     q(PROGRESS_F), q(LOG_F))
 
-  add_log("Lanzando proceso Modal...")
+  add_log("Launching Modal process...")
   os.execute(cmd)
 end
 
@@ -423,8 +423,8 @@ local function loop()
   -- Setup banner
   poll_setup_check()
   if setup_checked and #setup_missing > 0 then
-    g.text_wrapped("⚠  Config. incompleta: " .. table.concat(setup_missing, " · "))
-    g.text_disabled("Carga shared/Setup.lua en Actions > Load ReaScript para configurar.")
+    g.text_wrapped("⚠  Incomplete setup: " .. table.concat(setup_missing, " · "))
+    g.text_disabled("Load shared/Setup.lua in Actions > Load ReaScript to configure.")
     g.spacing()
   end
 
@@ -437,8 +437,8 @@ local function loop()
   g.separator()
   g.spacing()
 
-  -- Fuente
-  g.row_label("Fuente:", t.sc(54))
+  -- Source
+  g.row_label("Source:", t.sc(54))
   local display_src = (S.src_track_name ~= "")
     and (S.src_track_name .. "  (" .. (S.src:match("[^/\\]+$") or "") .. ")")
     or S.src
@@ -446,7 +446,7 @@ local function loop()
   widgets.input_text("##src_disp", display_src, { readonly = true })
   g.same_line()
   if g.button("...", t.sc(44), t.ITEM_H) then
-    local ok, fn = reaper.GetUserFileNameForRead("", "Abrir audio", "wav")
+    local ok, fn = reaper.GetUserFileNameForRead("", "Open audio", "wav")
     if ok then
       S.src = fn; S.src_track_name = ""; S.src_track_idx = -1
       S.src_is_section = false; S.src_item_pos = nil
@@ -456,12 +456,12 @@ local function loop()
   if g.button("R", t.sc(44), t.ITEM_H) then grab_from_reaper() end
 
   if S.src_track_name ~= "" then
-    g.text_disabled("Pista seleccionada  |  clic en R para actualizar")
+    g.text_disabled("Track selected  |  click R to update")
   else
-    g.text_disabled("Clic en R para usar la pista/item/split activo de REAPER")
+    g.text_disabled("Click R to use the active REAPER track/item/split")
   end
   if S.src_is_section then
-    g.text_colored(string.format("Sección: %.2fs → %.2fs  (%.2fs)",
+    g.text_colored(string.format("Section: %.2fs → %.2fs  (%.2fs)",
       S.src_start_offs, S.src_start_offs + S.src_section_dur, S.src_section_dur),
       "YELLOW")
   end
@@ -469,13 +469,13 @@ local function loop()
   g.separator()
   g.spacing()
 
-  -- Modelo
-  g.row_label("Modelo:", t.sc(68))
+  -- Model
+  g.row_label("Model:", t.sc(68))
   g.next_width(-1)
   local old_idx = S.model_idx
   S.model_idx = widgets.combo("##a2m_model", S.model_idx, A2M_LABELS)
   if S.model_idx ~= old_idx then
-    -- Actualizar GPU por defecto al cambiar de modelo
+    -- Update default GPU when model changes
     S.gpu_idx = A2M_GPU_DEFAULT[A2M_MODELS[S.model_idx]] or 1
   end
 
@@ -484,21 +484,21 @@ local function loop()
   g.next_width(t.sc(100))
   S.gpu_idx = widgets.combo("##a2m_gpu", S.gpu_idx, A2M_GPUS)
 
-  -- Beat tracking (solo muestra aviso para YourMT3+ que no lo usa)
+  -- Beat tracking (only shows a note for YourMT3+ which doesn't use it)
   g.same_line(t.sc(18))
   local bt_changed, bt_new = g.checkbox("Beat tracking##bt", S.beat_tracking)
   if bt_changed then S.beat_tracking = bt_new end
-  if S.model_idx == 2 then  -- YourMT3+ no tiene flag
+  if S.model_idx == 2 then  -- YourMT3+ has no flag
     g.same_line(t.sc(8))
-    g.text_disabled("(N/A en YourMT3+)")
+    g.text_disabled("(N/A for YourMT3+)")
   end
 
   g.spacing()
 
-  -- Hint de coste
+  -- Cost hint
   local hints = {
-    "A10G: ~$0.05/min  |  MIROS requiere A10G mínimo (flash-attn Ampere+)",
-    "A10G: ~$0.05/min  |  YourMT3+ funciona en T4 y superior",
+    "A10G: ~$0.05/min  |  MIROS requires A10G minimum (flash-attn Ampere+)",
+    "A10G: ~$0.05/min  |  YourMT3+ works on T4 and above",
   }
   g.text_disabled(hints[S.model_idx] or "")
 
@@ -506,13 +506,13 @@ local function loop()
   g.separator()
   g.spacing()
 
-  -- Botón GENERAR MIDI
+  -- GENERATE MIDI button
   local btn_color = {
     norm   = { 0x1A/255, 0x7A/255, 0x3C/255 },
     hover  = { 0x22/255, 0x99/255, 0x4D/255 },
     active = { 0x2A/255, 0xB5/255, 0x5C/255 },
   }
-  local btn_lbl = S.running and "[ Transcribiendo... ]" or "GENERAR MIDI"
+  local btn_lbl = S.running and "[ Transcribing... ]" or "GENERATE MIDI"
   g.begin_disabled(S.running)
   g.next_width(-1)
   if g.button(btn_lbl, nil, t.sc(36), { solid = btn_color }) then
@@ -521,7 +521,7 @@ local function loop()
   g.end_disabled()
   g.spacing()
 
-  -- Barra de progreso
+  -- Progress bar
   local pct_str = string.format("%d%%", math.floor(S.progress * 100))
   g.progress_bar(S.progress, nil, t.sc(16), pct_str)
 
@@ -534,7 +534,7 @@ local function loop()
 
   -- Log
   if widgets.collapsing_header("Logs", true) then
-    if g.button("Copiar log", t.sc(90), t.ITEM_H) then
+    if g.button("Copy log", t.sc(90), t.ITEM_H) then
       local ok, _ = pcall(function()
         reaper.CF_SetClipboard(table.concat(S.log, "\n"))
       end)
@@ -543,7 +543,7 @@ local function loop()
       end
     end
     g.same_line()
-    if g.button("Limpiar", t.sc(70), t.ITEM_H) then S.log = {} end
+    if g.button("Clear", t.sc(70), t.ITEM_H) then S.log = {} end
     g.spacing()
 
     if S.log_scroll_to_bottom then
@@ -572,8 +572,8 @@ local function loop()
   reaper.defer(loop)
 end
 
--- ── INICIO ───────────────────────────────────────────────────────
-add_log("Audio2Midi listo.")
+-- ── STARTUP ──────────────────────────────────────────────────────
+add_log("Audio2Midi ready.")
 add_log("Python: " .. PYTHON)
 add_log("MIROS:  " .. A2M_SCRIPTS.miros)
 add_log("YourMT3+: " .. A2M_SCRIPTS.yourmt3)

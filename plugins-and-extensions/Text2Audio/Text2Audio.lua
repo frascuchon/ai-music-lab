@@ -1,19 +1,19 @@
--- @description AI Music Lab - Text2Audio — Generación y edición de audio con IA
+-- @description AI Music Lab - Text2Audio — AI audio generation and editing
 -- @version 1.1
 -- @author AI Music Lab
--- @about Genera audio desde texto o edita un audio existente usando modelos de IA
---        en la nube (Modal). Dos modos:
---          · Generar: prompt de texto → WAV estéreo
+-- @about Generates audio from text or edits an existing audio using cloud AI
+--        models (Modal). Two modes:
+--          · Generate: text prompt → stereo WAV
 --                     (SAO, Foundation-1, ACE-Step, InspireMusic,
 --                      Mustango, AudioGen, MusicGen, MAGNeT)
---          · Editar:  item/pista seleccionado + intención → WAV transformado
+--          · Edit:    selected item/track + intent → transformed WAV
 --                     (SAO style transfer, ACE-Step 1.5, MusicGen-melody,
 --                      MelodyFlow, ZETA/AudioLDM2, InspireMusic continuation)
---        Input edición: pista, item o split (sección) seleccionado en REAPER.
---        Output: pista de audio nueva con el WAV generado, en la posición del source.
---        UI nativa gfx: sin dependencias externas de extensiones REAPER.
+--        Edit input: selected REAPER track, item or split (section).
+--        Output: new audio track with the generated WAV, at the source position.
+--        Native gfx UI: no external REAPER extension dependencies.
 
--- ── RUTAS + LIB ──────────────────────────────────────────────────
+-- ── PATHS + LIB ──────────────────────────────────────────────────
 local _info      = debug.getinfo(1, "S")
 local SCRIPT_DIR = _info.source:match("@?(.*[/\\])") or ""
 
@@ -32,19 +32,19 @@ if PYTHON_ERR then
   reaper.ShowConsoleMsg("Text2Audio - WARNING: " .. PYTHON_ERR .. "\n")
 end
 
--- ── CONSTANTES ───────────────────────────────────────────────────
--- Modelos de generación (text → audio, sin source)
+-- ── CONSTANTS ────────────────────────────────────────────────────
+-- Generation models (text → audio, no source)
 local GEN_MODELS  = { "sao", "foundation1", "acestep_gen", "inspiremusic_gen",
                       "mustango", "audiogen", "musicgen_gen", "magnet" }
 local GEN_LABELS  = {
-  "Stable Audio Open 1.0  (A10G, 44.1 kHz estéreo)",
-  "Foundation-1  (A10G, electrónica, formato TAG)",
+  "Stable Audio Open 1.0  (A10G, 44.1 kHz stereo)",
+  "Foundation-1  (A10G, electronic, TAG format)",
   "ACE-Step 1.5  (A10G, full-song, Apache 2.0)",
   "InspireMusic 1.5B  (A10G, 48 kHz, Apache 2.0)",
-  "Mustango  (A10G, ~10 s fijo, MuBERT features)",
-  "AudioGen-medium  (A10G, 16 kHz, efectos/sonido)",
+  "Mustango  (A10G, ~10 s fixed, MuBERT features)",
+  "AudioGen-medium  (A10G, 16 kHz, effects/sound)",
   "MusicGen-medium  (A10G, 32 kHz, CC-BY-NC)",
-  "MAGNeT-medium  (A10G, 32 kHz, sin-AR, CC-BY-NC)",
+  "MAGNeT-medium  (A10G, 32 kHz, non-AR, CC-BY-NC)",
 }
 local GEN_SCRIPTS = {
   sao            = SCRIPT_DIR .. "research/research_stable_audio_open_modal.py",
@@ -62,13 +62,13 @@ local GEN_MAX_SEC = {
   mustango = 10.0, audiogen = 30.0, musicgen_gen = 30.0, magnet = 30.0,
 }
 
--- Modelos de edición (source audio + prompt → audio transformado)
+-- Edit models (source audio + prompt → transformed audio)
 local EDIT_MODELS  = { "sao_edit", "acestep", "musicgen",
                        "melodyflow", "zeta", "inspiremusic" }
 local EDIT_LABELS  = {
   "SAO Style Transfer  (A10G, SDEdit init_audio)",
-  "ACE-Step 1.5  (A10G, cover/re-estilo, Apache 2.0)",
-  "MusicGen-melody  (A10G, condicionamiento melódico, CC-BY-NC)",
+  "ACE-Step 1.5  (A10G, cover/re-style, Apache 2.0)",
+  "MusicGen-melody  (A10G, melodic conditioning, CC-BY-NC)",
   "MelodyFlow  (A10G, ≤30 s, flow matching, MIT/CC-BY-NC)",
   "ZETA/AudioLDM2  (A10G, ≤10 s, zero-shot, Apache/CC-BY-SA)",
   "InspireMusic continuation  (A10G, ≤30 s, Apache 2.0)",
@@ -88,21 +88,21 @@ local EDIT_NEEDS_SECONDS = {
 
 local GPUS        = { "A10G", "A100", "T4" }
 local INTENSITIES = { "subtle", "moderate", "strong" }
-local INTENSITY_LABELS = { "Suave (subtle)", "Moderado (moderate)", "Fuerte (strong)" }
+local INTENSITY_LABELS = { "Subtle", "Moderate", "Strong" }
 
 local TEXT2AUDIO_PY = SCRIPT_DIR .. "text2audio.py"
 local PROGRESS_F    = TMPDIR .. "t2a_progress.txt"
 local LOG_F         = TMPDIR .. "t2a.log"
 
--- ── ESTADO ───────────────────────────────────────────────────────
+-- ── STATE ────────────────────────────────────────────────────────
 local S = {
-  -- Modo: 1=Generar, 2=Editar
+  -- Mode: 1=Generate, 2=Edit
   mode              = 1,
-  -- Modo Generar
+  -- Generate mode
   prompt            = "",
   duration          = 8.0,
   gen_model_idx     = 1,
-  -- Modo Editar
+  -- Edit mode
   src               = "",
   src_track_name    = "",
   src_track_idx     = -1,
@@ -114,19 +114,19 @@ local S = {
   edit_duration     = 10.0,
   intensity_idx     = 2,   -- "moderate"
   edit_model_idx    = 1,
-  -- Común
+  -- Common
   gpu_idx           = 1,
   -- Runtime
   running           = false,
   done              = false,
   progress          = 0.0,
-  status            = "Listo.",
+  status            = "Ready.",
   log               = {},
   out_files         = {},
   log_scroll_to_bottom = false,
 }
 
--- ── HELPERS CORE ─────────────────────────────────────────────────
+-- ── CORE HELPERS ─────────────────────────────────────────────────
 local function add_log(s)
   table.insert(S.log, tostring(s):sub(1, 200))
   if #S.log > 200 then table.remove(S.log, 1) end
@@ -167,7 +167,7 @@ local function poll_setup_check()
     python         = "Python REAPER",
     uv             = "uv",
     ["modal-cli"]  = "Modal CLI",
-    ["modal-auth"] = "Modal sin auth",
+    ["modal-auth"] = "Modal not authenticated",
   }
   for _, line in ipairs(r.extra) do
     local name, status = line:match("^CHECK|([^|]+)|([^|]+)|")
@@ -177,7 +177,7 @@ local function poll_setup_check()
   end
 end
 
--- ── PROGRESO ─────────────────────────────────────────────────────
+-- ── PROGRESS ─────────────────────────────────────────────────────
 local function read_progress()
   local r = common.read_progress_file(PROGRESS_F)
   if not r then return end
@@ -199,7 +199,7 @@ local function read_progress()
       end
     end
     if #S.out_files > 0 then
-      add_log("Audio listo: " .. (S.out_files[1]:match("[^/\\]+$") or S.out_files[1]))
+      add_log("Audio ready: " .. (S.out_files[1]:match("[^/\\]+$") or S.out_files[1]))
       import_audio()
     end
 
@@ -210,7 +210,7 @@ local function read_progress()
   end
 end
 
--- ── INTEGRACIÓN REAPER ───────────────────────────────────────────
+-- ── REAPER INTEGRATION ───────────────────────────────────────────
 local function detect_section(item, take, src)
   local item_pos    = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
   local item_len    = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
@@ -231,7 +231,7 @@ end
 local function _set_src_from_item(item, context_label)
   local take = reaper.GetActiveTake(item)
   if not take then
-    reaper.MB("El item no tiene take activo.", "Text2Audio", 0); return false
+    reaper.MB("Item has no active take.", "Text2Audio", 0); return false
   end
   local src   = reaper.GetMediaItemTake_Source(take)
   local fname = reaper.GetMediaSourceFileName(src, "")
@@ -249,10 +249,10 @@ local function _set_src_from_item(item, context_label)
   local is_sec, offs, dur = detect_section(item, take, src)
   local kind = is_sec and "split" or context_label
   if is_sec then
-    add_log(string.format("Fuente (%s): %s [%.2fs → %.2fs]",
+    add_log(string.format("Source (%s): %s [%.2fs → %.2fs]",
       kind, fname:match("[^/\\]+$") or fname, offs, offs + dur))
   else
-    add_log(string.format("Fuente (%s): %s", kind, fname:match("[^/\\]+$") or fname))
+    add_log(string.format("Source (%s): %s", kind, fname:match("[^/\\]+$") or fname))
   end
   return true
 end
@@ -271,29 +271,29 @@ local function grab_from_reaper()
     local icnt = reaper.CountTrackMediaItems(tr)
     for i = 0, icnt - 1 do
       local item = reaper.GetTrackMediaItem(tr, i)
-      if _set_src_from_item(item, "pista") then return end
+      if _set_src_from_item(item, "track") then return end
     end
-    reaper.MB("La pista seleccionada no tiene items de audio.", "Text2Audio", 0)
+    reaper.MB("Selected track has no audio items.", "Text2Audio", 0)
     return
   end
 
-  reaper.MB("No hay ningún item ni pista seleccionada en REAPER.", "Text2Audio", 0)
+  reaper.MB("No item or track selected in REAPER.", "Text2Audio", 0)
 end
 
--- ── IMPORTAR AUDIO ───────────────────────────────────────────────
+-- ── IMPORT AUDIO ─────────────────────────────────────────────────
 function import_audio()
   if #S.out_files == 0 then return end
   local wav_path = S.out_files[1]
   local f = io.open(wav_path, "rb")
   if not f then
-    add_log("Error: no se puede leer " .. wav_path); return
+    add_log("Error: cannot read " .. wav_path); return
   end
   f:close()
 
   reaper.Undo_BeginBlock()
   local cursor = S.src_item_pos or reaper.GetCursorPosition()
 
-  -- Nombre base para la nueva pista
+  -- Base name for the new track
   local model_key
   if S.mode == 1 then
     model_key = GEN_MODELS[S.gen_model_idx] or "sao"
@@ -318,11 +318,11 @@ function import_audio()
 
   reaper.InsertMedia(wav_path, 0)
   reaper.UpdateArrange()
-  add_log("Importado: " .. track_name)
+  add_log("Imported: " .. track_name)
   reaper.Undo_EndBlock("Text2Audio: import WAV", -1)
 end
 
--- ── LANZAR GENERACIÓN/EDICIÓN ────────────────────────────────────
+-- ── LAUNCH GENERATION/EDITING ────────────────────────────────────
 local function clear_run(label)
   local f = io.open(PROGRESS_F, "w")
   if f then f:write("running|0.00|" .. label); f:close() end
@@ -339,28 +339,28 @@ end
 local function launch_t2a()
   local run_dir = make_run_dir()
 
-  -- ── Modo GENERAR ──
+  -- ── GENERATE mode ──
   if S.mode == 1 then
     local prompt = S.prompt:match("^%s*(.-)%s*$")
     if prompt == "" then
-      reaper.MB("Escribe un prompt de texto antes de generar.", "Text2Audio", 0)
+      reaper.MB("Write a text prompt before generating.", "Text2Audio", 0)
       return
     end
     local model_key = GEN_MODELS[S.gen_model_idx]
     local script    = GEN_SCRIPTS[model_key]
     local f = io.open(script, "r")
     if not f then
-      reaper.MB("Script no encontrado:\n" .. tostring(script), "Text2Audio", 0)
+      reaper.MB("Script not found:\n" .. tostring(script), "Text2Audio", 0)
       return
     end
     f:close()
 
-    local label = "Iniciando " .. (GEN_LABELS[S.gen_model_idx] or model_key) .. "..."
+    local label = "Starting " .. (GEN_LABELS[S.gen_model_idx] or model_key) .. "..."
     clear_run(label)
-    add_log("Modo: Generar")
-    add_log("Modelo: " .. (GEN_LABELS[S.gen_model_idx] or model_key))
+    add_log("Mode: Generate")
+    add_log("Model: " .. (GEN_LABELS[S.gen_model_idx] or model_key))
     add_log("GPU: " .. GPUS[S.gpu_idx])
-    add_log(string.format("Duración: %.1fs", S.duration))
+    add_log(string.format("Duration: %.1fs", S.duration))
     add_log("Prompt: " .. prompt:sub(1, 80))
 
     local cmd = string.format(
@@ -373,48 +373,48 @@ local function launch_t2a()
       q(prompt), S.duration, q(GPUS[S.gpu_idx]),
       q(run_dir), q(PROGRESS_F), q(LOG_F))
 
-    add_log("Lanzando proceso Modal...")
+    add_log("Launching Modal process...")
     os.execute(cmd)
 
-  -- ── Modo EDITAR ──
+  -- ── EDIT mode ──
   else
     if S.src == "" then
-      reaper.MB("Selecciona una pista, item o sección de audio primero.\n"
-        .. "Usa el botón R para capturar la selección de REAPER.", "Text2Audio", 0)
+      reaper.MB("Select an audio track, item or section first.\n"
+        .. "Use the R button to capture the REAPER selection.", "Text2Audio", 0)
       return
     end
     local prompt = S.edit_prompt:match("^%s*(.-)%s*$")
     if prompt == "" then
-      reaper.MB("Escribe la intención del cambio (ej. 'estilo jazz con piano').", "Text2Audio", 0)
+      reaper.MB("Write the change intent (e.g. 'jazz style with piano').", "Text2Audio", 0)
       return
     end
     local model_key = EDIT_MODELS[S.edit_model_idx]
     local script    = EDIT_SCRIPTS[model_key]
     local f = io.open(script, "r")
     if not f then
-      reaper.MB("Script no encontrado:\n" .. tostring(script), "Text2Audio", 0)
+      reaper.MB("Script not found:\n" .. tostring(script), "Text2Audio", 0)
       return
     end
     f:close()
 
-    local label = "Iniciando " .. (EDIT_LABELS[S.edit_model_idx] or model_key) .. "..."
+    local label = "Starting " .. (EDIT_LABELS[S.edit_model_idx] or model_key) .. "..."
     clear_run(label)
-    add_log("Modo: Editar")
-    add_log("Modelo: " .. (EDIT_LABELS[S.edit_model_idx] or model_key))
+    add_log("Mode: Edit")
+    add_log("Model: " .. (EDIT_LABELS[S.edit_model_idx] or model_key))
     add_log("GPU: " .. GPUS[S.gpu_idx])
-    add_log("Intensidad: " .. INTENSITIES[S.intensity_idx])
-    add_log("Fuente: " .. (S.src:match("[^/\\]+$") or S.src))
+    add_log("Intensity: " .. INTENSITIES[S.intensity_idx])
+    add_log("Source: " .. (S.src:match("[^/\\]+$") or S.src))
     add_log("Prompt: " .. prompt:sub(1, 80))
 
     local section_args = ""
     if S.src_is_section then
       section_args = string.format(" --start %.6f --duration %.6f",
         S.src_start_offs, S.src_section_dur)
-      add_log(string.format("Sección: %.2fs → %.2fs",
+      add_log(string.format("Section: %.2fs → %.2fs",
         S.src_start_offs, S.src_start_offs + S.src_section_dur))
     end
 
-    -- MusicGen necesita --seconds
+    -- MusicGen needs --seconds
     local seconds_arg = ""
     if EDIT_NEEDS_SECONDS[model_key] then
       seconds_arg = string.format(" --seconds %.2f", S.edit_duration)
@@ -431,7 +431,7 @@ local function launch_t2a()
       q(run_dir), section_args, seconds_arg,
       q(PROGRESS_F), q(LOG_F))
 
-    add_log("Lanzando proceso Modal...")
+    add_log("Launching Modal process...")
     os.execute(cmd)
   end
 end
@@ -465,8 +465,8 @@ local function loop()
   -- Setup banner
   poll_setup_check()
   if setup_checked and #setup_missing > 0 then
-    g.text_wrapped("⚠  Config. incompleta: " .. table.concat(setup_missing, " · "))
-    g.text_disabled("Carga shared/Setup.lua en Actions > Load ReaScript para configurar.")
+    g.text_wrapped("⚠  Incomplete setup: " .. table.concat(setup_missing, " · "))
+    g.text_disabled("Load shared/Setup.lua in Actions > Load ReaScript to configure.")
     g.spacing()
   end
 
@@ -479,7 +479,7 @@ local function loop()
   g.separator()
   g.spacing()
 
-  -- ── Tabs de modo ──
+  -- ── Mode tabs ──
   local half_w = math.floor((gfx.w - 2 * t.PAD_X - t.SPACING_X) / 2)
   local c_gen_act  = { norm = {0x14/255, 0x5A/255, 0x9C/255},
                        hover= {0x1A/255, 0x72/255, 0xC5/255},
@@ -493,12 +493,12 @@ local function loop()
   local c_edit_dim = c_gen_dim
 
   g.next_width(half_w)
-  if g.button("⊕ Generar", half_w, t.sc(30),
+  if g.button("⊕ Generate", half_w, t.sc(30),
       { solid = S.mode == 1 and c_gen_act or c_gen_dim }) then
     S.mode = 1
   end
   g.same_line()
-  if g.button("✏ Editar", half_w, t.sc(30),
+  if g.button("✏ Edit", half_w, t.sc(30),
       { solid = S.mode == 2 and c_edit_act or c_edit_dim }) then
     S.mode = 2
   end
@@ -508,35 +508,35 @@ local function loop()
 
   -- ════════════════════════════════════════════
   if S.mode == 1 then
-  -- ── MODO GENERAR ────────────────────────────
+  -- ── GENERATE MODE ───────────────────────────
 
     -- Prompt
     g.push_font(t.F.H1)
     g.text("Prompt")
     g.pop_font()
-    g.text_disabled("Describe el audio: instrumento, BPM, género, duración, tonalidad...")
+    g.text_disabled("Describe the audio: instrument, BPM, genre, duration, key...")
     g.spacing()
 
     local changed_p, new_p = widgets.input_textarea("##gen_prompt", S.prompt, 4)
     if changed_p then S.prompt = new_p end
 
-    -- Hint Foundation-1
+    -- Foundation-1 hint
     if GEN_MODELS[S.gen_model_idx] == "foundation1" then
       g.text_colored(
-        "Foundation-1: usa formato TAG → Instrumento, FX, Genre, N Bars, BPM, Key",
+        "Foundation-1: use TAG format → Instrument, FX, Genre, N Bars, BPM, Key",
         "YELLOW")
     end
     g.spacing()
 
-    -- Duración
+    -- Duration
     local max_sec = GEN_MAX_SEC[GEN_MODELS[S.gen_model_idx]] or 47.0
-    g.row_label("Duración:", t.sc(70))
+    g.row_label("Duration:", t.sc(70))
     g.next_width(-1)
     local ch_dur, new_dur = g.slider_float("##gen_dur", S.duration, 1.0, max_sec, "%.1f s")
     if ch_dur then S.duration = new_dur end
 
-    -- Modelo
-    g.row_label("Modelo:", t.sc(70))
+    -- Model
+    g.row_label("Model:", t.sc(70))
     g.next_width(-1)
     S.gen_model_idx = widgets.combo("##gen_model", S.gen_model_idx, GEN_LABELS)
 
@@ -546,23 +546,23 @@ local function loop()
     S.gpu_idx = widgets.combo("##gen_gpu", S.gpu_idx, GPUS)
     g.spacing()
 
-    -- Hint Mustango (duración fija)
+    -- Mustango fixed duration hint
     if GEN_MODELS[S.gen_model_idx] == "mustango" then
-      g.text_colored("Mustango: duración fija ~10 s (el slider se ignora)", "YELLOW")
+      g.text_colored("Mustango: fixed duration ~10 s (slider is ignored)", "YELLOW")
     end
-    -- Hint coste
+    -- Cost hint
     g.text_disabled("A10G: ~$0.05/min  |  SAO/Foundation-1 ~20-40 s  |  ACE-Step/MusicGen ~30-60 s")
 
   -- ════════════════════════════════════════════
   else
-  -- ── MODO EDITAR ─────────────────────────────
+  -- ── EDIT MODE ───────────────────────────────
 
-    -- Fuente
+    -- Source
     g.push_font(t.F.H1)
-    g.text("Audio fuente")
+    g.text("Source audio")
     g.pop_font()
 
-    g.row_label("Fuente:", t.sc(54))
+    g.row_label("Source:", t.sc(54))
     local display_src = (S.src_track_name ~= "")
       and (S.src_track_name .. "  (" .. (S.src:match("[^/\\]+$") or "") .. ")")
       or S.src
@@ -570,7 +570,7 @@ local function loop()
     widgets.input_text("##src_disp", display_src, { readonly = true })
     g.same_line()
     if g.button("...", t.sc(44), t.ITEM_H) then
-      local ok, fn = reaper.GetUserFileNameForRead("", "Abrir audio", "wav")
+      local ok, fn = reaper.GetUserFileNameForRead("", "Open audio", "wav")
       if ok then
         S.src = fn; S.src_track_name = ""; S.src_track_idx = -1
         S.src_is_section = false; S.src_item_pos = nil
@@ -580,54 +580,54 @@ local function loop()
     if g.button("R", t.sc(44), t.ITEM_H) then grab_from_reaper() end
 
     if S.src_track_name ~= "" then
-      g.text_disabled("Pista seleccionada  |  clic en R para actualizar")
+      g.text_disabled("Track selected  |  click R to update")
     else
-      g.text_disabled("Clic en R para usar la pista/item/split activo de REAPER")
+      g.text_disabled("Click R to use the active REAPER track/item/split")
     end
     if S.src_is_section then
-      g.text_colored(string.format("Sección: %.2fs → %.2fs  (%.2fs)",
+      g.text_colored(string.format("Section: %.2fs → %.2fs  (%.2fs)",
         S.src_start_offs, S.src_start_offs + S.src_section_dur, S.src_section_dur),
         "YELLOW")
     end
     g.spacing()
 
-    -- Prompt intención
+    -- Change intent prompt
     g.push_font(t.F.H1)
-    g.text("Intención del cambio")
+    g.text("Change intent")
     g.pop_font()
-    g.text_disabled("Describe cómo transformar el audio (ej. 'versión jazz con piano')")
+    g.text_disabled("Describe how to transform the audio (e.g. 'jazz version with piano')")
     g.spacing()
 
     local changed_ep, new_ep = widgets.input_textarea("##edit_prompt", S.edit_prompt, 3)
     if changed_ep then S.edit_prompt = new_ep end
     g.spacing()
 
-    -- Modelo edición
-    g.row_label("Modelo:", t.sc(80))
+    -- Edit model
+    g.row_label("Model:", t.sc(80))
     g.next_width(-1)
     S.edit_model_idx = widgets.combo("##edit_model", S.edit_model_idx, EDIT_LABELS)
     g.spacing()
 
-    -- Intensidad (no aplica a MusicGen ni InspireMusic continuation)
+    -- Intensity (not applicable to MusicGen or InspireMusic continuation)
     local cur_edit_model = EDIT_MODELS[S.edit_model_idx]
     local EDIT_NO_INTENSITY = { musicgen = true, inspiremusic = true }
     if not EDIT_NO_INTENSITY[cur_edit_model] then
-      g.row_label("Intensidad:", t.sc(80))
+      g.row_label("Intensity:", t.sc(80))
       g.next_width(t.sc(170))
       S.intensity_idx = widgets.combo("##intensity", S.intensity_idx, INTENSITY_LABELS)
       g.same_line(t.sc(12))
       local hints = {
-        subtle   = "Conserva estructura original",
-        moderate = "Equilibrio transformación/fidelidad",
-        strong   = "Transformación profunda",
+        subtle   = "Preserves original structure",
+        moderate = "Balance between transformation/fidelity",
+        strong   = "Deep transformation",
       }
       g.text_disabled(hints[INTENSITIES[S.intensity_idx]] or "")
       g.spacing()
     end
 
-    -- Duración (solo MusicGen)
+    -- Duration (MusicGen only)
     if EDIT_NEEDS_SECONDS[cur_edit_model] then
-      g.row_label("Duración:", t.sc(80))
+      g.row_label("Duration:", t.sc(80))
       g.next_width(-(t.sc(50) + t.SPACING_X))
       local ch_ed, new_ed = g.slider_float("##edit_dur", S.edit_duration, 1.0, 30.0, "%.1f s")
       if ch_ed then S.edit_duration = new_ed end
@@ -642,32 +642,32 @@ local function loop()
     S.gpu_idx = widgets.combo("##edit_gpu", S.gpu_idx, GPUS)
     g.spacing()
 
-    -- Hints por modelo
+    -- Hints per model
     local model_hints = {
-      sao_edit    = "SAO SDEdit: reutiliza pesos ya descargados de SAO 1.0 (sin coste extra de setup)",
-      acestep     = "ACE-Step: requiere setup inicial (~5 GB). Apache 2.0, uso comercial libre.",
-      musicgen    = "MusicGen-melody: melody conditioning. CC-BY-NC, solo uso no comercial.",
-      melodyflow  = "MelodyFlow: flow matching con inversión latente. Alta fidelidad. ≤30 s.",
+      sao_edit    = "SAO SDEdit: reuses weights already downloaded from SAO 1.0 (no extra setup cost)",
+      acestep     = "ACE-Step: requires initial setup (~5 GB). Apache 2.0, commercial use allowed.",
+      musicgen    = "MusicGen-melody: melodic conditioning. CC-BY-NC, non-commercial use only.",
+      melodyflow  = "MelodyFlow: flow matching with latent inversion. High fidelity. ≤30 s.",
       zeta        = "ZETA/AudioLDM2: DDIM inversion zero-shot. Output 16 kHz mono ≤10 s.",
-      inspiremusic= "InspireMusic: continúa el audio con el estilo indicado en el prompt. ≤30 s.",
+      inspiremusic= "InspireMusic: continues the audio with the style from the prompt. ≤30 s.",
     }
     g.text_disabled(model_hints[cur_edit_model] or "")
   end
 
-  -- ── Sección común ────────────────────────────────────────────
+  -- ── Common section ───────────────────────────────────────────
   g.spacing()
   g.separator()
   g.spacing()
 
-  -- Botón principal
+  -- Main button
   local btn_colors = {
     norm   = S.mode == 1 and {0x14/255, 0x6A/255, 0x3C/255} or {0x3C/255, 0x14/255, 0x6A/255},
     hover  = S.mode == 1 and {0x1A/255, 0x88/255, 0x4D/255} or {0x4D/255, 0x1A/255, 0x88/255},
     active = S.mode == 1 and {0x22/255, 0xA5/255, 0x5E/255} or {0x5E/255, 0x22/255, 0xA5/255},
   }
   local btn_lbl = S.running
-    and (S.mode == 1 and "[ Generando... ]" or "[ Editando... ]")
-    or  (S.mode == 1 and "GENERAR AUDIO"    or "EDITAR AUDIO")
+    and (S.mode == 1 and "[ Generating... ]" or "[ Editing... ]")
+    or  (S.mode == 1 and "GENERATE AUDIO"    or "EDIT AUDIO")
 
   g.begin_disabled(S.running)
   g.next_width(-1)
@@ -677,7 +677,7 @@ local function loop()
   g.end_disabled()
   g.spacing()
 
-  -- Barra de progreso
+  -- Progress bar
   local pct_str = string.format("%d%%", math.floor(S.progress * 100))
   g.progress_bar(S.progress, nil, t.sc(16), pct_str)
 
@@ -690,7 +690,7 @@ local function loop()
 
   -- Logs
   if widgets.collapsing_header("Logs", true) then
-    if g.button("Copiar log", t.sc(90), t.ITEM_H) then
+    if g.button("Copy log", t.sc(90), t.ITEM_H) then
       local ok, _ = pcall(function()
         reaper.CF_SetClipboard(table.concat(S.log, "\n"))
       end)
@@ -699,7 +699,7 @@ local function loop()
       end
     end
     g.same_line()
-    if g.button("Limpiar", t.sc(70), t.ITEM_H) then S.log = {} end
+    if g.button("Clear", t.sc(70), t.ITEM_H) then S.log = {} end
     g.spacing()
 
     if S.log_scroll_to_bottom then
@@ -728,8 +728,8 @@ local function loop()
   reaper.defer(loop)
 end
 
--- ── INICIO ───────────────────────────────────────────────────────
-add_log("Text2Audio listo.")
+-- ── STARTUP ──────────────────────────────────────────────────────
+add_log("Text2Audio ready.")
 add_log("Python: " .. PYTHON)
 add_log("Backend: " .. TEXT2AUDIO_PY)
 launch_setup_check()

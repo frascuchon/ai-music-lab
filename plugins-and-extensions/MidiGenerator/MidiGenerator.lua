@@ -1,12 +1,12 @@
--- @description AI Music Lab - MidiGenerator — Generación de MIDI con IA
+-- @description AI Music Lab - MidiGenerator — AI MIDI generation
 -- @version 1.0
 -- @author AI Music Lab
--- @about Genera MIDI desde texto o seed MIDI usando 6 modelos evaluados en la nube
---        (Modal CUDA). Soporta: Amadeus, MIDI-LLM, text2midi, ChatMusician,
---        MuseCoco, y Anticipatory (acompañamiento/continuación).
---        UI nativa gfx; sin dependencias de extensiones REAPER.
+-- @about Generates MIDI from text or seed MIDI using 6 cloud-evaluated models
+--        (Modal CUDA). Supports: Amadeus, MIDI-LLM, text2midi, ChatMusician,
+--        MuseCoco, and Anticipatory (accompaniment/continuation).
+--        Native gfx UI; no REAPER extension dependencies.
 
--- ── RUTAS + LIB ──────────────────────────────────────────────────
+-- ── PATHS + LIB ──────────────────────────────────────────────────
 local _info      = debug.getinfo(1, "S")
 local SCRIPT_DIR = _info.source:match("@?(.*[/\\])") or ""
 local SHARED_DIR = SCRIPT_DIR .. "../shared/"
@@ -24,24 +24,24 @@ if PYTHON_ERR then
   reaper.ShowConsoleMsg("MidiGenerator - WARNING: " .. PYTHON_ERR .. "\n")
 end
 
--- ── CONSTANTES: MODELOS ──────────────────────────────────────────
+-- ── CONSTANTS: MODELS ────────────────────────────────────────────
 local MG_MODELS = {
   "amadeus", "midi_llm", "text2midi",
   "chatmusician", "musecoco", "anticipatory",
 }
 local MG_LABELS = {
   "Amadeus  (multi-track, MidiCaps, A10G)",
-  "MIDI-LLM  (multi-track, libre, A10G) [solo CUDA]",
-  "text2midi  (baseline, multi-track) [calidad baja]",
-  "ChatMusician  (multi-voz, ABC notation) [limitado]",
-  "MuseCoco  (multi-track, atributos, A100) [~11 min]",
-  "Anticipatory  (acompañamiento/cover, seed MIDI, A10G)",
+  "MIDI-LLM  (multi-track, free, A10G) [CUDA only]",
+  "text2midi  (baseline, multi-track) [low quality]",
+  "ChatMusician  (multi-voice, ABC notation) [limited]",
+  "MuseCoco  (multi-track, attributes, A100) [~11 min]",
+  "Anticipatory  (accompaniment/cover, seed MIDI, A10G)",
 }
 local MG_SCRIPTS = {}
 for _, k in ipairs(MG_MODELS) do
   MG_SCRIPTS[k] = SCRIPT_DIR .. "research/research_" .. k .. "_modal.py"
 end
--- MuseCoco usa nombre diferente en disco
+-- MuseCoco uses a different filename on disk
 MG_SCRIPTS["musecoco"] = SCRIPT_DIR .. "research/research_musecoco_modal.py"
 
 local MG_GPUS        = { "A10G", "A100-40GB", "T4", "L4" }
@@ -49,58 +49,58 @@ local MG_GPU_DEFAULT = {
   amadeus="A10G", midi_llm="A10G", text2midi="A10G",
   chatmusician="A10G", musecoco="A100-40GB", anticipatory="A10G",
 }
--- Modelos donde GPU es pasada al script (los demás la ignoran)
+-- Models where GPU is passed to the script (others ignore it)
 local MG_GPU_RELEVANT = { midi_llm=true, anticipatory=true }
 
 local AMT_MODES = { "accompaniment", "continuation" }
-local AMT_MODE_LABELS = { "Acompañamiento", "Continuación" }
+local AMT_MODE_LABELS = { "Accompaniment", "Continuation" }
 
 local MIDIGEN_PY = SCRIPT_DIR .. "midigen.py"
 local PROGRESS_F = TMPDIR .. "midigen_progress.txt"
 local LOG_F      = TMPDIR .. "midigen.log"
 
--- ── ESTADO ───────────────────────────────────────────────────────
+-- ── STATE ────────────────────────────────────────────────────────
 local S = {
-  -- Modelo
+  -- Model
   model_idx = 1,
   gpu       = "A10G",
-  -- Prompt (modelos de texto)
+  -- Prompt (text models)
   prompt    = "",
-  -- Campos opcionales MidiCaps (amadeus / text2midi)
+  -- Optional MidiCaps fields (amadeus / text2midi)
   field_key         = "",
   field_bpm         = "",
   field_instruments = "",
   field_chords      = "",
-  -- ChatMusician: seed opcional para armonización
+  -- ChatMusician: optional seed for harmonization
   cm_use_seed = false,
-  -- Seed MIDI (ChatMusician armonización)
+  -- Seed MIDI (ChatMusician harmonization)
   seed_path       = "",
   seed_label      = "",
-  -- Parámetros AMT
+  -- AMT parameters
   amt_mode_idx     = 1,   -- 1=accompaniment, 2=continuation
-  amt_duration     = 20,  -- clip_length (accompaniment) o duration (continuation)
-  amt_prompt_len   = 5,   -- prompt_length (solo accompaniment)
-  -- AMT: pista de melodía
-  amt_melody_item  = nil,   -- item REAPER (para posición/longitud al importar)
+  amt_duration     = 20,  -- clip_length (accompaniment) or duration (continuation)
+  amt_prompt_len   = 5,   -- prompt_length (accompaniment only)
+  -- AMT: melody track
+  amt_melody_item  = nil,   -- REAPER item (for position/length on import)
   amt_melody_take  = nil,
   amt_melody_label = "",
-  -- AMT: pistas de seed de acompañamiento
-  amt_seed_takes   = {},  -- lista de {take=take, label="nombre pista"}
-  -- Parámetros comunes
+  -- AMT: accompaniment seed tracks
+  amt_seed_takes   = {},  -- list of {take=take, label="track name"}
+  -- Common parameters
   n_outputs   = 2,
   temperature = 1.0,
   -- Runtime
   running    = false,
   done       = false,
   progress   = 0.0,
-  status     = "Listo.",
+  status     = "Ready.",
   log        = {},
   out_files  = {},
   n_instruments = -1,
   log_scroll_to_bottom = false,
 }
 
--- ── HELPERS CORE ─────────────────────────────────────────────────
+-- ── CORE HELPERS ─────────────────────────────────────────────────
 local function add_log(s)
   table.insert(S.log, tostring(s):sub(1, 200))
   if #S.log > 200 then table.remove(S.log, 1) end
@@ -114,7 +114,7 @@ local function make_run_dir()
   _run_id = _run_id + 1
   local d = TMPDIR .. "midigen_run" .. _run_id .. "/"
   os.execute("mkdir -p " .. q(d))
-  -- Limpiar runs anteriores (pero no el actual) para que no contaminen _collect_outputs
+  -- Clean up previous runs (but not the current one) so they don't pollute _collect_outputs
   os.execute(string.format(
     "find %s -maxdepth 1 -type d -name 'midigen_run*' ! -name 'midigen_run%d' -exec rm -rf {} + 2>/dev/null || true",
     q(TMPDIR), _run_id))
@@ -123,9 +123,9 @@ end
 
 local function model_key() return MG_MODELS[S.model_idx] end
 
--- ── ESCRITOR SMF (exportar toma MIDI in-project) ─────────────────
--- Escribe un SMF Type-1 mínimo a partir de una take MIDI de REAPER.
--- Soporta note on/off. Usado cuando el source no es un .mid en disco.
+-- ── SMF WRITER (export in-project MIDI take) ─────────────────────
+-- Writes a minimal SMF Type-1 from a REAPER MIDI take.
+-- Supports note on/off. Used when the source is not a .mid file on disk.
 
 local function _vlq(n)
   if n < 0x80 then return string.char(n) end
@@ -157,20 +157,20 @@ local function write_midi_from_take(take, filepath)
   local bpm = reaper.Master_GetTempo()
   local tempo_uspb = math.floor(60000000 / bpm)
 
-  -- Tiempo de proyecto en tick 0 del take (posición del item + offset de fuente).
-  -- Restarlo normaliza todos los eventos a t=0 relativo al inicio del item,
-  -- que es lo que esperan las librerías AMT (anticipation usa clip(events, 0, N)).
+  -- Project time at tick 0 of the take (item position + source offset).
+  -- Subtracting it normalizes all events to t=0 relative to the item start,
+  -- which is what AMT libraries expect (anticipation uses clip(events, 0, N)).
   local t_item_start = reaper.MIDI_GetProjTimeFromPPQPos(take, 0)
 
-  -- Recoger notas: {ppq_start, ppq_end, chan, pitch, vel}
-  -- MIDI_CountEvts devuelve (retval, notes, ccs, sysex)
+  -- Collect notes: {ppq_start, ppq_end, chan, pitch, vel}
+  -- MIDI_CountEvts returns (retval, notes, ccs, sysex)
   local _, noteCount = reaper.MIDI_CountEvts(take)
   noteCount = noteCount or 0
   local events = {}
   for i = 0, noteCount - 1 do
     local _, _, _, startppq, endppq, chan, pitch, vel =
       reaper.MIDI_GetNote(take, i)
-    -- Convertir a tiempo relativo (s desde inicio del item) y luego a PPQ-480
+    -- Convert to relative time (s from item start) then to PPQ-480
     local t_start = reaper.MIDI_GetProjTimeFromPPQPos(take, startppq) - t_item_start
     local t_end   = reaper.MIDI_GetProjTimeFromPPQPos(take, endppq)   - t_item_start
     local p_start = math.floor(t_start * (bpm/60) * PPQ + 0.5)
@@ -182,7 +182,7 @@ local function write_midi_from_take(take, filepath)
   end
   table.sort(events, function(a,b) return a.tick < b.tick end)
 
-  -- Construir track de notas
+  -- Build note track
   local trk = ""
   local prev_tick = 0
   for _, ev in ipairs(events) do
@@ -192,7 +192,7 @@ local function write_midi_from_take(take, filepath)
   end
   trk = trk .. "\000\255\047\000"  -- delta=0, meta End of Track
 
-  -- Construir track de tempo
+  -- Build tempo track
   local tmp = "\000\255\081\003"  -- delta=0, meta Tempo, len=3
     .. string.char(
         math.floor(tempo_uspb/65536)%256,
@@ -200,21 +200,21 @@ local function write_midi_from_take(take, filepath)
         tempo_uspb%256)
     .. "\000\255\047\000"
 
-  -- Ensamblar SMF
+  -- Assemble SMF
   local f = io.open(filepath, "wb")
-  if not f then return false, "No se pudo crear " .. filepath end
+  if not f then return false, "Could not create " .. filepath end
   -- MThd
   f:write("MThd" .. _u32be(6) .. _u16be(1) .. _u16be(2) .. _u16be(PPQ))
   -- Tempo track
   f:write("MTrk" .. _u32be(#tmp) .. tmp)
-  -- Notas track
+  -- Notes track
   f:write("MTrk" .. _u32be(#trk) .. trk)
   f:close()
   return true, nil
 end
 
--- ── COMBINAR MÚLTIPLES TOMAS EN UN SOLO MIDI (para AMT) ─────────
--- melodía → canal 0, cada seed take → canal 1,2,3...
+-- ── COMBINE MULTIPLE TAKES INTO A SINGLE MIDI (for AMT) ──────────
+-- melody → channel 0, each seed take → channel 1,2,3...
 local function write_combined_midi(melody_take, seed_takes, filepath)
   local PPQ = 480
   local bpm = reaper.Master_GetTempo()
@@ -260,7 +260,7 @@ local function write_combined_midi(melody_take, seed_takes, filepath)
     .. "\000\255\047\000"
 
   local f = io.open(filepath, "wb")
-  if not f then return false, "No se pudo crear " .. filepath end
+  if not f then return false, "Could not create " .. filepath end
   f:write("MThd" .. _u32be(6) .. _u16be(1) .. _u16be(2) .. _u16be(PPQ))
   f:write("MTrk" .. _u32be(#tmp) .. tmp)
   f:write("MTrk" .. _u32be(#trk) .. trk)
@@ -288,7 +288,7 @@ local function poll_setup_check()
   if not r or r.state ~= "done" then return end
   setup_checked = true
   local CORE = { python="Python REAPER", uv="uv",
-                 ["modal-cli"]="Modal CLI", ["modal-auth"]="Modal sin auth" }
+                 ["modal-cli"]="Modal CLI", ["modal-auth"]="Modal not authenticated" }
   for _, line in ipairs(r.extra) do
     local name, status = line:match("^CHECK|([^|]+)|([^|]+)|")
     if name and status == "missing" and CORE[name] then
@@ -297,7 +297,7 @@ local function poll_setup_check()
   end
 end
 
--- ── PROGRESO ─────────────────────────────────────────────────────
+-- ── PROGRESS ─────────────────────────────────────────────────────
 local function read_progress()
   local r = common.read_progress_file(PROGRESS_F)
   if not r then return end
@@ -320,7 +320,7 @@ local function read_progress()
       end
     end
     if #S.out_files > 0 then
-      add_log(string.format("MIDI listo (%s instrumento%s, %d candidato%s)",
+      add_log(string.format("MIDI ready (%s instrument%s, %d candidate%s)",
         S.n_instruments >= 0 and tostring(S.n_instruments) or "?",
         S.n_instruments ~= 1 and "s" or "",
         #S.out_files, #S.out_files ~= 1 and "s" or ""))
@@ -332,29 +332,29 @@ local function read_progress()
   end
 end
 
--- ── IMPORTAR MIDI (multi-candidato) ──────────────────────────────
--- Cada candidato (.mid) se importa en su propia carpeta de pistas.
--- Reutiliza la lógica de Audio2Midi con I_FOLDERDEPTH para la carpeta.
+-- ── IMPORT MIDI (multi-candidate) ────────────────────────────────
+-- Each candidate (.mid) is imported into its own track folder.
+-- Reuses Audio2Midi's I_FOLDERDEPTH folder logic.
 
 local function _import_one(mid_path, folder_name)
   local f = io.open(mid_path, "rb")
-  if not f then add_log("Error: no se puede leer " .. mid_path); return end
+  if not f then add_log("Error: cannot read " .. mid_path); return end
   f:close()
 
   local cursor      = reaper.GetCursorPosition()
   local tcnt_before = reaper.CountTracks(0)
 
-  -- Snapshot de markers existentes: InsertMedia puede crear markers desde
-  -- meta-events MIDI (tipo 0x06/0x07), que crean ruido visual en el timeline.
+  -- Snapshot existing markers: InsertMedia can create markers from MIDI
+  -- meta-events (type 0x06/0x07), adding visual noise to the timeline.
   local marker_snap = {}
   for i = 0, reaper.CountProjectMarkers(0) - 1 do
     local _, _, _, _, _, idx = reaper.EnumProjectMarkers(i)
     marker_snap[idx] = true
   end
 
-  -- Deseleccionar todas las pistas antes de InsertMedia: si hay pistas seleccionadas
-  -- (p.ej. del candidato anterior), InsertMedia añadiría items a esas pistas
-  -- en lugar de crear pistas nuevas.
+  -- Deselect all tracks before InsertMedia: if tracks are selected
+  -- (e.g. from the previous candidate), InsertMedia would add items to those
+  -- tracks instead of creating new ones.
   for i = 0, reaper.CountTracks(0) - 1 do
     reaper.SetTrackSelected(reaper.GetTrack(0, i), false)
   end
@@ -362,7 +362,7 @@ local function _import_one(mid_path, folder_name)
   reaper.SetEditCurPos(cursor, false, false)
   reaper.InsertMedia(mid_path, 0)
 
-  -- Eliminar markers añadidos por la importación
+  -- Remove markers added by the import
   for i = reaper.CountProjectMarkers(0) - 1, 0, -1 do
     local _, isrgn, _, _, _, idx = reaper.EnumProjectMarkers(i)
     if not isrgn and not marker_snap[idx] then
@@ -372,13 +372,13 @@ local function _import_one(mid_path, folder_name)
 
   local delta = reaper.CountTracks(0) - tcnt_before
   if delta <= 0 then
-    add_log("Aviso: InsertMedia no añadió pistas para " .. mid_path:match("[^/\\]+$"))
+    add_log("Warning: InsertMedia did not add tracks for " .. mid_path:match("[^/\\]+$"))
     return
   end
   add_log(string.format("DEBUG: delta=%d tcnt_before=%d tcnt_after=%d", delta, tcnt_before, reaper.CountTracks(0)))
 
-  -- Corregir posición: InsertMedia para MIDI multi-track puede ignorar
-  -- SetEditCurPos e insertar los items en posición 0. Detectar y offsetear.
+  -- Fix position: multi-track MIDI InsertMedia may ignore SetEditCurPos and
+  -- insert items at position 0. Detect and offset if needed.
   local min_pos = math.huge
   for i = tcnt_before, tcnt_before + delta - 1 do
     local tr = reaper.GetTrack(0, i)
@@ -408,7 +408,7 @@ local function _import_one(mid_path, folder_name)
     end
   end
 
-  -- Siempre crear estructura de carpeta (independientemente de cuántas pistas)
+  -- Always create folder structure (regardless of track count)
   reaper.InsertTrackAtIndex(tcnt_before, true)
   local folder_tr = reaper.GetTrack(0, tcnt_before)
   add_log(string.format("DEBUG: folder_tr created at index %d, name='%s'", tcnt_before, folder_name))
@@ -425,7 +425,7 @@ local function _import_one(mid_path, folder_name)
   end
   local last_tr = reaper.GetTrack(0, tcnt_before + delta)
   if last_tr then reaper.SetMediaTrackInfo_Value(last_tr, "I_FOLDERDEPTH", -1) end
-  add_log(string.format("Importado en carpeta '%s' (%d pista%s)",
+  add_log(string.format("Imported into folder '%s' (%d track%s)",
     folder_name, delta, delta == 1 and "" or "s"))
 end
 
@@ -434,33 +434,33 @@ function import_midi_all()
   local mk    = model_key()
   local label = "[MIDI " .. mk .. "]"
 
-  -- Para AMT continuación: posicionar cursor al final del item de melodía
-  -- para que la continuación se inserte justo después (no solapando el seed).
+  -- For AMT continuation: position cursor at the end of the melody item
+  -- so the continuation is inserted right after (not overlapping the seed).
   if mk == "anticipatory"
       and AMT_MODES[S.amt_mode_idx] == "continuation"
       and S.amt_melody_item then
     local pos = reaper.GetMediaItemInfo_Value(S.amt_melody_item, "D_POSITION")
     local len = reaper.GetMediaItemInfo_Value(S.amt_melody_item, "D_LENGTH")
     reaper.SetEditCurPos(pos + len, false, false)
-    add_log(string.format("Cursor → %.2fs (fin del item de melodía)", pos + len))
+    add_log(string.format("Cursor → %.2fs (end of melody item)", pos + len))
   end
 
   reaper.Undo_BeginBlock()
   for i, path in ipairs(S.out_files) do
-    local suffix = #S.out_files > 1 and (" — candidato " .. i) or ""
+    local suffix = #S.out_files > 1 and (" — candidate " .. i) or ""
     _import_one(path, label .. suffix)
   end
   reaper.UpdateArrange()
   reaper.Undo_EndBlock("MidiGenerator: import MIDI", -1)
 end
 
--- ── CAPTURA DE SEED MIDI ─────────────────────────────────────────
+-- ── SEED MIDI CAPTURE ────────────────────────────────────────────
 local function _try_get_source_path(take)
   local src = reaper.GetMediaItemTake_Source(take)
   if not src then return nil end
   local fname = reaper.GetMediaSourceFileName(src, "")
   if not fname or fname == "" then return nil end
-  -- Verificar que es un .mid existente en disco
+  -- Verify it is an existing .mid file on disk
   local ext = fname:match("%.([^%.]+)$")
   if not ext then return nil end
   ext = ext:lower()
@@ -475,7 +475,7 @@ local function _export_take_to_tmp(take)
   local tmp_path = TMPDIR .. "midigen_seed_" .. _run_id .. ".mid"
   local ok, err = write_midi_from_take(take, tmp_path)
   if ok then return tmp_path end
-  add_log("Aviso al exportar MIDI: " .. (err or "error desconocido"))
+  add_log("Warning exporting MIDI: " .. (err or "unknown error"))
   return nil
 end
 
@@ -496,37 +496,37 @@ local function grab_midi_from_reaper()
   end
 
   if not item then
-    reaper.MB("No hay ningún item MIDI seleccionado en REAPER.", "MidiGenerator", 0)
+    reaper.MB("No MIDI item selected in REAPER.", "MidiGenerator", 0)
     return
   end
 
   local take = reaper.GetActiveTake(item)
   if not take or not reaper.TakeIsMIDI(take) then
-    reaper.MB("El item seleccionado no contiene MIDI.", "MidiGenerator", 0)
+    reaper.MB("Selected item does not contain MIDI.", "MidiGenerator", 0)
     return
   end
 
-  -- Intentar ruta directa de fichero .mid
+  -- Try direct .mid file path
   local path = _try_get_source_path(take)
   if path then
     S.seed_path  = path
     S.seed_label = path:match("[^/\\]+$") or path
-    add_log("Seed MIDI (fichero): " .. S.seed_label)
+    add_log("Seed MIDI (file): " .. S.seed_label)
     return
   end
 
-  -- Exportar take in-project a fichero temporal
-  add_log("MIDI in-project detectado; exportando a fichero temporal...")
+  -- Export in-project take to temp file
+  add_log("In-project MIDI detected; exporting to temp file...")
   path = _export_take_to_tmp(take)
   if path then
     S.seed_path  = path
-    S.seed_label = "(take in-project → exportado)"
-    add_log("Seed exportado: " .. path)
+    S.seed_label = "(in-project take → exported)"
+    add_log("Seed exported: " .. path)
   else
     reaper.MB(
-      "No se pudo exportar el MIDI in-project.\n"
-      .. "Exporta la pista MIDI a un fichero .mid (File → Export → MIDI file)"
-      .. " y selecciónalo con el botón '...'.",
+      "Could not export the in-project MIDI.\n"
+      .. "Export the MIDI track to a .mid file (File → Export → MIDI file)"
+      .. " and select it with the '...' button.",
       "MidiGenerator", 0)
   end
 end
@@ -536,7 +536,7 @@ local function _get_track_label(item)
   if not tr then return "?" end
   local _, tname = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
   local tnum = reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")
-  return (tname ~= "" and tname) or ("Pista " .. math.floor(tnum))
+  return (tname ~= "" and tname) or ("Track " .. math.floor(tnum))
 end
 
 local function grab_melody_item()
@@ -555,18 +555,18 @@ local function grab_melody_item()
     end
   end
   if not item then
-    reaper.MB("No hay ningún item MIDI seleccionado en REAPER.", "MidiGenerator", 0)
+    reaper.MB("No MIDI item selected in REAPER.", "MidiGenerator", 0)
     return
   end
   local take = reaper.GetActiveTake(item)
   if not take or not reaper.TakeIsMIDI(take) then
-    reaper.MB("El item seleccionado no contiene MIDI.", "MidiGenerator", 0)
+    reaper.MB("Selected item does not contain MIDI.", "MidiGenerator", 0)
     return
   end
   S.amt_melody_item  = item
   S.amt_melody_take  = take
   S.amt_melody_label = _get_track_label(item)
-  add_log("Melodía capturada: " .. S.amt_melody_label)
+  add_log("Melody captured: " .. S.amt_melody_label)
 end
 
 local function add_seed_items_from_reaper()
@@ -581,13 +581,13 @@ local function add_seed_items_from_reaper()
     end
   end
   if added == 0 then
-    reaper.MB("No hay items MIDI seleccionados en REAPER.", "MidiGenerator", 0)
+    reaper.MB("No MIDI items selected in REAPER.", "MidiGenerator", 0)
   else
-    add_log("Añadidas " .. added .. " pista(s) de seed.")
+    add_log("Added " .. added .. " seed track(s).")
   end
 end
 
--- ── LANZAR GENERACIÓN ────────────────────────────────────────────
+-- ── LAUNCH GENERATION ────────────────────────────────────────────
 local function clear_run(label)
   local f = io.open(PROGRESS_F, "w")
   if f then f:write("running|0.00|" .. label); f:close() end
@@ -605,45 +605,45 @@ local function launch_generate()
   local is_text  = not is_amt
   local has_fields = (mk == "amadeus" or mk == "text2midi")
 
-  -- Validaciones
+  -- Validations
   if is_text and S.prompt:match("^%s*$") then
-    reaper.MB("Escribe un prompt de texto antes de generar.", "MidiGenerator", 0)
+    reaper.MB("Write a text prompt before generating.", "MidiGenerator", 0)
     return
   end
   if is_amt and not S.amt_melody_take then
     reaper.MB(
-      "Anticipatory necesita una pista de melodía.\n"
-      .. "Selecciona un item MIDI en REAPER y clic R junto a 'Melodía'.",
+      "Anticipatory needs a melody track.\n"
+      .. "Select a MIDI item in REAPER and click R next to 'Melody'.",
       "MidiGenerator", 0)
     return
   end
   local amt_mode_is_acc = is_amt and (AMT_MODES[S.amt_mode_idx] == "accompaniment")
   if amt_mode_is_acc and #S.amt_seed_takes == 0 then
     reaper.MB(
-      "El modo acompañamiento necesita al menos una pista de seed.\n"
-      .. "Selecciona items MIDI en REAPER y clic '+' junto a 'Seed acc.'.",
+      "Accompaniment mode needs at least one seed track.\n"
+      .. "Select MIDI items in REAPER and click '+' next to 'Seed acc.'.",
       "MidiGenerator", 0)
     return
   end
   if mk == "chatmusician" and S.cm_use_seed and S.seed_path == "" then
-    reaper.MB("Activaste 'Armonizar seed' pero no has cargado ningún MIDI.", "MidiGenerator", 0)
+    reaper.MB("You enabled 'Harmonize seed' but no MIDI has been loaded.", "MidiGenerator", 0)
     return
   end
 
   local f = io.open(script, "r")
   if not f then
-    reaper.MB("Script no encontrado:\n" .. script, "MidiGenerator", 0); return
+    reaper.MB("Script not found:\n" .. script, "MidiGenerator", 0); return
   end
   f:close()
 
-  local label = "Iniciando " .. (MG_LABELS[S.model_idx] or mk) .. "..."
+  local label = "Starting " .. (MG_LABELS[S.model_idx] or mk) .. "..."
   clear_run(label)
-  add_log("Modelo: " .. (MG_LABELS[S.model_idx] or mk))
+  add_log("Model: " .. (MG_LABELS[S.model_idx] or mk))
   add_log("GPU: " .. S.gpu)
 
   local run_dir = make_run_dir()
 
-  -- Construir comando base (sin backgroundear todavía)
+  -- Build base command (not yet backgrounded)
   local base = string.format(
     '%s %s --shared-dir %s --script %s --model %s'
     .. ' --out-dir %s --gpu %s --n-outputs %d --progress %s',
@@ -657,7 +657,7 @@ local function launch_generate()
     add_log("Prompt: " .. S.prompt:sub(1,80))
     extra = extra .. " --prompt " .. q(S.prompt)
     extra = extra .. string.format(" --temperature %.2f", S.temperature)
-    -- BPM siempre desde el proyecto para amadeus/text2midi (el usuario no lo edita)
+    -- BPM always from project for amadeus/text2midi (not user-editable)
     if has_fields then
       extra = extra .. " --field-bpm " .. q(string.format("%.0f", reaper.Master_GetTempo()))
     end
@@ -668,30 +668,30 @@ local function launch_generate()
       extra = extra .. " --seed-file " .. q(S.seed_path)
     end
   else
-    -- AMT: construir MIDI combinado (melodía canal 0 + seed canales 1..N)
-    -- Escribir a TMPDIR (fuera de run_dir) para que _collect_outputs no lo recoja
+    -- AMT: build combined MIDI (melody channel 0 + seed channels 1..N)
+    -- Write to TMPDIR (outside run_dir) so _collect_outputs doesn't pick it up
     local seed_path = TMPDIR .. "combined_seed.mid"
     local ok_s, err_s = write_combined_midi(S.amt_melody_take, S.amt_seed_takes, seed_path)
     if not ok_s then
-      reaper.MB("Error al construir seed MIDI: " .. (err_s or "?"), "MidiGenerator", 0)
+      reaper.MB("Error building seed MIDI: " .. (err_s or "?"), "MidiGenerator", 0)
       S.running = false
       return
     end
     local mode = AMT_MODES[S.amt_mode_idx]
-    add_log("Modo AMT: " .. mode)
-    add_log("Melodía: " .. S.amt_melody_label)
+    add_log("AMT mode: " .. mode)
+    add_log("Melody: " .. S.amt_melody_label)
     add_log("Seed tracks: " .. #S.amt_seed_takes)
-    add_log("Seed MIDI combinado: " .. seed_path)
+    add_log("Combined seed MIDI: " .. seed_path)
     extra = extra .. " --seed "              .. q(seed_path)
     extra = extra .. " --mode "              .. q(mode)
     extra = extra .. " --prompt-length "     .. tostring(S.amt_prompt_len)
     extra = extra .. " --clip-length "       .. tostring(S.amt_duration)
     extra = extra .. " --melody-instrument 0"
-    -- --n-outputs ya está en base; midigen.py lo mapea internamente a --multiplicity
+    -- --n-outputs is already in base; midigen.py maps it internally to --multiplicity
   end
 
   local cmd = base .. extra .. " >>" .. q(LOG_F) .. " 2>&1 &"
-  add_log("Lanzando Modal...")
+  add_log("Launching Modal...")
   os.execute(cmd)
 end
 
@@ -726,8 +726,8 @@ local function loop()
   -- Setup banner
   poll_setup_check()
   if setup_checked and #setup_missing > 0 then
-    g.text_wrapped("⚠  Config. incompleta: " .. table.concat(setup_missing, " · "))
-    g.text_disabled("Carga shared/Setup.lua en Actions > Load ReaScript.")
+    g.text_wrapped("⚠  Incomplete setup: " .. table.concat(setup_missing, " · "))
+    g.text_disabled("Load shared/Setup.lua in Actions > Load ReaScript.")
     g.spacing()
   end
 
@@ -739,8 +739,8 @@ local function loop()
   g.text_colored("● REAPER OK", "GREEN")
   g.separator(); g.spacing()
 
-  -- ── MODELO ─────────────────────────────────────────────────────
-  g.row_label("Modelo:", t.sc(70))
+  -- ── MODEL ───────────────────────────────────────────────────────
+  g.row_label("Model:", t.sc(70))
   g.next_width(-1)
   local old_idx = S.model_idx
   S.model_idx = widgets.combo("##mg_model", S.model_idx, MG_LABELS)
@@ -750,35 +750,35 @@ local function loop()
   g.spacing()
   g.separator(); g.spacing()
 
-  -- ── INPUT: PROMPT O SEED ────────────────────────────────────────
+  -- ── INPUT: PROMPT OR SEED ───────────────────────────────────────
   if is_text then
     -- ── Prompt ────────────────────────────────────────────────────
     g.text("Prompt:")
     g.next_width(-1)
     local rv, nv = widgets.input_textarea("##mg_prompt", S.prompt, 3,
-      { placeholder = "Describe el estilo musical, instrumentos, mood..." })
+      { placeholder = "Describe the musical style, instruments, mood..." })
     if rv then S.prompt = nv end
 
-    -- Nota informativa por modelo
+    -- Informational note per model
     if mk == "midi_llm" then
-      g.text_disabled("  El modelo antepone su system-prompt internamente.")
+      g.text_disabled("  Model prepends its system-prompt internally.")
     elseif mk == "chatmusician" then
-      g.text_disabled("  Usa frases como: 'chord progression Am-F-C-G'.")
+      g.text_disabled("  Use phrases like: 'chord progression Am-F-C-G'.")
     elseif mk == "musecoco" then
-      g.text_disabled("  Incluye instrumentos en el texto para activar el override de clases.")
+      g.text_disabled("  Include instruments in the text to activate class override.")
     elseif mk == "amadeus" or mk == "text2midi" then
-      g.text_disabled("  Rellena los campos opcionales para resultados más predecibles.")
+      g.text_disabled("  Fill in the optional fields for more predictable results.")
     end
 
-    -- ── Seed opcional ChatMusician ─────────────────────────────────
+    -- ── Optional ChatMusician seed ─────────────────────────────────
     if has_opt_seed then
       g.spacing()
-      local chg, nv2 = g.checkbox("Armonizar seed MIDI##cm_seed", S.cm_use_seed)
+      local chg, nv2 = g.checkbox("Harmonize seed MIDI##cm_seed", S.cm_use_seed)
       if chg then S.cm_use_seed = nv2 end
       if S.cm_use_seed then
         g.row_label("Seed:", t.sc(70))
         g.next_width(-(2 * t.SPACING_X + 2 * t.sc(44)))
-        widgets.input_text("##mg_seed_disp", S.seed_label ~= "" and S.seed_label or "(ninguno)", { readonly=true })
+        widgets.input_text("##mg_seed_disp", S.seed_label ~= "" and S.seed_label or "(none)", { readonly=true })
         g.same_line()
         if g.button("...", t.sc(44), t.ITEM_H) then
           local ok, fn = reaper.GetUserFileNameForRead("", "Seed MIDI", "mid")
@@ -789,83 +789,83 @@ local function loop()
       end
     end
 
-    -- ── Campos opcionales MidiCaps ─────────────────────────────────
+    -- ── Optional MidiCaps fields ───────────────────────────────────
     if has_fields then
       g.spacing()
-      if widgets.collapsing_header("Campos opcionales (key / BPM / instrumentos / acordes)", false) then
+      if widgets.collapsing_header("Optional fields (key / BPM / instruments / chords)", false) then
         local lw = t.sc(90)
-        g.row_label("Tonalidad:", lw)
+        g.row_label("Key:", lw)
         g.next_width(t.sc(120))
         local r1, v1 = widgets.input_text("##mg_key", S.field_key)
         if r1 then S.field_key = v1 end
         g.same_line(t.sc(14)); g.inline_text("BPM:")
         g.same_line(t.sc(6))
         g.text_colored(string.format("%.1f", reaper.Master_GetTempo()), "GREEN")
-        g.same_line(t.sc(4)); g.text_disabled("(proyecto)")
+        g.same_line(t.sc(4)); g.text_disabled("(project)")
 
-        g.row_label("Instrumentos:", lw)
+        g.row_label("Instruments:", lw)
         g.next_width(-1)
         local r3, v3 = widgets.input_text("##mg_instr", S.field_instruments)
         if r3 then S.field_instruments = v3 end
 
-        g.row_label("Acordes:", lw)
+        g.row_label("Chords:", lw)
         g.next_width(-1)
         local r4, v4 = widgets.input_text("##mg_chords", S.field_chords)
         if r4 then S.field_chords = v4 end
 
-        g.text_disabled("  Ejemplo: F minor | 120 | piano and bass | Fm-Db-Ab-Eb")
+        g.text_disabled("  Example: F minor | 120 | piano and bass | Fm-Db-Ab-Eb")
       end
     end
 
   else
-    -- ── AMT: melodía + seed de acompañamiento ─────────────────────
+    -- ── AMT: melody + accompaniment seed ──────────────────────────
     local lw_amt = t.sc(90)
 
-    -- Pista de melodía
-    g.row_label("Melodía:", lw_amt)
+    -- Melody track
+    g.row_label("Melody:", lw_amt)
     g.next_width(-(t.SPACING_X + t.sc(44)))
     widgets.input_text("##amt_mel_disp",
-      S.amt_melody_label ~= "" and S.amt_melody_label or "(ninguna — selecciona un item MIDI)",
+      S.amt_melody_label ~= "" and S.amt_melody_label or "(none — select a MIDI item)",
       { readonly=true })
     g.same_line()
     if g.button("R", t.sc(44), t.ITEM_H) then grab_melody_item() end
-    g.text_disabled("  Selecciona el item de melodía en REAPER y clic R.")
+    g.text_disabled("  Select the melody item in REAPER and click R.")
 
     g.spacing()
-    g.row_label("Modo:", lw_amt)
+    g.row_label("Mode:", lw_amt)
     g.next_width(t.sc(160))
     S.amt_mode_idx = widgets.combo("##amt_mode", S.amt_mode_idx, AMT_MODE_LABELS)
     local amt_mode_key = AMT_MODES[S.amt_mode_idx]
 
-    -- Pistas de seed de acompañamiento (solo en modo accompaniment)
+    -- Accompaniment seed tracks (only in accompaniment mode)
     if amt_mode_key == "accompaniment" then
       g.spacing()
       g.row_label("Seed acc.:", lw_amt)
       if g.button("+", t.sc(44), t.ITEM_H) then add_seed_items_from_reaper() end
       g.same_line(t.sc(8))
-      if g.button("Limpiar", t.sc(70), t.ITEM_H) then
+      if g.button("Clear", t.sc(70), t.ITEM_H) then
         S.amt_seed_takes = {}
-        add_log("Seed de acompañamiento limpiado.")
+        add_log("Accompaniment seed cleared.")
       end
       if #S.amt_seed_takes == 0 then
-        g.text_disabled("  (ninguna pista añadida)")
+        g.text_disabled("  (no tracks added)")
       else
         for _, entry in ipairs(S.amt_seed_takes) do
           g.text_disabled("  • " .. entry.label)
         end
       end
-      g.text_disabled("  Selecciona pistas de acompañamiento en REAPER y clic '+'.")
+      g.text_disabled("  Select accompaniment tracks in REAPER and click '+'.")
     end
 
     g.spacing()
     local lw = t.sc(110)
-    g.row_label("Duración (s):", lw)
+    g.row_label("Duration (s):", lw)
     g.next_width(t.sc(120))
     local rv, nv = g.slider_int("##amt_dur", S.amt_duration, 5, 120)
     if rv then S.amt_duration = nv end
 
     if amt_mode_key == "continuation" then
-      g.same_line(t.sc(14)); g.text_disabled("Temp. no soportada por AMT")
+      g.same_line(t.sc(14)); g.text_disabled("Temp. not supported by AMT")
     end
 
     if amt_mode_key == "accompaniment" then
@@ -877,35 +877,35 @@ local function loop()
 
       g.spacing()
       g.text_colored(
-        "⚠  El seed de acompañamiento debe contener ≥" .. S.amt_prompt_len ..
-        "s de historia para resultados densos.", "YELLOW")
+        "⚠  Accompaniment seed must contain ≥" .. S.amt_prompt_len ..
+        "s of history for dense results.", "YELLOW")
     end
   end
 
   g.spacing(); g.separator(); g.spacing()
 
-  -- ── PARÁMETROS COMUNES ──────────────────────────────────────────
+  -- ── COMMON PARAMETERS ───────────────────────────────────────────
   local lw2 = t.sc(90)
-  g.row_label("Candidatos:", lw2)
+  g.row_label("Candidates:", lw2)
   g.next_width(t.sc(90))
   local rv, nv = g.slider_int("##mg_nout", S.n_outputs, 1, 4)
   if rv then S.n_outputs = nv end
 
   if is_text then
-    g.same_line(t.sc(18)); g.inline_text("Temperatura:")
+    g.same_line(t.sc(18)); g.inline_text("Temperature:")
     g.same_line(t.sc(6))
     g.next_width(-1)
     rv, nv = g.slider_float("##mg_temp", S.temperature, 0.5, 2.0, "%.2f")
     if rv then S.temperature = nv end
   end
 
-  -- GPU (siempre visible, pero nota si no aplica)
+  -- GPU (always visible, but noted if not applicable)
   g.row_label("GPU:", lw2)
   local gpu_relevant = MG_GPU_RELEVANT[mk]
   if not gpu_relevant then g.begin_disabled(true) end
   g.next_width(t.sc(90))
   local gpu_list = MG_GPUS
-  -- Buscar índice actual
+  -- Find current index
   local gpu_idx = 1
   for i, v in ipairs(gpu_list) do if v == S.gpu then gpu_idx = i; break end end
   local new_gpu_idx = widgets.combo("##mg_gpu", gpu_idx, gpu_list)
@@ -913,30 +913,30 @@ local function loop()
   if not gpu_relevant then
     g.end_disabled()
     g.same_line(t.sc(10))
-    g.text_disabled("(fijada por el modelo)")
+    g.text_disabled("(fixed by model)")
   end
 
-  -- Hint de coste/aviso
+  -- Cost/warning hint
   g.spacing()
   local hints = {
-    amadeus      = "A10G: ~$0.05/min  |  multi-track, duración variable",
-    midi_llm     = "A10G: ~$0.05/min  |  requiere CUDA BF16 (no MPS)",
-    text2midi    = "A10G: ~$0.05/min  |  baseline académico, calidad baja",
-    chatmusician = "A10G: ~$0.05/min  |  multi-voz ABC; a veces genera texto en lugar de ABC",
-    musecoco     = "A100: ~$0.14/min  |  stage-2 tarda ~11 min, usa spawn+poll",
-    anticipatory = "A10G: ~$0.05/min  |  ~15-45 min en CPU → Modal necesario",
+    amadeus      = "A10G: ~$0.05/min  |  multi-track, variable duration",
+    midi_llm     = "A10G: ~$0.05/min  |  requires CUDA BF16 (no MPS)",
+    text2midi    = "A10G: ~$0.05/min  |  academic baseline, low quality",
+    chatmusician = "A10G: ~$0.05/min  |  multi-voice ABC; sometimes generates text instead of ABC",
+    musecoco     = "A100: ~$0.14/min  |  stage-2 takes ~11 min, uses spawn+poll",
+    anticipatory = "A10G: ~$0.05/min  |  ~15-45 min on CPU → Modal required",
   }
   g.text_disabled(hints[mk] or "")
 
   g.spacing(); g.separator(); g.spacing()
 
-  -- ── BOTÓN GENERAR ──────────────────────────────────────────────
+  -- ── GENERATE BUTTON ─────────────────────────────────────────────
   local btn_color = {
     norm   = { 0x1A/255, 0x7A/255, 0x3C/255 },
     hover  = { 0x22/255, 0x99/255, 0x4D/255 },
     active = { 0x2A/255, 0xB5/255, 0x5C/255 },
   }
-  local btn_lbl = S.running and "[ Generando... ]" or "GENERAR MIDI"
+  local btn_lbl = S.running and "[ Generating... ]" or "GENERATE MIDI"
   g.begin_disabled(S.running)
   g.next_width(-1)
   if g.button(btn_lbl, nil, t.sc(36), { solid = btn_color }) then
@@ -945,7 +945,7 @@ local function loop()
   g.end_disabled()
   g.spacing()
 
-  -- ── PROGRESO ───────────────────────────────────────────────────
+  -- ── PROGRESS ────────────────────────────────────────────────────
   local pct_str = string.format("%d%%", math.floor(S.progress * 100))
   g.progress_bar(S.progress, nil, t.sc(16), pct_str)
 
@@ -956,16 +956,16 @@ local function loop()
   g.text_colored(S.status:sub(1, 90), status_color)
   g.spacing()
 
-  -- ── LOG ────────────────────────────────────────────────────────
+  -- ── LOG ─────────────────────────────────────────────────────────
   if widgets.collapsing_header("Logs", true) then
-    if g.button("Copiar log", t.sc(90), t.ITEM_H) then
+    if g.button("Copy log", t.sc(90), t.ITEM_H) then
       local ok2, _ = pcall(function()
         reaper.CF_SetClipboard(table.concat(S.log, "\n"))
       end)
       if not ok2 then reaper.ShowConsoleMsg(table.concat(S.log, "\n") .. "\n") end
     end
     g.same_line()
-    if g.button("Limpiar", t.sc(70), t.ITEM_H) then S.log = {} end
+    if g.button("Clear", t.sc(70), t.ITEM_H) then S.log = {} end
     g.spacing()
 
     if S.log_scroll_to_bottom then
@@ -993,8 +993,8 @@ local function loop()
   reaper.defer(loop)
 end
 
--- ── INICIO ───────────────────────────────────────────────────────
-add_log("MidiGenerator listo.")
+-- ── STARTUP ──────────────────────────────────────────────────────
+add_log("MidiGenerator ready.")
 add_log("Python: " .. PYTHON)
 add_log("midigen.py: " .. MIDIGEN_PY)
 launch_setup_check()

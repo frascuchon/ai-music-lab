@@ -1,17 +1,17 @@
--- @description AI Music Lab - Setup — Configuración global
+-- @description AI Music Lab - Setup — Global configuration
 -- @version 1.0
 -- @author AI Music Lab
--- @about Wizard de configuración global para todos los plugins REAPER AI.
---        Gestiona el entorno común (uv, Modal) y los extras de cada plugin
+-- @about Global configuration wizard for all REAPER AI plugins.
+--        Manages the common environment (uv, Modal) and plugin-specific extras
 --        (StemsSeparator: demucs, HF secret, SAM prewarm;
 --         Audio2Midi: prewarm MIROS/YourMT3+).
---        UI nativa gfx (sin dependencias externas de extensiones REAPER).
+--        Native gfx UI (no external REAPER extension dependencies).
 
--- ── RUTAS + LIB ──────────────────────────────────────────────────
+-- ── PATHS + LIB ──────────────────────────────────────────────────
 local _info      = debug.getinfo(1, "S")
 local SCRIPT_DIR = _info.source:match("@?(.*[/\\])") or ""  -- shared/
 
--- Derivar directorio de plugins (hermano de shared/)
+-- Derive plugins directory (sibling of shared/)
 local PLUGINS_DIR = SCRIPT_DIR:match("^(.*[/\\])shared[/\\]$") or (SCRIPT_DIR .. "../")
 
 package.path = SCRIPT_DIR .. "lib/?.lua;" .. package.path
@@ -73,13 +73,13 @@ local function launch(key, subcmd_args)
   local pf  = PF[key]
   local log = TMPDIR .. "reaperai_setup.log"
   local f = io.open(pf, "w")
-  if f then f:write("running|0.00|Iniciando..."); f:close() end
+  if f then f:write("running|0.00|Starting..."); f:close() end
   local cmd = string.format('%s %s %s --progress %s >>%s 2>&1 &',
     q(PYTHON), q(HELPER), subcmd_args, q(pf), q(log))
   os.execute(cmd)
 end
 
--- ── ESTADO ───────────────────────────────────────────────────────
+-- ── STATE ────────────────────────────────────────────────────────
 -- Core checks always present; plugin extras detected at runtime
 local CORE_NAMES = { "python", "uv", "modal-cli", "modal-auth" }
 local STEMS_NAMES = { "demucs", "hf-secret" }
@@ -97,7 +97,7 @@ local function init_checks()
     python        = "Python (REAPER)",
     uv            = "uv",
     ["modal-cli"] = "Modal CLI",
-    ["modal-auth"]= "Modal autenticado",
+    ["modal-auth"]= "Modal authenticated",
     demucs        = "demucs  (StemsSeparator)",
     ["hf-secret"] = "HF secret 'huggingface-secret'  (StemsSeparator)",
   }
@@ -197,7 +197,7 @@ end
 -- ── GFX INIT ─────────────────────────────────────────────────────
 if gfx.w > 0 then gfx.quit() end
 local LOGICAL_W = 520
-gfx.init("REAPER AI Plugins — Configuración", LOGICAL_W, 680)
+gfx.init("REAPER AI Plugins — Setup", LOGICAL_W, 680)
 gfx.ext_retina = 1
 theme.init_fonts()
 
@@ -236,7 +236,7 @@ local function draw_prewarm_row(label, cost_hint, state_key, msg_key, pct_key, s
       g.text_colored(ST[msg_key]:sub(1,70), "YELLOW")
     end
   elseif ST[state_key] == "done" then
-    g.text_colored("OK  Descarga completada", "GREEN")
+    g.text_colored("OK  Download complete", "GREEN")
   elseif ST[state_key] == "error" then
     g.text_colored("Error: " .. ST[msg_key]:sub(1,60), "RED")
   end
@@ -287,28 +287,28 @@ local function loop()
     pending_recheck = false; run_check()
   end
 
-  -- ── HEADER ─────────────────────────────────────────────────────
+  -- ── HEADER ──────────────────────────────────────────────────────
   g.push_font(t.F.H1)
-  g.text("REAPER AI — Configuración global")
+  g.text("REAPER AI — Global Setup")
   g.pop_font()
   g.spacing()
 
   g.begin_disabled(ST.check_state == "running")
   g.next_width(-1)
-  if g.button("Comprobar todo de nuevo") then run_check() end
+  if g.button("Re-check all") then run_check() end
   g.end_disabled()
   g.spacing()
   g.separator()
 
-  -- ── SCROLL REGION: todo el contenido de secciones ──────────────
+  -- ── SCROLL REGION: all section content ─────────────────────────
   local scroll_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y)
   widgets.scroll_region("##setup_main", 0, scroll_h, function()
 
   g.spacing()
 
-  -- ── SECCIÓN: ENTORNO COMÚN ─────────────────────────────────────
+  -- ── SECTION: COMMON ENVIRONMENT ────────────────────────────────
   g.push_font(t.F.H1)
-  g.text("Entorno común")
+  g.text("Common environment")
   g.pop_font()
   g.spacing()
 
@@ -333,13 +333,13 @@ local function loop()
         if c.name == "uv" and c.status == "missing" then
           g.same_line()
           g.begin_disabled(ST.uv_state == "running")
-          if g.button("Instalar uv", t.sc(90), t.ITEM_H) then
+          if g.button("Install uv", t.sc(90), t.ITEM_H) then
             ST.uv_state = "running"; ST.uv_msg = ""; launch("uv", "install-uv")
           end
           g.end_disabled()
           if ST.uv_state == "running" then
             g.same_line(6)
-            g.text_colored(ST.uv_msg ~= "" and ST.uv_msg:sub(1,40) or "Instalando...", "YELLOW")
+            g.text_colored(ST.uv_msg ~= "" and ST.uv_msg:sub(1,40) or "Installing...", "YELLOW")
           elseif ST.uv_state == "error" then
             g.same_line(6); g.text_colored("Error", "RED")
           end
@@ -347,13 +347,13 @@ local function loop()
         elseif c.name == "modal-cli" and c.status == "missing" and uv_ok then
           g.same_line()
           g.begin_disabled(ST.sync_state == "running")
-          if g.button("Instalar deps", t.sc(102), t.ITEM_H) then
+          if g.button("Install deps", t.sc(102), t.ITEM_H) then
             ST.sync_state = "running"; ST.sync_msg = ""; launch("sync", "sync-deps")
           end
           g.end_disabled()
           if ST.sync_state == "running" then
             g.same_line(6)
-            g.text_colored(ST.sync_msg ~= "" and ST.sync_msg:sub(1,38) or "Instalando...", "YELLOW")
+            g.text_colored(ST.sync_msg ~= "" and ST.sync_msg:sub(1,38) or "Installing...", "YELLOW")
           elseif ST.sync_state == "error" then
             g.same_line(6); g.text_colored("Error", "RED")
           end
@@ -366,17 +366,17 @@ local function loop()
           end
           g.end_disabled()
           if ST.login_state == "running" then
-            local msg = ST.login_msg ~= "" and ST.login_msg:sub(1,40) or "Abriendo navegador..."
+            local msg = ST.login_msg ~= "" and ST.login_msg:sub(1,40) or "Opening browser..."
             g.same_line(6); g.text_colored(msg, "YELLOW")
           elseif ST.login_state == "error" then
-            g.same_line(6); g.text_colored("Error — reintenta", "RED")
+            g.same_line(6); g.text_colored("Error — retry", "RED")
           end
         end
       end
     end
   end
 
-  -- ── SECCIÓN: STEMS SEPARATOR ───────────────────────────────────
+  -- ── SECTION: STEMS SEPARATOR ────────────────────────────────────
   if HAS_STEMS then
     g.spacing(); g.separator(); g.spacing()
     g.push_font(t.F.H1)
@@ -384,7 +384,7 @@ local function loop()
     g.pop_font()
     g.spacing()
 
-    -- Checks específicos de StemsSeparator
+    -- StemsSeparator-specific checks
     for _, c in ipairs(CHECKS) do
       if c.name == "demucs" or c.name == "hf-secret" then
         local icon  = checking and "..." or status_icon(c.status)
@@ -397,15 +397,15 @@ local function loop()
         if not checking and c.name == "demucs" and c.status == "missing" then
           g.same_line()
           g.begin_disabled(ST.demucs_state == "running")
-          if g.button("Instalar", t.sc(70), t.ITEM_H) then
+          if g.button("Install", t.sc(70), t.ITEM_H) then
             ST.demucs_state = "running"; ST.demucs_msg = ""
             launch("demucs", "install-demucs --python " .. q(PYTHON))
           end
           g.end_disabled()
           if ST.demucs_state == "running" then
-            g.same_line(6); g.text_colored("Instalando...", "YELLOW")
+            g.same_line(6); g.text_colored("Installing...", "YELLOW")
           elseif ST.demucs_state == "error" then
-            g.same_line(6); g.text_colored("Error — revisa el log", "RED")
+            g.same_line(6); g.text_colored("Error — check the log", "RED")
           end
         end
       end
@@ -413,38 +413,38 @@ local function loop()
 
     g.spacing()
     -- HF Token
-    g.text("Hugging Face — secret para SAM Audio")
-    if g.button("Crear token en huggingface.co/settings/tokens", -1, t.BTN_H) then
+    g.text("Hugging Face — secret for SAM Audio")
+    if g.button("Create token at huggingface.co/settings/tokens", -1, t.BTN_H) then
       os.execute('open "https://huggingface.co/settings/tokens" &')
     end
     g.spacing()
-    g.row_label("Token HF:", t.sc(72))
+    g.row_label("HF Token:", t.sc(72))
     local hf_changed, hf_new = widgets.input_text("##hftoken", ST.hf_token,
       { password = true })
     if hf_changed then ST.hf_token = hf_new end
     local can_save = ST.hf_token:sub(1,3) == "hf_" and ST.hf_state ~= "running"
     g.begin_disabled(not can_save)
     g.next_width(-1)
-    if g.button('Guardar como Modal secret "huggingface-secret"') then
+    if g.button('Save as Modal secret "huggingface-secret"') then
       ST.hf_state = "running"; ST.hf_msg = ""
       launch("hfsecret", "modal-secret-create --token " .. q(ST.hf_token))
       ST.hf_token = ""
     end
     g.end_disabled()
     if ST.hf_state == "running" then
-      g.text_colored("Guardando secret en Modal...", "YELLOW")
+      g.text_colored("Saving secret to Modal...", "YELLOW")
     elseif ST.hf_state == "done" then
-      g.text_colored("OK  " .. (ST.hf_msg ~= "" and ST.hf_msg:sub(1,55) or "Guardado"), "GREEN")
+      g.text_colored("OK  " .. (ST.hf_msg ~= "" and ST.hf_msg:sub(1,55) or "Saved"), "GREEN")
     elseif ST.hf_state == "error" then
       g.text_colored("Error: " .. ST.hf_msg:sub(1,55), "RED")
     end
 
     g.spacing()
-    g.text("Pre-cargar SAM Audio (opcional)")
-    g.text_disabled("~14 GB  |  primera vez 10-20 min  |  queda cacheado en Modal")
+    g.text("Pre-load SAM Audio (optional)")
+    g.text_disabled("~14 GB  |  first time 10-20 min  |  cached in Modal")
     g.begin_disabled(ST.prw_sam_state == "running")
     g.next_width(-1)
-    if g.button("Descargar facebook/sam-audio-large") then
+    if g.button("Download facebook/sam-audio-large") then
       ST.prw_sam_state = "running"; ST.prw_sam_pct = 0; ST.prw_sam_msg = ""
       launch("prewarm_sam", "prewarm-sam --model facebook/sam-audio-large")
     end
@@ -456,13 +456,13 @@ local function loop()
         g.text_colored(ST.prw_sam_msg:sub(1,68), "YELLOW")
       end
     elseif ST.prw_sam_state == "done" then
-      g.text_colored("OK  Descarga SAM completada", "GREEN")
+      g.text_colored("OK  SAM download complete", "GREEN")
     elseif ST.prw_sam_state == "error" then
       g.text_colored("Error: " .. ST.prw_sam_msg:sub(1,55), "RED")
     end
   end
 
-  -- ── SECCIÓN: AUDIO2MIDI ─────────────────────────────────────────
+  -- ── SECTION: AUDIO2MIDI ─────────────────────────────────────────
   if HAS_A2M then
     g.spacing(); g.separator(); g.spacing()
     g.push_font(t.F.H1)
@@ -471,15 +471,15 @@ local function loop()
     g.spacing()
     g.text_colored("[OK]", "GREEN")
     g.same_line(6)
-    g.text("Sin dependencias locales — pesos en Modal Volumes")
+    g.text("No local dependencies — weights in Modal Volumes")
     g.spacing()
 
     -- Prewarm MIROS
-    g.text("Pre-cargar MIROS (opcional, recomendado)")
-    g.text_disabled("~8 GB  |  primera vez 10-15 min  |  requiere A10G en Modal")
+    g.text("Pre-load MIROS (optional, recommended)")
+    g.text_disabled("~8 GB  |  first time 10-15 min  |  requires A10G in Modal")
     g.begin_disabled(ST.prw_mir_state == "running")
     g.next_width(-1)
-    if g.button("Descargar pesos MIROS") then
+    if g.button("Download MIROS weights") then
       ST.prw_mir_state = "running"; ST.prw_mir_pct = 0; ST.prw_mir_msg = ""
       launch("prewarm_mir", "prewarm-miros")
     end
@@ -491,18 +491,18 @@ local function loop()
         g.text_colored(ST.prw_mir_msg:sub(1,68), "YELLOW")
       end
     elseif ST.prw_mir_state == "done" then
-      g.text_colored("OK  MIROS cacheado en Modal Volume", "GREEN")
+      g.text_colored("OK  MIROS cached in Modal Volume", "GREEN")
     elseif ST.prw_mir_state == "error" then
       g.text_colored("Error MIROS: " .. ST.prw_mir_msg:sub(1,50), "RED")
     end
 
     g.spacing()
     -- Prewarm YourMT3+
-    g.text("Pre-cargar YourMT3+ (opcional)")
-    g.text_disabled("~2 GB  |  primera vez 5-10 min")
+    g.text("Pre-load YourMT3+ (optional)")
+    g.text_disabled("~2 GB  |  first time 5-10 min")
     g.begin_disabled(ST.prw_yt3_state == "running")
     g.next_width(-1)
-    if g.button("Descargar pesos YourMT3+") then
+    if g.button("Download YourMT3+ weights") then
       ST.prw_yt3_state = "running"; ST.prw_yt3_pct = 0; ST.prw_yt3_msg = ""
       launch("prewarm_yt3", "prewarm-yourmt3")
     end
@@ -514,13 +514,13 @@ local function loop()
         g.text_colored(ST.prw_yt3_msg:sub(1,68), "YELLOW")
       end
     elseif ST.prw_yt3_state == "done" then
-      g.text_colored("OK  YourMT3+ cacheado en Modal Volume", "GREEN")
+      g.text_colored("OK  YourMT3+ cached in Modal Volume", "GREEN")
     elseif ST.prw_yt3_state == "error" then
       g.text_colored("Error YourMT3+: " .. ST.prw_yt3_msg:sub(1,48), "RED")
     end
   end
 
-  -- ── SECCIÓN: MIDI GENERATOR ────────────────────────────────────
+  -- ── SECTION: MIDI GENERATOR ─────────────────────────────────────
   if HAS_MG then
     g.spacing(); g.separator(); g.spacing()
     g.push_font(t.F.H1)
@@ -529,19 +529,19 @@ local function loop()
     g.spacing()
     g.text_colored("[OK]", "GREEN")
     g.same_line(6)
-    g.text("Sin dependencias locales — pesos en Modal Volumes")
+    g.text("No local dependencies — weights in Modal Volumes")
     g.spacing()
-    g.text("Pre-cargar pesos en Modal (opcional — primera vez puede tardar 10-20 min)")
-    g.text_disabled("Recomendado: Amadeus + MIDI-LLM + Anticipatory. MuseCoco = ~16 GB.")
+    g.text("Pre-load weights in Modal (optional — first time may take 10-20 min)")
+    g.text_disabled("Recommended: Amadeus + MIDI-LLM + Anticipatory. MuseCoco = ~16 GB.")
     g.spacing()
 
     local MG_PREWARM = {
-      { key="amadeus",      label="Descargar Amadeus (~2.5 GB)",      cost="A10G",  state="prw_mg_amadeus_state",      msg="prw_mg_amadeus_msg",      pct="prw_mg_amadeus_pct",      subcmd="prewarm-midigen-amadeus" },
-      { key="midi_llm",     label="Descargar MIDI-LLM (~3.5 GB)",     cost="A10G",  state="prw_mg_midi_llm_state",     msg="prw_mg_midi_llm_msg",     pct="prw_mg_midi_llm_pct",     subcmd="prewarm-midigen-midi-llm" },
-      { key="text2midi",    label="Descargar text2midi (~900 MB)",     cost="A10G",  state="prw_mg_text2midi_state",    msg="prw_mg_text2midi_msg",    pct="prw_mg_text2midi_pct",    subcmd="prewarm-midigen-text2midi" },
-      { key="chatmusician", label="Descargar ChatMusician (~13 GB)",   cost="A10G",  state="prw_mg_chatmusician_state", msg="prw_mg_chatmusician_msg", pct="prw_mg_chatmusician_pct", subcmd="prewarm-midigen-chatmusician" },
-      { key="musecoco",     label="Descargar MuseCoco (~16 GB)",       cost="A100",  state="prw_mg_musecoco_state",     msg="prw_mg_musecoco_msg",     pct="prw_mg_musecoco_pct",     subcmd="prewarm-midigen-musecoco" },
-      { key="anticipatory", label="Descargar Anticipatory (~1.6 GB)",  cost="A10G",  state="prw_mg_anticipatory_state", msg="prw_mg_anticipatory_msg", pct="prw_mg_anticipatory_pct", subcmd="prewarm-midigen-anticipatory" },
+      { key="amadeus",      label="Download Amadeus (~2.5 GB)",      cost="A10G",  state="prw_mg_amadeus_state",      msg="prw_mg_amadeus_msg",      pct="prw_mg_amadeus_pct",      subcmd="prewarm-midigen-amadeus" },
+      { key="midi_llm",     label="Download MIDI-LLM (~3.5 GB)",     cost="A10G",  state="prw_mg_midi_llm_state",     msg="prw_mg_midi_llm_msg",     pct="prw_mg_midi_llm_pct",     subcmd="prewarm-midigen-midi-llm" },
+      { key="text2midi",    label="Download text2midi (~900 MB)",     cost="A10G",  state="prw_mg_text2midi_state",    msg="prw_mg_text2midi_msg",    pct="prw_mg_text2midi_pct",    subcmd="prewarm-midigen-text2midi" },
+      { key="chatmusician", label="Download ChatMusician (~13 GB)",   cost="A10G",  state="prw_mg_chatmusician_state", msg="prw_mg_chatmusician_msg", pct="prw_mg_chatmusician_pct", subcmd="prewarm-midigen-chatmusician" },
+      { key="musecoco",     label="Download MuseCoco (~16 GB)",       cost="A100",  state="prw_mg_musecoco_state",     msg="prw_mg_musecoco_msg",     pct="prw_mg_musecoco_pct",     subcmd="prewarm-midigen-musecoco" },
+      { key="anticipatory", label="Download Anticipatory (~1.6 GB)",  cost="A10G",  state="prw_mg_anticipatory_state", msg="prw_mg_anticipatory_msg", pct="prw_mg_anticipatory_pct", subcmd="prewarm-midigen-anticipatory" },
     }
 
     for _, m in ipairs(MG_PREWARM) do
@@ -550,10 +550,10 @@ local function loop()
       g.next_width(-1)
       if g.button(m.label .. "  [" .. m.cost .. "]") then
         ST[m.state] = "running"; ST[m.msg] = ""; ST[m.pct] = 0
-        -- launch usando la PF key correcta
+        -- launch using the correct PF key
         local pf_map_key = m.state:gsub("_state$","")
         local f = io.open(PF[pf_map_key], "w")
-        if f then f:write("running|0.00|Iniciando..."); f:close() end
+        if f then f:write("running|0.00|Starting..."); f:close() end
         local log = TMPDIR .. "reaperai_setup.log"
         local cmd = string.format('%s %s %s --progress %s >>%s 2>&1 &',
           q(PYTHON), q(HELPER), m.subcmd, q(PF[pf_map_key]), q(log))
@@ -567,7 +567,7 @@ local function loop()
           g.text_colored(ST[m.msg]:sub(1,68), "YELLOW")
         end
       elseif ST[m.state] == "done" then
-        g.text_colored("OK  cacheado", "GREEN")
+        g.text_colored("OK  cached", "GREEN")
       elseif ST[m.state] == "error" then
         g.text_colored("Error: " .. ST[m.msg]:sub(1,60), "RED")
       end
@@ -578,7 +578,7 @@ local function loop()
   g.text_disabled("shared/ — Python: " .. PYTHON)
   g.spacing()
 
-  end)  -- fin scroll_region
+  end)  -- end scroll_region
 
   gui.frame_end()
   reaper.defer(loop)
