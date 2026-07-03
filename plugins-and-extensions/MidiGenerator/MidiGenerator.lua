@@ -663,7 +663,8 @@ local function launch_generate()
     end
   else
     -- AMT: construir MIDI combinado (melodía canal 0 + seed canales 1..N)
-    local seed_path = run_dir .. "combined_seed.mid"
+    -- Escribir a TMPDIR (fuera de run_dir) para que _collect_outputs no lo recoja
+    local seed_path = TMPDIR .. "combined_seed.mid"
     local ok_s, err_s = write_combined_midi(S.amt_melody_take, S.amt_seed_takes, seed_path)
     if not ok_s then
       reaper.MB("Error al construir seed MIDI: " .. (err_s or "?"), "MidiGenerator", 0)

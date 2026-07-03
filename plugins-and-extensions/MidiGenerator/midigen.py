@@ -195,11 +195,15 @@ def _build_cmd(
             "--mode",           args.mode,
             "--gpu",            args.gpu or "A10G",
             "--prompt-length",  str(args.prompt_length),
-            "--clip-length",    str(args.clip_length),
             "--top-p",          str(args.top_p),
             "--multiplicity",   str(args.n_outputs),
             "--melody-instrument", str(args.melody_instrument),
         ]
+        # continuation usa --duration, accompaniment usa --clip-length
+        if args.mode == "continuation":
+            cmd += ["--duration", str(args.clip_length)]
+        else:
+            cmd += ["--clip-length", str(args.clip_length)]
 
     else:
         raise ValueError(f"Tipo de contrato desconocido: {kind!r}")
