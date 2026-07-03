@@ -82,6 +82,9 @@ _MODEL_KIND: dict[str, str] = {
 # Modelos cuyo ::main acepta --gpu (los demás lo ignoran)
 _SUPPORTS_GPU = {"midi_llm", "anticipatory"}
 
+# Modelos text_dir que aceptan --force (midi_llm no lo tiene)
+_SUPPORTS_FORCE = {"amadeus", "text2midi", "chatmusician"}
+
 
 # ---------------------------------------------------------------------------
 # Protocolo de progreso
@@ -158,8 +161,9 @@ def _build_cmd(
             "--out-dir",   str(out_dir),
             "--n-outputs", str(args.n_outputs),
             "--temperature", str(args.temperature),
-            "--force",
         ]
+        if model in _SUPPORTS_FORCE:
+            cmd += ["--force"]
         if model == "midi_llm" and args.gpu:
             cmd += ["--gpu", args.gpu]
         # ChatMusician: seed opcional para armonización

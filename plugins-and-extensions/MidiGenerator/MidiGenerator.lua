@@ -272,27 +272,71 @@ local function _import_one(mid_path, folder_name)
   if not f then add_log("Error: no se puede leer " .. mid_path); return end
   f:close()
 
-  local cursor   = reaper.GetCursorPosition()
+  local cursor      = reaper.GetCursorPosition()
   local tcnt_before = reaper.CountTracks(0)
 
-  reaper.InsertTrackAtIndex(tcnt_before, true)
-  local new_track = reaper.GetTrack(0, tcnt_before)
-  reaper.SetOnlyTrackSelected(new_track)
+  -- Snapshot de markers existentes: InsertMedia puede crear markers desde
+  -- meta-events MIDI (tipo 0x06/0x07), que crean ruido visual en el timeline.
+  local marker_snap = {}
+  for i = 0, reaper.CountProjectMarkers(0) - 1 do
+    local _, _, _, _, _, idx = reaper.EnumProjectMarkers(i)
+    marker_snap[idx] = true
+  end
+
   reaper.SetEditCurPos(cursor, false, false)
   reaper.InsertMedia(mid_path, 0)
+
+  -- Eliminar markers añadidos por la importación
+  for i = reaper.CountProjectMarkers(0) - 1, 0, -1 do
+    local _, isrgn, _, _, _, idx = reaper.EnumProjectMarkers(i)
+    if not isrgn and not marker_snap[idx] then
+      reaper.DeleteProjectMarker(0, idx, false)
+    end
+  end
 
   local delta = reaper.CountTracks(0) - tcnt_before
   if delta <= 0 then
     add_log("Aviso: InsertMedia no añadió pistas para " .. mid_path:match("[^/\\]+$"))
-    reaper.DeleteTrack(new_track)
     return
   end
 
+  -- Corregir posición: InsertMedia para MIDI multi-track puede ignorar
+  -- SetEditCurPos e insertar los items en posición 0. Detectar y offsetear.
+  local min_pos = math.huge
+  for i = tcnt_before, tcnt_before + delta - 1 do
+    local tr = reaper.GetTrack(0, i)
+    if tr then
+      for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
+        local it = reaper.GetTrackMediaItem(tr, j)
+        if it then
+          local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+          if p < min_pos then min_pos = p end
+        end
+      end
+    end
+  end
+  if min_pos ~= math.huge and math.abs(min_pos - cursor) > 0.001 then
+    local offset = cursor - min_pos
+    for i = tcnt_before, tcnt_before + delta - 1 do
+      local tr = reaper.GetTrack(0, i)
+      if tr then
+        for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
+          local it = reaper.GetTrackMediaItem(tr, j)
+          if it then
+            local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+            reaper.SetMediaItemInfo_Value(it, "D_POSITION", p + offset)
+          end
+        end
+      end
+    end
+  end
+
+  -- Estructura de carpeta
   if delta == 1 then
-    reaper.GetSetMediaTrackInfo_String(new_track, "P_NAME", folder_name, true)
+    local tr = reaper.GetTrack(0, tcnt_before)
+    reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", folder_name, true)
     add_log("Importado: " .. folder_name)
   else
-    -- Insertar pista-carpeta vacía antes del bloque importado
     reaper.InsertTrackAtIndex(tcnt_before, true)
     local folder_tr = reaper.GetTrack(0, tcnt_before)
     reaper.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", folder_name, true)
@@ -415,10 +459,11 @@ local function clear_run(label)
 end
 
 local function launch_generate()
-  local mk     = model_key()
-  local script = MG_SCRIPTS[mk]
-  local is_amt = (mk == "anticipatory")
-  local is_text = not is_amt
+  local mk       = model_key()
+  local script   = MG_SCRIPTS[mk]
+  local is_amt   = (mk == "anticipatory")
+  local is_text  = not is_amt
+  local has_fields = (mk == "amadeus" or mk == "text2midi")
 
   -- Validaciones
   if is_text and S.prompt:match("^%s*$") then
@@ -464,8 +509,11 @@ local function launch_generate()
     add_log("Prompt: " .. S.prompt:sub(1,80))
     extra = extra .. " --prompt " .. q(S.prompt)
     extra = extra .. string.format(" --temperature %.2f", S.temperature)
+    -- BPM siempre desde el proyecto para amadeus/text2midi (el usuario no lo edita)
+    if has_fields then
+      extra = extra .. " --field-bpm " .. q(string.format("%.0f", reaper.Master_GetTempo()))
+    end
     if S.field_key         ~= "" then extra = extra .. " --field-key "         .. q(S.field_key)         end
-    if S.field_bpm         ~= "" then extra = extra .. " --field-bpm "         .. q(S.field_bpm)         end
     if S.field_instruments ~= "" then extra = extra .. " --field-instruments " .. q(S.field_instruments) end
     if S.field_chords      ~= "" then extra = extra .. " --field-chords "      .. q(S.field_chords)      end
     if mk == "chatmusician" and S.cm_use_seed and S.seed_path ~= "" then
@@ -593,9 +641,8 @@ local function loop()
         if r1 then S.field_key = v1 end
         g.same_line(t.sc(14)); g.inline_text("BPM:")
         g.same_line(t.sc(6))
-        g.next_width(t.sc(80))
-        local r2, v2 = widgets.input_text("##mg_bpm", S.field_bpm)
-        if r2 then S.field_bpm = v2 end
+        g.text_colored(string.format("%.1f", reaper.Master_GetTempo()), "GREEN")
+        g.same_line(t.sc(4)); g.text_disabled("(proyecto)")
 
         g.row_label("Instrumentos:", lw)
         g.next_width(-1)
