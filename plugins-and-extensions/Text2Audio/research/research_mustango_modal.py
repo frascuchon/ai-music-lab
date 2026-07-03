@@ -16,7 +16,7 @@ Punto de entrada DAW:
     --seconds. El slider de duración de la UI se ignora; el label lo indica.
 
 Condiciones oficiales (Melechovsky et al., NAACL 2024):
-  https://github.com/declare-lab/mustango
+  https://github.com/AMAAI-Lab/mustango   ← repo real (no está en PyPI)
   https://huggingface.co/declare-lab/mustango
   - `from mustango import Mustango`
   - `model = Mustango("declare-lab/mustango")` (auto-descarga pesos)
@@ -53,21 +53,38 @@ DEFAULT_SEED = int(os.environ.get("MUSTANGO_SEED", "42"))
 DEFAULT_STEPS = int(os.environ.get("MUSTANGO_STEPS", "200"))
 SAMPLE_RATE = 16000  # fijo del modelo
 
+REPO_DIR = "/root/mustango"
+
 # ---------------------------------------------------------------------------
 # Container image
 # ---------------------------------------------------------------------------
+# Mustango NO está en PyPI — hay que clonar AMAAI-Lab/mustango e instalar su
+# fork local de diffusers (incluido en el repo como subdirectorio).
+# requirements.txt pina versiones antiguas de torch; las omitimos y usamos
+# las versiones estándar de Modal (más recientes y con CUDA preinstalado).
+_TORCH_SKIP = "|".join([
+    "torch==", "torchaudio==", "torchvision==",
+    "wandb",    # no necesario para inferencia
+    "ssr_eval", # paquete roto en PyPI
+])
 image = (
     modal.Image.debian_slim(python_version="3.10")
     .apt_install(["git", "ffmpeg", "libsndfile1"])
-    .pip_install(
-        "torch", "torchaudio",
-        "mustango",
-        "soundfile>=0.12.1",
-        "scipy",
+    # 1. Clonar repo
+    .run_commands(f"git clone --depth 1 https://github.com/AMAAI-Lab/mustango {REPO_DIR}")
+    # 2. Pre-instalar torch (satisface deps antes de requirements.txt)
+    .pip_install("torch", "torchaudio", "torchvision")
+    # 3. Instalar requirements.txt sin los pines de torch ni paquetes problemáticos
+    .run_commands(
+        f"grep -vE '{_TORCH_SKIP}' {REPO_DIR}/requirements.txt > /tmp/req_mustango.txt && "
+        "pip install -r /tmp/req_mustango.txt"
     )
+    # 4. Instalar fork local de diffusers (Mustango no funciona con el PyPI diffusers estándar)
+    .run_commands(f"pip install -e {REPO_DIR}/diffusers")
     .env({
         "HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache",
         "TORCH_HOME": f"{WEIGHTS_MOUNT}/torch-cache",
+        "PYTHONPATH": REPO_DIR,
     })
 )
 
