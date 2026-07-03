@@ -807,16 +807,16 @@ local function loop()
       S.amt_melody_label ~= "" and S.amt_melody_label or "(ninguna — selecciona un item MIDI)",
       { readonly=true })
     g.same_line()
-    if g.button("R##amt_mel_r", t.sc(44), t.ITEM_H) then grab_melody_item() end
+    if g.button("R", t.sc(44), t.ITEM_H) then grab_melody_item() end
     g.text_disabled("  Selecciona el item de melodía en REAPER y clic R.")
 
     g.spacing()
 
     -- Pistas de seed de acompañamiento
     g.row_label("Seed acc.:", lw_amt)
-    if g.button("+##amt_seed_add", t.sc(44), t.ITEM_H) then add_seed_items_from_reaper() end
+    if g.button("+", t.sc(44), t.ITEM_H) then add_seed_items_from_reaper() end
     g.same_line(t.sc(8))
-    if g.button("Limpiar##amt_seed_clr", t.sc(70), t.ITEM_H) then
+    if g.button("Limpiar", t.sc(70), t.ITEM_H) then
       S.amt_seed_takes = {}
       add_log("Seed de acompañamiento limpiado.")
     end
