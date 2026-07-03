@@ -78,7 +78,7 @@ HF_CACHE = f"{WEIGHTS_MOUNT}/hf_cache"
 
 DEFAULT_MODEL = "stanford-crfm/music-medium-800k"
 DEFAULT_GPU = os.environ.get("ANTICIPATORY_GPU", "A10G")
-LAST_CALL_FILE = ".anticipatory_last_call.json"
+LAST_CALL_FILE = "/tmp/.anticipatory_last_call.json"
 
 # ---------------------------------------------------------------------------
 # Container image — PyTorch CUDA 12.1 + anticipation desde GitHub
@@ -427,7 +427,7 @@ def recover(call_id: str = "", out: str = "") -> None:
     if not call_id:
         state_file = Path(LAST_CALL_FILE)
         if not state_file.exists():
-            print("[recover] No hay .anticipatory_last_call.json y no se pasó --call-id")
+            print("[recover] No hay /tmp/.anticipatory_last_call.json y no se pasó --call-id")
             return
         state = json.loads(state_file.read_text())
         call_id = state["call_id"]
