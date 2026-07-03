@@ -283,6 +283,13 @@ local function _import_one(mid_path, folder_name)
     marker_snap[idx] = true
   end
 
+  -- Deseleccionar todas las pistas antes de InsertMedia: si hay pistas seleccionadas
+  -- (p.ej. del candidato anterior), InsertMedia añadiría items a esas pistas
+  -- en lugar de crear pistas nuevas.
+  for i = 0, reaper.CountTracks(0) - 1 do
+    reaper.SetTrackSelected(reaper.GetTrack(0, i), false)
+  end
+
   reaper.SetEditCurPos(cursor, false, false)
   reaper.InsertMedia(mid_path, 0)
 
@@ -363,7 +370,7 @@ function import_midi_all()
 
   reaper.Undo_BeginBlock()
   for i, path in ipairs(S.out_files) do
-    local suffix = #S.out_files > 1 and (" v" .. (i-1)) or ""
+    local suffix = #S.out_files > 1 and (" — candidato " .. i) or ""
     _import_one(path, label .. suffix)
   end
   reaper.UpdateArrange()
