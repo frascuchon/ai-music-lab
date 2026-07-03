@@ -234,7 +234,7 @@ def _inference_impl(
                 ))
             if ni.notes:
                 pm_shifted.instruments.append(ni)
-        pm_shifted.save(output_path)
+        pm_shifted.write(output_path)
         n_notes = sum(len(i.notes) for i in pm_shifted.instruments)
         print(f"[continuation] desplazado -{prompt_length}s → {n_notes} notas, {len(pm_shifted.instruments)} pistas")
 
