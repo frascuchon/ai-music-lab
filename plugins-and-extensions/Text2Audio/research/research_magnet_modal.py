@@ -55,9 +55,15 @@ MAX_SECONDS = 30.0
 # Container image
 # ---------------------------------------------------------------------------
 # MAGNeT no está en transformers — usa la librería audiocraft de Facebook.
+# audiocraft requiere compilar av (PyAV) desde fuente → necesita las cabeceras
+# de desarrollo de FFmpeg vía apt.
 image = (
     modal.Image.debian_slim(python_version="3.10")
-    .apt_install(["git", "ffmpeg", "libsndfile1"])
+    .apt_install([
+        "git", "ffmpeg", "libsndfile1", "pkg-config",
+        "libavcodec-dev", "libavformat-dev", "libavdevice-dev",
+        "libavutil-dev", "libswscale-dev", "libswresample-dev",
+    ])
     .pip_install("torch", "torchaudio")
     .pip_install("audiocraft")
     .pip_install("soundfile>=0.12.1")
