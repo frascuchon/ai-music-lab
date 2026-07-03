@@ -4,13 +4,13 @@
 
   To use this repository in ReaPack:
     Extensions → ReaPack → Manage repositories → Import a repository
-    URL: https://raw.githubusercontent.com/USER/ai-music-lab/main/index.xml
+    URL: https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/index.xml
 
   To regenerate this index after updates, install reapack-index and run:
-    reapack-index -o index.xml -u https://raw.githubusercontent.com/USER/ai-music-lab/main
+    reapack-index -o index.xml -u https://raw.githubusercontent.com/frascuchon/ai-music-lab/main
 
   Script source URLs follow the pattern:
-    https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/...
+    https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/...
   Replace USER/REPO with your actual GitHub username and repository name.
 -->
 <index version="1" name="ai-music-lab" commit="50f01171a9e208c481ba9cd4a1e1a5ffecf91b5a">
@@ -31,13 +31,13 @@ This package is installed automatically as a dependency when you install any of 
       </metadata>
       <version name="1.0.0" author="AI Music Lab" time="2026-07-03T00:00:00Z">
         <changelog><![CDATA[Initial release]]></changelog>
-        <source file="shared/Setup.lua" main="main">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/shared/Setup.lua</source>
-        <source file="shared/setup_helpers.py">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/shared/setup_helpers.py</source>
-        <source file="shared/pyproject.toml">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/shared/pyproject.toml</source>
-        <source file="shared/lib/common.lua">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/shared/lib/common.lua</source>
-        <source file="shared/lib/gui.lua">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/shared/lib/gui.lua</source>
-        <source file="shared/lib/theme.lua">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/shared/lib/theme.lua</source>
-        <source file="shared/lib/widgets_extra.lua">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/shared/lib/widgets_extra.lua</source>
+        <source file="shared/Setup.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/Setup.lua</source>
+        <source file="shared/setup_helpers.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/setup_helpers.py</source>
+        <source file="shared/pyproject.toml">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/pyproject.toml</source>
+        <source file="shared/lib/common.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/common.lua</source>
+        <source file="shared/lib/gui.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/gui.lua</source>
+        <source file="shared/lib/theme.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/theme.lua</source>
+        <source file="shared/lib/widgets_extra.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/widgets_extra.lua</source>
       </version>
     </reapack>
 
@@ -52,12 +52,12 @@ Output: una pista MIDI nueva (mono-instrumento) o carpeta de pistas (multi-instr
 UI nativa gfx: sin dependencias externas de extensiones REAPER.
 
 Requirements: Python 3.11+, uv, Modal account (free tier sufficient)]]></description>
-        <link rel="website">https://github.com/USER/ai-music-lab</link>
+        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
       <version name="1.0.0" author="AI Music Lab" time="2026-07-03T00:00:00Z">
         <changelog><![CDATA[Initial release — MIROS beat-tracking + YourMT3+ multi-instrument]]></changelog>
-        <source file="Audio2Midi/Audio2Midi.lua" main="main">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/Audio2Midi/Audio2Midi.lua</source>
-        <source file="Audio2Midi/transcribe.py">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/Audio2Midi/transcribe.py</source>
+        <source file="Audio2Midi/Audio2Midi.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/Audio2Midi.lua</source>
+        <source file="Audio2Midi/transcribe.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/transcribe.py</source>
         <dependency name="reaper-ai-plugins-shared" type="script"/>
       </version>
     </reapack>
@@ -79,13 +79,13 @@ Modelos disponibles:
 UI nativa gfx; sin dependencias de extensiones REAPER.
 
 Requirements: Python 3.11+, uv, Modal account]]></description>
-        <link rel="website">https://github.com/USER/ai-music-lab</link>
+        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
       <version name="1.0.0" author="AI Music Lab" time="2026-07-03T00:00:00Z">
         <changelog><![CDATA[Initial release — 6 evaluated MIDI generation models]]></changelog>
-        <source file="MidiGenerator/MidiGenerator.lua" main="main">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/MidiGenerator/MidiGenerator.lua</source>
-        <source file="MidiGenerator/midigen.py">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/MidiGenerator/midigen.py</source>
-        <source file="MidiGenerator/prompt_adapters.py">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/MidiGenerator/prompt_adapters.py</source>
+        <source file="MidiGenerator/MidiGenerator.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/MidiGenerator.lua</source>
+        <source file="MidiGenerator/midigen.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/midigen.py</source>
+        <source file="MidiGenerator/prompt_adapters.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/prompt_adapters.py</source>
         <dependency name="reaper-ai-plugins-shared" type="script"/>
       </version>
     </reapack>
@@ -109,12 +109,12 @@ Output: pista de audio nueva con el WAV generado.
 UI nativa gfx: sin dependencias externas.
 
 Requirements: Python 3.11+, uv, Modal account]]></description>
-        <link rel="website">https://github.com/USER/ai-music-lab</link>
+        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
       <version name="1.1.0" author="AI Music Lab" time="2026-07-03T00:00:00Z">
         <changelog><![CDATA[Generate and Edit modes with 8+ models; native gfx UI]]></changelog>
-        <source file="Text2Audio/Text2Audio.lua" main="main">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/Text2Audio/Text2Audio.lua</source>
-        <source file="Text2Audio/text2audio.py">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/Text2Audio/text2audio.py</source>
+        <source file="Text2Audio/Text2Audio.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/Text2Audio.lua</source>
+        <source file="Text2Audio/text2audio.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/text2audio.py</source>
         <dependency name="reaper-ai-plugins-shared" type="script"/>
       </version>
     </reapack>
@@ -135,14 +135,14 @@ UI nativa gfx: sin dependencias externas de extensiones REAPER.
 
 Requirements: Python 3.11+, uv
 For SAM Audio mode: Modal account]]></description>
-        <link rel="website">https://github.com/USER/ai-music-lab</link>
+        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
       <version name="3.0.0" author="AI Music Lab" time="2026-07-03T00:00:00Z">
         <changelog><![CDATA[Native gfx UI — no external extension dependencies; Demucs local + SAM Audio cloud]]></changelog>
-        <source file="StemsSeparator/StemSeparator.lua" main="main">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/StemsSeparator/StemSeparator.lua</source>
-        <source file="StemsSeparator/separate_demucs.py">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/StemsSeparator/separate_demucs.py</source>
-        <source file="StemsSeparator/separate_sam.py">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/StemsSeparator/separate_sam.py</source>
-        <source file="StemsSeparator/modal_sam_audio.py">https://raw.githubusercontent.com/USER/ai-music-lab/main/plugins-and-extensions/StemsSeparator/modal_sam_audio.py</source>
+        <source file="StemsSeparator/StemSeparator.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/StemSeparator.lua</source>
+        <source file="StemsSeparator/separate_demucs.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/separate_demucs.py</source>
+        <source file="StemsSeparator/separate_sam.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/separate_sam.py</source>
+        <source file="StemsSeparator/modal_sam_audio.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/modal_sam_audio.py</source>
         <dependency name="reaper-ai-plugins-shared" type="script"/>
       </version>
     </reapack>
