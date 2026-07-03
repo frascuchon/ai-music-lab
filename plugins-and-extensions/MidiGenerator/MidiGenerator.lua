@@ -597,9 +597,10 @@ local function loop()
   -- ── INPUT: PROMPT O SEED ────────────────────────────────────────
   if is_text then
     -- ── Prompt ────────────────────────────────────────────────────
-    g.row_label("Prompt:", t.sc(70))
+    g.text("Prompt:")
     g.next_width(-1)
-    local rv, nv = widgets.input_text("##mg_prompt", S.prompt)
+    local rv, nv = widgets.input_textarea("##mg_prompt", S.prompt, 3,
+      { placeholder = "Describe el estilo musical, instrumentos, mood..." })
     if rv then S.prompt = nv end
 
     -- Nota informativa por modelo

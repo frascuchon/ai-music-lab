@@ -23,6 +23,10 @@ local ctx = {
   mx = 0, my = 0,
   mb = 0, mb_prev = 0,
   mw = 0, mhw = 0,  -- vertical and horizontal wheel
+  -- Modifier keys (read each frame from gfx.mouse_cap)
+  ctrl = false, shift = false,
+  -- Internal clipboard fallback (used when SWS CF_GetClipboard not available)
+  _clipboard = "",
   -- Keyboard queues drained each frame
   char_queue = {}, key_queue = {},
   -- Widget interaction
@@ -124,6 +128,9 @@ function M.frame_begin()
   -- Horizontal wheel (available in REAPER 6+; nil-safe)
   ctx.mhw = gfx.mouse_hwheel or 0
   if gfx.mouse_hwheel then gfx.mouse_hwheel = 0 end
+  -- Modifier keys (Ctrl on Windows/Linux = Cmd on Mac via REAPER remapping)
+  ctx.ctrl  = (gfx.mouse_cap & 4) ~= 0
+  ctx.shift = (gfx.mouse_cap & 8) ~= 0
 
   -- Drain keyboard buffer
   ctx.char_queue = {}
