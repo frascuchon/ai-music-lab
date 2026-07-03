@@ -17,6 +17,7 @@ Condiciones oficiales (Kreuk et al., 2022):
   - `model.set_generation_params(duration=seconds)`
   - `model.generate([prompt])` → audio tensor (batch, channels, samples)
   - Sampling rate: 16000 Hz, mono
+  - Requiere la librería `audiocraft` de Facebook (no está en transformers)
 
 Setup (descarga pesos al Volume, una vez, ~2 GB):
     modal run research_audiogen_modal.py::setup
@@ -50,14 +51,14 @@ MAX_SECONDS = 30.0
 # ---------------------------------------------------------------------------
 # Container image
 # ---------------------------------------------------------------------------
+# AudioGen no está en transformers — usa la librería audiocraft de Facebook.
+# Se instala torch primero para que audiocraft use la build CUDA de Modal.
 image = (
     modal.Image.debian_slim(python_version="3.10")
     .apt_install(["git", "ffmpeg", "libsndfile1"])
-    .pip_install(
-        "torch", "torchaudio",
-        "transformers>=4.39.0,<5.0",
-        "soundfile>=0.12.1",
-    )
+    .pip_install("torch", "torchaudio")
+    .pip_install("audiocraft")
+    .pip_install("soundfile>=0.12.1")
     .env({
         "HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache",
         "TORCH_HOME": f"{WEIGHTS_MOUNT}/torch-cache",
@@ -76,12 +77,10 @@ def setup(variant: str = DEFAULT_VARIANT):
     Descarga pesos de AudioGen-medium (~2 GB). Ejecutar una vez:
         modal run research_audiogen_modal.py::setup
     """
-    from transformers import AutoProcessor, MusicgenForConditionalGeneration
+    from audiocraft.models import AudioGen
 
     t0 = time.time()
-    # AudioGen usa la misma clase base que MusicGen en transformers
-    AutoProcessor.from_pretrained(variant)
-    MusicgenForConditionalGeneration.from_pretrained(variant)
+    AudioGen.get_pretrained(variant)
     print(f"[setup] {variant} descargado en {time.time()-t0:.0f}s")
     weights_vol.commit()
     print("[setup] Volume commiteado.")
@@ -104,13 +103,12 @@ def generate_batch(
 
     import soundfile as sf
     import torch
-    from transformers import AutoProcessor, MusicgenForConditionalGeneration
+    from audiocraft.models import AudioGen
 
     t0 = time.time()
-    processor = AutoProcessor.from_pretrained(variant)
-    model = MusicgenForConditionalGeneration.from_pretrained(variant)
+    model = AudioGen.get_pretrained(variant)
     model.to("cuda")
-    sr_out = model.config.audio_encoder.sampling_rate  # 16000 Hz
+    sr_out = model.sample_rate  # 16000 Hz
     print(f"[load_model] {variant} listo ({time.time()-t0:.1f}s)")
 
     results = []
@@ -120,18 +118,10 @@ def generate_batch(
             seconds = min(float(job.get("seconds") or 10.0), MAX_SECONDS)
             torch.manual_seed(seed + i)
 
-            inputs = processor(
-                text=[job["text"]],
-                return_tensors="pt",
-            ).to("cuda")
-
-            audio_values = model.generate(
-                **inputs,
-                do_sample=True,
-                guidance_scale=3,
-                max_new_tokens=int(seconds * 50),
-            )
-            audio = audio_values[0].cpu().to(torch.float32)
+            model.set_generation_params(duration=seconds)
+            wav = model.generate([job["text"]])
+            # wav: (batch=1, channels, samples) — float32 CPU
+            audio = wav[0].cpu()  # (channels, samples)
 
             buf = io.BytesIO()
             sf.write(buf, audio.numpy().T, samplerate=sr_out, format="WAV", subtype="PCM_16")

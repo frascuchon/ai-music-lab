@@ -54,14 +54,13 @@ MAX_SECONDS = 30.0
 # ---------------------------------------------------------------------------
 # Container image
 # ---------------------------------------------------------------------------
+# MAGNeT no está en transformers — usa la librería audiocraft de Facebook.
 image = (
     modal.Image.debian_slim(python_version="3.10")
     .apt_install(["git", "ffmpeg", "libsndfile1"])
-    .pip_install(
-        "torch", "torchaudio",
-        "transformers>=4.39.0,<5.0",
-        "soundfile>=0.12.1",
-    )
+    .pip_install("torch", "torchaudio")
+    .pip_install("audiocraft")
+    .pip_install("soundfile>=0.12.1")
     .env({
         "HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache",
         "TORCH_HOME": f"{WEIGHTS_MOUNT}/torch-cache",
@@ -80,12 +79,10 @@ def setup(variant: str = DEFAULT_VARIANT):
     Descarga pesos de MAGNeT-medium (~3 GB). Ejecutar una vez:
         modal run research_magnet_modal.py::setup
     """
-    from transformers import AutoProcessor, MusicgenForConditionalGeneration
+    from audiocraft.models import MAGNeT
 
     t0 = time.time()
-    # MAGNeT usa la misma clase base en transformers >= 4.48
-    AutoProcessor.from_pretrained(variant)
-    MusicgenForConditionalGeneration.from_pretrained(variant)
+    MAGNeT.get_pretrained(variant)
     print(f"[setup] {variant} descargado en {time.time()-t0:.0f}s")
     weights_vol.commit()
     print("[setup] Volume commiteado.")
@@ -108,34 +105,27 @@ def generate_batch(
 
     import soundfile as sf
     import torch
-    from transformers import AutoProcessor, MusicgenForConditionalGeneration
+    from audiocraft.models import MAGNeT
 
     t0 = time.time()
-    processor = AutoProcessor.from_pretrained(variant)
-    model = MusicgenForConditionalGeneration.from_pretrained(variant)
+    model = MAGNeT.get_pretrained(variant)
     model.to("cuda")
-    sr_out = model.config.audio_encoder.sampling_rate  # 32000 Hz
+    sr_out = model.sample_rate  # 32000 Hz
     print(f"[load_model] {variant} listo ({time.time()-t0:.1f}s)")
 
     results = []
     for i, job in enumerate(jobs):
         t0 = time.time()
         try:
-            seconds = min(float(job.get("seconds") or 10.0), MAX_SECONDS)
+            seconds = min(float(job.get("seconds") or 15.0), MAX_SECONDS)
             torch.manual_seed(seed + i)
 
-            inputs = processor(
-                text=[job["text"]],
-                return_tensors="pt",
-            ).to("cuda")
-
-            audio_values = model.generate(
-                **inputs,
-                do_sample=True,
-                guidance_scale=3,
-                max_new_tokens=int(seconds * 50),
-            )
-            audio = audio_values[0].cpu().to(torch.float32)
+            model.set_generation_params(use_sampling=True, top_k=0, top_p=0.9,
+                                        temperature=3.0, max_cfg_coef=10.0,
+                                        min_cfg_coef=1.0, decoding_steps=[20, 10, 10, 10])
+            wav = model.generate([job["text"]])
+            # wav: (batch=1, channels, samples) — float32 CPU
+            audio = wav[0].cpu()
 
             buf = io.BytesIO()
             sf.write(buf, audio.numpy().T, samplerate=sr_out, format="WAV", subtype="PCM_16")
