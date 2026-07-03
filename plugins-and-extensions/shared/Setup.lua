@@ -567,7 +567,7 @@ local function loop()
           g.text_colored(ST[m.msg]:sub(1,68), "YELLOW")
         end
       elseif ST[m.state] == "done" then
-        g.same_line(6); g.text_colored("OK  cacheado", "GREEN")
+        g.text_colored("OK  cacheado", "GREEN")
       elseif ST[m.state] == "error" then
         g.text_colored("Error: " .. ST[m.msg]:sub(1,60), "RED")
       end
