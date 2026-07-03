@@ -15,7 +15,7 @@ Reutiliza el Volume inspiremusic-weights (pesos compartidos con research_inspire
 
 Condiciones oficiales (FunAudioLLM/InspireMusic README):
   model = InspireMusicModel(model_name="InspireMusic-1.5B-Long")
-  model.inference("text2music", text="Generate jazz music.", audio_prompt=None)
+  model.inference("text-to-music", text="Generate jazz music.", audio_prompt=None)
 
 Setup (descarga pesos al Volume, compartido con script de continuación):
     modal run research_inspiremusic_gen_modal.py::setup
@@ -157,7 +157,7 @@ def generate_batch(jobs: list[dict], seed: int = DEFAULT_SEED) -> list[bytes]:
 
             output_fn = f"output_{i:02d}"
             model.inference(
-                task="text2music",
+                task="text-to-music",
                 text=job.get("text") or "",
                 audio_prompt=None,
                 output_fn=output_fn,
