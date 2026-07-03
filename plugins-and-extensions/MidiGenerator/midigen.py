@@ -206,6 +206,7 @@ def _build_cmd(
         # continuation usa --duration, accompaniment usa --clip-length
         if args.mode == "continuation":
             cmd += ["--duration", str(args.clip_length)]
+            cmd += ["--amt-temperature", str(args.amt_temperature)]
         else:
             cmd += ["--clip-length", str(args.clip_length)]
 
@@ -253,6 +254,7 @@ def main() -> int:
     p.add_argument("--clip-length",      type=int,   default=20, dest="clip_length")
     p.add_argument("--top-p",            type=float, default=0.95, dest="top_p")
     p.add_argument("--melody-instrument",type=int,   default=0, dest="melody_instrument")
+    p.add_argument("--amt-temperature",  type=float, default=1.0, dest="amt_temperature")
 
     args = p.parse_args()
 

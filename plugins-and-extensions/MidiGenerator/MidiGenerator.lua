@@ -80,6 +80,7 @@ local S = {
   amt_mode_idx     = 1,   -- 1=accompaniment, 2=continuation
   amt_duration     = 20,  -- clip_length (accompaniment) o duration (continuation)
   amt_prompt_len   = 5,   -- prompt_length (solo accompaniment)
+  amt_temperature  = 1.0, -- temperature para continuation (evita patrones repetitivos)
   -- AMT: pista de melodía
   amt_melody_item  = nil,   -- item REAPER (para posición/longitud al importar)
   amt_melody_take  = nil,
@@ -687,6 +688,9 @@ local function launch_generate()
     extra = extra .. " --prompt-length "     .. tostring(S.amt_prompt_len)
     extra = extra .. " --clip-length "       .. tostring(S.amt_duration)
     extra = extra .. " --melody-instrument 0"
+    if mode == "continuation" then
+      extra = extra .. " --amt-temperature " .. string.format("%.2f", S.amt_temperature)
+    end
     -- --n-outputs ya está en base; midigen.py lo mapea internamente a --multiplicity
   end
 
@@ -863,6 +867,15 @@ local function loop()
     g.next_width(t.sc(120))
     local rv, nv = g.slider_int("##amt_dur", S.amt_duration, 5, 120)
     if rv then S.amt_duration = nv end
+
+    if amt_mode_key == "continuation" then
+      g.same_line(t.sc(14)); g.inline_text("Temp.:")
+      g.same_line(t.sc(6))
+      g.next_width(t.sc(90))
+      rv, nv = g.slider_float("##amt_temp", S.amt_temperature, 0.5, 2.0, "%.2f")
+      if rv then S.amt_temperature = nv end
+      g.text_disabled("  ↑ Mayor = más variado, menor = más repetitivo")
+    end
 
     if amt_mode_key == "accompaniment" then
       g.same_line(t.sc(14)); g.inline_text("Hist. (s):")
