@@ -598,9 +598,10 @@ local function launch_generate()
       "MidiGenerator", 0)
     return
   end
-  if is_amt and #S.amt_seed_takes == 0 then
+  local amt_mode_is_acc = is_amt and (AMT_MODES[S.amt_mode_idx] == "accompaniment")
+  if amt_mode_is_acc and #S.amt_seed_takes == 0 then
     reaper.MB(
-      "Anticipatory necesita al menos una pista de seed de acompañamiento.\n"
+      "El modo acompañamiento necesita al menos una pista de seed.\n"
       .. "Selecciona items MIDI en REAPER y clic '+' junto a 'Seed acc.'.",
       "MidiGenerator", 0)
     return
@@ -811,29 +812,30 @@ local function loop()
     g.text_disabled("  Selecciona el item de melodía en REAPER y clic R.")
 
     g.spacing()
-
-    -- Pistas de seed de acompañamiento
-    g.row_label("Seed acc.:", lw_amt)
-    if g.button("+", t.sc(44), t.ITEM_H) then add_seed_items_from_reaper() end
-    g.same_line(t.sc(8))
-    if g.button("Limpiar", t.sc(70), t.ITEM_H) then
-      S.amt_seed_takes = {}
-      add_log("Seed de acompañamiento limpiado.")
-    end
-    if #S.amt_seed_takes == 0 then
-      g.text_disabled("  (ninguna pista añadida)")
-    else
-      for _, entry in ipairs(S.amt_seed_takes) do
-        g.text_disabled("  • " .. entry.label)
-      end
-    end
-    g.text_disabled("  Selecciona pistas de acompañamiento en REAPER y clic '+'.")
-
-    g.spacing()
     g.row_label("Modo:", lw_amt)
     g.next_width(t.sc(160))
     S.amt_mode_idx = widgets.combo("##amt_mode", S.amt_mode_idx, AMT_MODE_LABELS)
     local amt_mode_key = AMT_MODES[S.amt_mode_idx]
+
+    -- Pistas de seed de acompañamiento (solo en modo accompaniment)
+    if amt_mode_key == "accompaniment" then
+      g.spacing()
+      g.row_label("Seed acc.:", lw_amt)
+      if g.button("+", t.sc(44), t.ITEM_H) then add_seed_items_from_reaper() end
+      g.same_line(t.sc(8))
+      if g.button("Limpiar", t.sc(70), t.ITEM_H) then
+        S.amt_seed_takes = {}
+        add_log("Seed de acompañamiento limpiado.")
+      end
+      if #S.amt_seed_takes == 0 then
+        g.text_disabled("  (ninguna pista añadida)")
+      else
+        for _, entry in ipairs(S.amt_seed_takes) do
+          g.text_disabled("  • " .. entry.label)
+        end
+      end
+      g.text_disabled("  Selecciona pistas de acompañamiento en REAPER y clic '+'.")
+    end
 
     g.spacing()
     local lw = t.sc(110)
