@@ -347,12 +347,13 @@ def main() -> int:
                        "El proceso terminó sin error pero sin salida.")
         return 1
 
-    # Renombrar a nombre descriptivo
+    # Renombrar a nombre descriptivo incluyendo fragmento del prompt
+    prompt_slug = re.sub(r'[^a-zA-Z0-9]+', '_', args.prompt.strip())[:40].strip('_').lower()
     if args.mode == "generate":
-        final_name = f"generated__{args.model}.wav"
+        final_name = f"generated__{args.model}__{prompt_slug}.wav"
     else:
         src_stem   = Path(args.input).stem if args.input else "audio"
-        final_name = f"{src_stem}__{args.model}_edit.wav"
+        final_name = f"{src_stem}__{args.model}_edit__{prompt_slug}.wav"
 
     final_wav = out_dir / final_name
     try:
