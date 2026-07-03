@@ -117,7 +117,6 @@ def _inference_impl(
     top_p: float,
     melody_instrument: int,
     seed: int,
-    temperature: float = 1.0,
 ) -> bytes:
     """Carga el modelo, ejecuta continuation o accompaniment, retorna bytes MIDI."""
     import time
@@ -178,7 +177,7 @@ def _inference_impl(
                     f"Usa un item más largo o reduce prompt_length ({prompt_length}s)."
                 )
             new_events = generate(model, prompt_length, prompt_length + duration,
-                                  inputs=history, top_p=top_p, temperature=temperature)
+                                  inputs=history, top_p=top_p)
             if not new_events:
                 raise ValueError("AMT no generó ningún evento MIDI. Prueba con otro seed o aumenta duration.")
             # Solo exportar la continuación (sin la historia) para no solapar
@@ -268,12 +267,10 @@ _FN_KWARGS = dict(cpu=2, memory=6144, timeout=3600, volumes={WEIGHTS_MOUNT: weig
 @app.function(gpu=DEFAULT_GPU, **_FN_KWARGS)
 def run(midi_bytes: bytes, model_name: str = DEFAULT_MODEL, mode: str = "accompaniment",
         duration: int = 10, prompt_length: int = 5, clip_length: int = 20,
-        top_p: float = 0.95, melody_instrument: int = 0, seed: int = 0,
-        temperature: float = 1.0) -> bytes:
+        top_p: float = 0.95, melody_instrument: int = 0, seed: int = 0) -> bytes:
     return _inference_impl(midi_bytes, model_name, mode, duration=duration,
                            prompt_length=prompt_length, clip_length=clip_length,
-                           top_p=top_p, melody_instrument=melody_instrument, seed=seed,
-                           temperature=temperature)
+                           top_p=top_p, melody_instrument=melody_instrument, seed=seed)
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +328,6 @@ def main(
     gpu: str = "A10G",
     # continuation
     duration: int = 10,
-    amt_temperature: float = 1.0,
     # accompaniment
     prompt_length: int = 5,
     clip_length: int = 20,
@@ -376,7 +372,7 @@ def main(
         f"prompt_length={prompt_length}s, clip_length={clip_length}s, "
         f"top_p={top_p}, seed={seed}"
         if mode == "accompaniment"
-        else f"duration={duration}s, temp={amt_temperature}"
+        else f"duration={duration}s"
     )
     print(
         f"[modal] gpu={gpu_key}  model={model}  mode={mode}  {mode_info}"
@@ -405,7 +401,6 @@ def main(
             top_p=top_p,
             melody_instrument=melody_instrument,
             seed=seed_i,
-            temperature=amt_temperature,
         )
         print(f"[spawned] object_id={call.object_id}")
 
