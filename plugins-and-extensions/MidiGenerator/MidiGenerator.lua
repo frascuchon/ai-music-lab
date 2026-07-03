@@ -33,7 +33,7 @@ local MG_LABELS = {
   "Amadeus  (multi-track, MidiCaps, A10G)",
   "MIDI-LLM  (multi-track, libre, A10G) [solo CUDA]",
   "text2midi  (baseline, multi-track) [calidad baja]",
-  "ChatMusician  (mono-pista, ABC) [limitado]",
+  "ChatMusician  (multi-voz, ABC notation) [limitado]",
   "MuseCoco  (multi-track, atributos, A100) [~11 min]",
   "Anticipatory  (acompañamiento/cover, seed MIDI, A10G)",
 }
@@ -746,7 +746,7 @@ local function loop()
     amadeus      = "A10G: ~$0.05/min  |  multi-track, duración variable",
     midi_llm     = "A10G: ~$0.05/min  |  requiere CUDA BF16 (no MPS)",
     text2midi    = "A10G: ~$0.05/min  |  baseline académico, calidad baja",
-    chatmusician = "A10G: ~$0.05/min  |  mono-pista (melody+chords, sin multi-track)",
+    chatmusician = "A10G: ~$0.05/min  |  multi-voz ABC; a veces genera texto en lugar de ABC",
     musecoco     = "A100: ~$0.14/min  |  stage-2 tarda ~11 min, usa spawn+poll",
     anticipatory = "A10G: ~$0.05/min  |  ~15-45 min en CPU → Modal necesario",
   }

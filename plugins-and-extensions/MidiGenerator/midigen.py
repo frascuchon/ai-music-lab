@@ -127,8 +127,10 @@ def count_instruments(mid_path: Path) -> int:
 
 
 def _collect_outputs(out_dir: Path) -> list[Path]:
-    """Recoge todos los .mid generados en out_dir, ordenados."""
-    mids = sorted(out_dir.glob("*.mid"))
+    """Recoge todos los .mid generados en out_dir, ordenados.
+    Filtra ficheros demasiado pequeños (< 64 bytes) que suelen ser MIDIs
+    vacíos o inválidos producidos cuando el modelo genera texto en lugar de ABC."""
+    mids = [m for m in sorted(out_dir.glob("*.mid")) if m.stat().st_size >= 64]
     return mids
 
 
