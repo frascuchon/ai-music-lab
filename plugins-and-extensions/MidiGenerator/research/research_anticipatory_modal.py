@@ -178,10 +178,11 @@ def _inference_impl(
                 )
             new_events = generate(model, prompt_length, prompt_length + duration,
                                   inputs=history, top_p=top_p)
-            combined = sort(history + new_events)
-            if not combined:
+            if not new_events:
                 raise ValueError("AMT no generó ningún evento MIDI. Prueba con otro seed o aumenta duration.")
-            midi_out = events_to_midi(combined)
+            # Solo exportar la continuación (sin la historia) para no solapar
+            # la pista original al importar en REAPER. La historia ya existe.
+            midi_out = events_to_midi(new_events)
 
         elif mode == "accompaniment":
             from anticipation.ops import clip, combine
@@ -216,6 +217,26 @@ def _inference_impl(
     print(f"[timing] inferencia: {t_infer:.1f}s")
 
     midi_out.save(output_path)
+
+    # Continuación: desplazar notas a t=0 (AMT genera desde prompt_length en adelante)
+    if mode == "continuation":
+        import pretty_midi
+        pm_raw = pretty_midi.PrettyMIDI(output_path)
+        pm_shifted = pretty_midi.PrettyMIDI()
+        for instr in pm_raw.instruments:
+            ni = pretty_midi.Instrument(program=instr.program, is_drum=instr.is_drum, name=instr.name)
+            for note in instr.notes:
+                ni.notes.append(pretty_midi.Note(
+                    velocity=note.velocity,
+                    pitch=note.pitch,
+                    start=max(0.0, note.start - prompt_length),
+                    end=max(0.001, note.end - prompt_length),
+                ))
+            if ni.notes:
+                pm_shifted.instruments.append(ni)
+        pm_shifted.save(output_path)
+        n_notes = sum(len(i.notes) for i in pm_shifted.instruments)
+        print(f"[continuation] desplazado -{prompt_length}s → {n_notes} notas, {len(pm_shifted.instruments)} pistas")
 
     # Persistir pesos descargados (best-effort: xet puede tener log files abiertos)
     try:

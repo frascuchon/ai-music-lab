@@ -81,6 +81,7 @@ local S = {
   amt_duration     = 20,  -- clip_length (accompaniment) o duration (continuation)
   amt_prompt_len   = 5,   -- prompt_length (solo accompaniment)
   -- AMT: pista de melodía
+  amt_melody_item  = nil,   -- item REAPER (para posición/longitud al importar)
   amt_melody_take  = nil,
   amt_melody_label = "",
   -- AMT: pistas de seed de acompañamiento
@@ -427,6 +428,17 @@ function import_midi_all()
   local mk    = model_key()
   local label = "[MIDI " .. mk .. "]"
 
+  -- Para AMT continuación: posicionar cursor al final del item de melodía
+  -- para que la continuación se inserte justo después (no solapando el seed).
+  if mk == "anticipatory"
+      and AMT_MODES[S.amt_mode_idx] == "continuation"
+      and S.amt_melody_item then
+    local pos = reaper.GetMediaItemInfo_Value(S.amt_melody_item, "D_POSITION")
+    local len = reaper.GetMediaItemInfo_Value(S.amt_melody_item, "D_LENGTH")
+    reaper.SetEditCurPos(pos + len, false, false)
+    add_log(string.format("Cursor → %.2fs (fin del item de melodía)", pos + len))
+  end
+
   reaper.Undo_BeginBlock()
   for i, path in ipairs(S.out_files) do
     local suffix = #S.out_files > 1 and (" — candidato " .. i) or ""
@@ -545,6 +557,7 @@ local function grab_melody_item()
     reaper.MB("El item seleccionado no contiene MIDI.", "MidiGenerator", 0)
     return
   end
+  S.amt_melody_item  = item
   S.amt_melody_take  = take
   S.amt_melody_label = _get_track_label(item)
   add_log("Melodía capturada: " .. S.amt_melody_label)
