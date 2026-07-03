@@ -7,7 +7,7 @@
     URL: https://raw.githubusercontent.com/USER/REPO/main/index.xml
 
   To regenerate this index after updates, install reapack-index and run:
-    reapack-index --output index.xml --url https://raw.githubusercontent.com/USER/REPO/main
+    reapack-index -o index.xml -u https://raw.githubusercontent.com/USER/REPO/main
 
   Script source URLs follow the pattern:
     https://raw.githubusercontent.com/USER/REPO/main/plugins-and-extensions/...
