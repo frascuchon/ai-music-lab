@@ -526,12 +526,12 @@ local function launch_generate()
     local mode = AMT_MODES[S.amt_mode_idx]
     add_log("Modo AMT: " .. mode)
     add_log("Seed: " .. (S.seed_label ~= "" and S.seed_label or S.seed_path))
-    extra = extra .. " --seed "           .. q(S.seed_path)
-    extra = extra .. " --mode "           .. q(mode)
-    extra = extra .. " --prompt-length "  .. tostring(S.amt_prompt_len)
-    extra = extra .. " --clip-length "    .. tostring(S.amt_duration)
-    extra = extra .. " --multiplicity "   .. tostring(S.n_outputs)
+    extra = extra .. " --seed "              .. q(S.seed_path)
+    extra = extra .. " --mode "              .. q(mode)
+    extra = extra .. " --prompt-length "     .. tostring(S.amt_prompt_len)
+    extra = extra .. " --clip-length "       .. tostring(S.amt_duration)
     extra = extra .. " --melody-instrument " .. tostring(S.amt_melody_instr)
+    -- --n-outputs ya está en base; midigen.py lo mapea internamente a --multiplicity
   end
 
   local cmd = base .. extra .. " >>" .. q(LOG_F) .. " 2>&1 &"
