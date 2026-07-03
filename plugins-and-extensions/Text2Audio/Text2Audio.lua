@@ -531,11 +531,9 @@ local function loop()
     -- Duración
     local max_sec = GEN_MAX_SEC[GEN_MODELS[S.gen_model_idx]] or 47.0
     g.row_label("Duración:", t.sc(70))
-    g.next_width(-(t.sc(50) + t.SPACING_X))
+    g.next_width(-1)
     local ch_dur, new_dur = g.slider_float("##gen_dur", S.duration, 1.0, max_sec, "%.1f s")
     if ch_dur then S.duration = new_dur end
-    g.same_line()
-    g.text(string.format("%.1fs", S.duration))
 
     -- Modelo
     g.row_label("Modelo:", t.sc(70))
