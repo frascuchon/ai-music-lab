@@ -1,11 +1,14 @@
 -- @description Text2Audio — Generación y edición de audio con IA
--- @version 1.0
+-- @version 1.1
 -- @author IAClaude
 -- @about Genera audio desde texto o edita un audio existente usando modelos de IA
 --        en la nube (Modal). Dos modos:
---          · Generar: prompt de texto → WAV estéreo (Stable Audio Open, Foundation-1)
+--          · Generar: prompt de texto → WAV estéreo
+--                     (SAO, Foundation-1, ACE-Step, InspireMusic,
+--                      Mustango, AudioGen, MusicGen, MAGNeT)
 --          · Editar:  item/pista seleccionado + intención → WAV transformado
---                     (SAO style transfer, ACE-Step 1.5, MusicGen-melody)
+--                     (SAO style transfer, ACE-Step 1.5, MusicGen-melody,
+--                      MelodyFlow, ZETA/AudioLDM2, InspireMusic continuation)
 --        Input edición: pista, item o split (sección) seleccionado en REAPER.
 --        Output: pista de audio nueva con el WAV generado, en la posición del source.
 --        UI nativa gfx: sin dependencias externas de extensiones REAPER.
@@ -31,30 +34,57 @@ end
 
 -- ── CONSTANTES ───────────────────────────────────────────────────
 -- Modelos de generación (text → audio, sin source)
-local GEN_MODELS  = { "sao", "foundation1" }
+local GEN_MODELS  = { "sao", "foundation1", "acestep_gen", "inspiremusic_gen",
+                      "mustango", "audiogen", "musicgen_gen", "magnet" }
 local GEN_LABELS  = {
   "Stable Audio Open 1.0  (A10G, 44.1 kHz estéreo)",
   "Foundation-1  (A10G, electrónica, formato TAG)",
+  "ACE-Step 1.5  (A10G, full-song, Apache 2.0)",
+  "InspireMusic 1.5B  (A10G, 48 kHz, Apache 2.0)",
+  "Mustango  (A10G, ~10 s fijo, MuBERT features)",
+  "AudioGen-medium  (A10G, 16 kHz, efectos/sonido)",
+  "MusicGen-medium  (A10G, 32 kHz, CC-BY-NC)",
+  "MAGNeT-medium  (A10G, 32 kHz, sin-AR, CC-BY-NC)",
 }
 local GEN_SCRIPTS = {
-  sao        = SCRIPT_DIR .. "research/research_stable_audio_open_modal.py",
-  foundation1= SCRIPT_DIR .. "research/research_foundation1_modal.py",
+  sao            = SCRIPT_DIR .. "research/research_stable_audio_open_modal.py",
+  foundation1    = SCRIPT_DIR .. "research/research_foundation1_modal.py",
+  acestep_gen    = SCRIPT_DIR .. "research/research_acestep_gen_modal.py",
+  inspiremusic_gen = SCRIPT_DIR .. "research/research_inspiremusic_gen_modal.py",
+  mustango       = SCRIPT_DIR .. "research/research_mustango_modal.py",
+  audiogen       = SCRIPT_DIR .. "research/research_audiogen_modal.py",
+  musicgen_gen   = SCRIPT_DIR .. "research/research_musicgen_gen_modal.py",
+  magnet         = SCRIPT_DIR .. "research/research_magnet_modal.py",
 }
-local GEN_MAX_SEC = { sao = 47.0, foundation1 = 47.0 }
+local GEN_MAX_SEC = {
+  sao = 47.0, foundation1 = 47.0,
+  acestep_gen = 180.0, inspiremusic_gen = 240.0,
+  mustango = 10.0, audiogen = 30.0, musicgen_gen = 30.0, magnet = 30.0,
+}
 
 -- Modelos de edición (source audio + prompt → audio transformado)
-local EDIT_MODELS  = { "sao_edit", "acestep", "musicgen" }
+local EDIT_MODELS  = { "sao_edit", "acestep", "musicgen",
+                       "melodyflow", "zeta", "inspiremusic" }
 local EDIT_LABELS  = {
   "SAO Style Transfer  (A10G, SDEdit init_audio)",
   "ACE-Step 1.5  (A10G, cover/re-estilo, Apache 2.0)",
   "MusicGen-melody  (A10G, condicionamiento melódico, CC-BY-NC)",
+  "MelodyFlow  (A10G, ≤30 s, flow matching, MIT/CC-BY-NC)",
+  "ZETA/AudioLDM2  (A10G, ≤10 s, zero-shot, Apache/CC-BY-SA)",
+  "InspireMusic continuation  (A10G, ≤30 s, Apache 2.0)",
 }
 local EDIT_SCRIPTS = {
-  sao_edit = SCRIPT_DIR .. "research/research_sao_edit_modal.py",
-  acestep  = SCRIPT_DIR .. "research/research_acestep_edit_modal.py",
-  musicgen = SCRIPT_DIR .. "research/research_musicgen_melody_modal.py",
+  sao_edit    = SCRIPT_DIR .. "research/research_sao_edit_modal.py",
+  acestep     = SCRIPT_DIR .. "research/research_acestep_edit_modal.py",
+  musicgen    = SCRIPT_DIR .. "research/research_musicgen_melody_modal.py",
+  melodyflow  = SCRIPT_DIR .. "research/research_melodyflow_modal.py",
+  zeta        = SCRIPT_DIR .. "research/research_zeta_edit_modal.py",
+  inspiremusic= SCRIPT_DIR .. "research/research_inspiremusic_modal.py",
 }
-local EDIT_NEEDS_SECONDS = { sao_edit = false, acestep = false, musicgen = true }
+local EDIT_NEEDS_SECONDS = {
+  sao_edit = false, acestep = false, musicgen = true,
+  melodyflow = false, zeta = false, inspiremusic = false,
+}
 
 local GPUS        = { "A10G", "A100", "T4" }
 local INTENSITIES = { "subtle", "moderate", "strong" }
@@ -518,8 +548,12 @@ local function loop()
     S.gpu_idx = widgets.combo("##gen_gpu", S.gpu_idx, GPUS)
     g.spacing()
 
+    -- Hint Mustango (duración fija)
+    if GEN_MODELS[S.gen_model_idx] == "mustango" then
+      g.text_colored("Mustango: duración fija ~10 s (el slider se ignora)", "YELLOW")
+    end
     -- Hint coste
-    g.text_disabled("A10G: ~$0.05/min  |  SAO/Foundation-1 ~20-40s por audio")
+    g.text_disabled("A10G: ~$0.05/min  |  SAO/Foundation-1 ~20-40 s  |  ACE-Step/MusicGen ~30-60 s")
 
   -- ════════════════════════════════════════════
   else
@@ -576,9 +610,10 @@ local function loop()
     S.edit_model_idx = widgets.combo("##edit_model", S.edit_model_idx, EDIT_LABELS)
     g.spacing()
 
-    -- Intensidad (no aplica a MusicGen)
+    -- Intensidad (no aplica a MusicGen ni InspireMusic continuation)
     local cur_edit_model = EDIT_MODELS[S.edit_model_idx]
-    if cur_edit_model ~= "musicgen" then
+    local EDIT_NO_INTENSITY = { musicgen = true, inspiremusic = true }
+    if not EDIT_NO_INTENSITY[cur_edit_model] then
       g.row_label("Intensidad:", t.sc(80))
       g.next_width(t.sc(170))
       S.intensity_idx = widgets.combo("##intensity", S.intensity_idx, INTENSITY_LABELS)
@@ -611,9 +646,12 @@ local function loop()
 
     -- Hints por modelo
     local model_hints = {
-      sao_edit = "SAO SDEdit: reutiliza pesos ya descargados de S1 (sin coste extra de setup)",
-      acestep  = "ACE-Step: requiere setup inicial (~5 GB). Apache 2.0, uso comercial libre.",
-      musicgen = "MusicGen-melody: melody conditioning. CC-BY-NC, solo uso no comercial.",
+      sao_edit    = "SAO SDEdit: reutiliza pesos ya descargados de SAO 1.0 (sin coste extra de setup)",
+      acestep     = "ACE-Step: requiere setup inicial (~5 GB). Apache 2.0, uso comercial libre.",
+      musicgen    = "MusicGen-melody: melody conditioning. CC-BY-NC, solo uso no comercial.",
+      melodyflow  = "MelodyFlow: flow matching con inversión latente. Alta fidelidad. ≤30 s.",
+      zeta        = "ZETA/AudioLDM2: DDIM inversion zero-shot. Output 16 kHz mono ≤10 s.",
+      inspiremusic= "InspireMusic: continúa el audio con el estilo indicado en el prompt. ≤30 s.",
     }
     g.text_disabled(model_hints[cur_edit_model] or "")
   end

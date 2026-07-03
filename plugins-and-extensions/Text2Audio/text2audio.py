@@ -5,7 +5,7 @@
 Llamado por Text2Audio.lua como proceso en background:
     python3 text2audio.py
         --shared-dir <shared/>  --script <research_*.py>
-        --model <sao|foundation1|sao_edit|acestep|musicgen>
+        --model <sao|foundation1|sao_edit|acestep|musicgen|...>
         --mode  <generate|edit>
         --out-dir <dir>  --progress <pf>
         [--prompt <texto>]
@@ -16,7 +16,8 @@ Llamado por Text2Audio.lua como proceso en background:
         [--gpu <A10G|A100|T4>]
 
 Contratos de entrypoint por modelo (modal run <script>::main):
-  text2audio (sao, foundation1):
+  text2audio (sao, foundation1, acestep_gen, inspiremusic_gen,
+              mustango, audiogen, musicgen_gen, magnet):
       --prompt  --seconds  --out-dir  --force
   audio_edit_noise (sao_edit):
       --source-audio  --prompt  --noise-level  --out-dir  --force
@@ -24,6 +25,12 @@ Contratos de entrypoint por modelo (modal run <script>::main):
       --source-audio  --prompt  --strength  --out-dir  --force
   melody_edit (musicgen):
       --source-audio  --prompt  --seconds  --out-dir  --force
+  audio_edit_flowstep (melodyflow):
+      --source-audio  --prompt  --flowstep  --out-dir  --force
+  audio_edit_tstart (zeta):
+      --source-audio  --prompt  --tstart  --out-dir  --force
+  audio_continuation (inspiremusic):
+      --source-audio  --prompt  --out-dir  --force
 
 Protocolo de progreso (--progress):
     state|pct|msg\\n       state = running | done | error
@@ -46,17 +53,30 @@ from pathlib import Path
 # Tipos de contrato por modelo
 # ---------------------------------------------------------------------------
 MODEL_KIND: dict[str, str] = {
-    "sao":         "text2audio",
-    "foundation1": "text2audio",
+    # Generación (text → audio, sin source)
+    "sao":             "text2audio",
+    "foundation1":     "text2audio",
+    "acestep_gen":     "text2audio",
+    "inspiremusic_gen":"text2audio",
+    "mustango":        "text2audio",
+    "audiogen":        "text2audio",
+    "musicgen_gen":    "text2audio",
+    "magnet":          "text2audio",
+    # Edición (source audio + prompt → audio transformado)
     "sao_edit":    "audio_edit_noise",
     "acestep":     "audio_edit_strength",
     "musicgen":    "melody_edit",
+    "melodyflow":  "audio_edit_flowstep",
+    "zeta":        "audio_edit_tstart",
+    "inspiremusic":"audio_continuation",
 }
 
 # Mapeo intensity → valor numérico
 INTENSITY_MAP: dict[str, dict[str, float]] = {
-    "sao_edit": {"subtle": 0.4, "moderate": 1.0, "strong": 4.0},
-    "acestep":  {"subtle": 0.9, "moderate": 0.7, "strong": 0.4},
+    "sao_edit":   {"subtle": 0.4,  "moderate": 1.0,  "strong": 4.0},
+    "acestep":    {"subtle": 0.9,  "moderate": 0.7,  "strong": 0.4},
+    "melodyflow": {"subtle": 0.10, "moderate": 0.05, "strong": 0.0},
+    "zeta":       {"subtle": 70,   "moderate": 100,  "strong": 130},
 }
 
 
@@ -118,7 +138,9 @@ def main() -> int:
     p.add_argument("--script",      required=True,
                    help="Ruta al script Modal a ejecutar.")
     p.add_argument("--model",       required=True,
-                   help="Clave del modelo (sao|foundation1|sao_edit|acestep|musicgen).")
+                   help="Clave del modelo (sao|foundation1|acestep_gen|inspiremusic_gen|"
+                        "mustango|audiogen|musicgen_gen|magnet|"
+                        "sao_edit|acestep|musicgen|melodyflow|zeta|inspiremusic).")
     p.add_argument("--mode",        required=True, choices=["generate", "edit"],
                    help="Modo de operación.")
     p.add_argument("--out-dir",     required=True, dest="out_dir",
@@ -239,6 +261,31 @@ def main() -> int:
             "--source-audio", str(process_path),
             "--prompt",       args.prompt,
             "--seconds",      str(args.seconds),
+            "--out-dir",      str(out_dir),
+            "--force",
+        ]
+    elif kind == "audio_edit_flowstep":
+        flowstep = INTENSITY_MAP["melodyflow"].get(args.intensity, 0.05)
+        cmd += [
+            "--source-audio", str(process_path),
+            "--prompt",       args.prompt,
+            "--flowstep",     str(flowstep),
+            "--out-dir",      str(out_dir),
+            "--force",
+        ]
+    elif kind == "audio_edit_tstart":
+        tstart = int(INTENSITY_MAP["zeta"].get(args.intensity, 100))
+        cmd += [
+            "--source-audio", str(process_path),
+            "--prompt",       args.prompt,
+            "--tstart",       str(tstart),
+            "--out-dir",      str(out_dir),
+            "--force",
+        ]
+    elif kind == "audio_continuation":
+        cmd += [
+            "--source-audio", str(process_path),
+            "--prompt",       args.prompt,
             "--out-dir",      str(out_dir),
             "--force",
         ]
