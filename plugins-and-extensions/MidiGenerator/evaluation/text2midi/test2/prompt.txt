@@ -1,0 +1,8 @@
+Model: Text2midi (amaai-lab/text2midi)
+Source: https://amaai-lab.github.io/Text2midi/ — Demo E
+Prompt: "A rock song with strong drums and electric guitar. The tempo is very fast."
+Reference: reference_official.mid/.mp3 — MIDI generado por la implementación oficial del paper
+Our command: uv run research_text2midi.py --prompt "A rock song with strong drums and electric guitar. The tempo is very fast." --max_len 2000 --out generated.mid
+Device: mps, fp16
+Result: 10 pistas, 450 notas, 23.7s, instrumentos [35, 1, 27, 0, 28, 67, 26, 33, 30 distortion guitar, 22]
+Notes: Guitarra distorsión (30) presente ✓, guitarras eléctricas (27, 28, 26) ✓. Sin batería explícita. Multi-track robusto.

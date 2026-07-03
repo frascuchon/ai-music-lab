@@ -1,0 +1,8 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/midi_llm/comparison_3 — comparativa cross-model
+Prompt: "A classical piece that could serve as a soundtrack, this composition is characterized by its cinematic quality, evoking a sense of adventure, drama, and epic action. With a string ensemble of viola, violin, and cello at the forefront, it unfolds at an Andante pace in 4/4 time, set in the key of C major. The chord progression of Dm, D, G, C, and F lends to its emotive narrative."
+Category: cross-model/midi_llm — comparison_3
+---
+v0: 12.7s  3 tracks  1022 notes — violin (954), viola (53), cello (15). Cuerdas puras.
+Calidad: 3.5/5 — MATCH EXCELENTE de instrumentación: viola ✓, violin ✓, cello ✓. PERO duración muy corta (12.7s). Mood cinematic: subjetivo.
+Nota: el modelo comprimió 1022 notas en 12.7s → viola/violin muy densos. Orquesta de cuerdas correcta.

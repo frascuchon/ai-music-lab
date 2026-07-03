@@ -1,0 +1,30 @@
+Test 07 — Música clásica real: MusicNet (pista 2556)
+Archivo original: musicnet2556.wav
+Dataset: MusicNet (grabaciones profesionales con anotaciones MIDI)
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 4.85 MB → ~1.5-2 min aprox.
+
+Contenido musical:
+  Grabación clásica real de instrumento solista o pequeño conjunto
+  Dificultad: MEDIA-ALTA — anotaciones a nivel de nota precisas en MusicNet
+
+Por qué este test:
+  MusicNet es un benchmark estándar de AMT en música clásica real.
+  YourMT3+ entrenado en MusicNet — resultado esperado: BUENO.
+  Ground truth disponible en la distribución MusicNet para comparación exacta.
+
+Resultado:
+  Métricas objetivas (compute_f1.py vs MusicNet 2556.mid):
+    F1 onset+pitch:         2.6%  (n_ref=1447, n_est=1428)
+    F1 onset+offset+pitch:  0.7%
+    F1 clase instrumento:  100%   (ref={Piano}, est={Piano})
+    Por clase (F1 onset+pitch):
+      Piano: 2.6%  ← caso de timing mismatch (ver nota)
+    NOTA: el F1 de onset es artificialmente bajo porque el MIDI de referencia de
+    MusicNet (musicnet_midis.tar.gz) tiene timing de partitura score, no de
+    performance. La alineación temporal score→recording que genera los CSVs no
+    está incluida en los MIDIs descargables. El modelo sí transcribe piano
+    correctamente (F1-cls=100%), pero los tiempos no coinciden con el GT MIDI.
+    Para F1 real en MusicNet se necesitarían los CSVs de labels (formato propio).
+
+  Métricas subjetivas (escucha en REAPER): pendiente

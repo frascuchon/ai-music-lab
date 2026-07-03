@@ -1,0 +1,31 @@
+Test 08 — Música clásica real: MusicNet (pista 2628)
+Audio: symlink → ../../yourmt3/test08/input.wav
+Archivo original: musicnet_2628.wav
+Dataset: MusicNet (grabaciones profesionales con anotaciones MIDI)
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 4.0 MB
+
+Contenido musical:
+  Grabación clásica real — piano + cuerdas (sin batería)
+
+Pipeline compound v2:
+  - Audio completo → YourMT3+ (pitched instruments)
+  - drums.wav (Demucs htdemucs_6s) → ADTOF → drums MIDI (41 bytes, vacío — sin batería detectada)
+  - merge: pitched + drums → transcribed_cuda.mid
+
+Resultado (2026-06-24):
+  F1-op  (pitched):    14.4%   (YourMT3+ solo: 14.4% — PARIDAD ✅)
+  F1-oop (pitched):     7.1%
+  F1-cls (pitched):    50.0%   (Piano detectado; Strings→Ensemble — error de clase)
+  n_ref=1519, n_est=1538
+
+  CAVEAT: GT es partitura (score timing) → F1 artificialmente bajo.
+  Error de clase conocido: Strings transcritas como Ensemble (igual que YourMT3+ solo).
+
+  F1-drm (drums): N/A — ADTOF correctamente no detecta batería en clásico ✅
+
+Veredicto:
+  ✅ Merge no introduce ruido en audio sin batería
+  ✅ F1 pitched = YourMT3+ standalone
+
+Métricas subjetivas (escucha en REAPER): pendiente

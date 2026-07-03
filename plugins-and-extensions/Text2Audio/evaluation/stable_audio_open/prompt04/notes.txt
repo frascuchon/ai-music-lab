@@ -1,0 +1,29 @@
+Prompt 04 — synth_pad: lush ambient synth pad, slow attack slow release, C major, e
+Texto completo:  "lush ambient synth pad, slow attack slow release, C major, ethereal and warm, long evolving texture, no rhythm"
+BPM objetivo:    N/A
+Duración:        20.0 s
+Modelo:          stable_audio_open 1.0
+Fecha:           2026-06-25
+GPU:             A10G
+Seed:            45
+
+Resultado (output.wav):
+  Tamaño:        3445 KB
+  Duration real: 20.00 s
+
+Notas del prompt: Textura larga sin ritmo. Comprobar calidad de la evolución y ausencia de artefactos.
+
+Métricas objetivas:
+  CLAP score:    0.4649
+  FAD:           pendiente (requiere fetch_reference_set.sh)
+
+Métricas subjetivas (escucha en REAPER):
+  Fidelidad al prompt:  4/5
+  Calidad de audio:     4/5
+  Musicalidad:          4/5   (¿melodía/ritmo/armonía coherentes?)
+  Loopability:          3/5   (¿el loop cierra sin click?)
+  Usabilidad:           4/5
+  Media:                /5
+
+Observaciones:
+  pendiente

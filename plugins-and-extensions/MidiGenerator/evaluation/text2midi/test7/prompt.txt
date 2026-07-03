@@ -1,0 +1,7 @@
+Model: Text2midi (amaai-lab/text2midi)
+Source: https://amaai-lab.github.io/Text2midi/ — Demo F (output_F.mid)
+Prompt: "A heavy metal song with strong drums and guitar."
+Reference: reference_official.mid/.mp3 — MIDI generado por la implementación oficial (demo branch)
+Our command: uv run research_text2midi.py --prompt "A heavy metal song with strong drums and guitar." --max_len 2000 --temperature 0.9 --no-half --out generated.mid
+Device: cuda (Modal A10G) — see research_text2midi_modal.py
+Notes: Prompt corto con género específico (heavy metal). El modelo debe generar drums prominentes, guitarra eléctrica (overdrive/distorsión). Buen test de capacidad de género.

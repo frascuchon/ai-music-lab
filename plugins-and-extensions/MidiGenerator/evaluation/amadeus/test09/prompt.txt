@@ -1,0 +1,8 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/text2midi/test2 — comparativa cross-model
+Prompt: "A rock song with strong drums and electric guitar. The tempo is very fast."
+Category: cross-model/text2midi — short-rock
+---
+v0: 60.8s  3 tracks  1022 notes — electric-guitar (757), electric-bass (235), drums (30).
+Calidad: 3/5 — electric guitar dominante ✓, bass ✓, drums presentes (pocos). Rock reconocible. Tempo rápido.
+Comparativa text2midi/test2: Amadeus (3/5) > text2midi (1.5/5). Guitars presentes y coherentes.

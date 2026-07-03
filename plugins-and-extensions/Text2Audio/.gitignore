@@ -1,0 +1,22 @@
+# Entornos virtuales
+research/.venv/
+research/__pycache__/
+research/**/__pycache__/
+
+# Artefactos de audio generados (grandes)
+evaluation/**/*.wav
+evaluation/**/*.mp3
+evaluation/**/*.flac
+
+# Set de referencia para FAD (caché binaria, ~100 MB)
+evaluation/_reference/
+
+# Demos de referencia descargados (binarios, no versionar)
+evaluation/stable_audio_open/reference_demos/
+evaluation/foundation_1/demos/
+
+# Rutas de descarga de pesos / repos clonados dentro del container (no locales)
+# (los pesos viven en Modal Volumes, no en disco local)
+
+# macOS
+.DS_Store

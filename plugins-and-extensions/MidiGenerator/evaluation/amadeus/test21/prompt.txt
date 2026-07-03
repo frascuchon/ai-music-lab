@@ -1,0 +1,8 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/midi_llm/comparison_10 — comparativa cross-model
+Prompt: "A melodic and energetic rock song with a touch of pop influence, featuring synth strings, piano, distortion guitar, synth voice, and drums, all contributing to a blend of happy and dark moods. Set in the key of A minor with a 4/4 time signature, this fast-paced track showcases a chord progression of Bm, Cmaj7, and Gmaj7."
+Category: cross-model/midi_llm — comparison_10
+---
+v0: 68.2s  5 tracks  1022 notes — piano (182), bass (147), synth-strings (17), drums (419!), electric-guitar/distortion (257).
+Calidad: 3.5/5 — piano ✓, drums ✓, electric-guitar ✓, synth-strings ✓. Bass presente. Mood energético: drums+guitar dominan. A minor: probable.
+Nota: mejor resultado de los prompts rock/pop — distortion guitar + drums coherente.

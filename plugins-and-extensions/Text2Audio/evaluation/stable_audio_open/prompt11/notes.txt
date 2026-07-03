@@ -1,0 +1,29 @@
+Prompt 11 — piano_loop: upright piano loop, 85 BPM, melancholic chord progression, A
+Texto completo:  "upright piano loop, 85 BPM, melancholic chord progression, Am - F - C - G, light room reverb, intimate recording"
+BPM objetivo:    85
+Duración:        11.294 s (4 compases)
+Modelo:          stable_audio_open 1.0
+Fecha:           2026-06-25
+GPU:             A10G
+Seed:            52
+
+Resultado (output.wav):
+  Tamaño:        1945 KB
+  Duration real: 11.29 s
+
+Notas del prompt: Loop de piano con progresión Am-F-C-G. Comprobar afinación y musicalidad.
+
+Métricas objetivas:
+  CLAP score:    0.5064
+  FAD:           pendiente (requiere fetch_reference_set.sh)
+
+Métricas subjetivas (escucha en REAPER):
+  Fidelidad al prompt:  4/5
+  Calidad de audio:     4/5
+  Musicalidad:          4/5   (¿melodía/ritmo/armonía coherentes?)
+  Loopability:          4/5   (¿el loop cierra sin click?)
+  Usabilidad:           4/5
+  Media:                /5
+
+Observaciones:
+  pendiente

@@ -1,0 +1,8 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/text2midi/test7 — comparativa cross-model
+Prompt: "A heavy metal song with strong drums and guitar."
+Category: cross-model/text2midi — short-metal
+---
+v0: 99.5s  3 tracks  1022 notes — drums (390), electric-guitar/distortion (567), piano (65).
+Calidad: 2.5/5 — drums ✓, guitarra eléctrica ✓, pero piano inesperado en heavy metal. Sin bajo. Sin agresividad tonal en el MIDI.
+Comparativa text2midi/test7: Amadeus (2.5/5) = text2midi (1.5/5). Mejor instrumentación pero sin el carácter metal.

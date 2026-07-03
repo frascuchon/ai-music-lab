@@ -1,0 +1,9 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/midi_llm/comparison_6 — comparativa cross-model (= amadeus/test04)
+Prompt: "A lively rock song with a touch of pop, featuring pizzicato strings that add a playful and upbeat vibe. The melody is cheerful and energetic, making it suitable for corporate or background music. With a fast tempo of 148 beats per minute and a 4/4 time signature, the song is set in the key of A minor and revolves around the chord progression of C, G, Fmaj7, C, and G."
+Category: cross-model/midi_llm — comparison_6
+Notes: Prompt casi idéntico a amadeus/test04 (mismo esencialmente) — nueva variante con n_outputs=1 para confirmar consistencia.
+---
+v0: 55.5s  3 tracks  1022 notes — piano (426), strings (453), oboe (143). Sin rock, sin pizzicato real.
+Calidad: 1.5/5 — strings presente pero piano+oboe no es rock/pop. Confirma test04: el modelo no asocia "rock" con instrumentación eléctrica.
+Nota: Mismo resultado que test04 (piccolo/organ allí, aquí piano/strings/oboe) — consistentemente falla el contexto rock.

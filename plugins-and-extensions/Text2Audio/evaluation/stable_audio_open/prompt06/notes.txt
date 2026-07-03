@@ -1,0 +1,29 @@
+Prompt 06 — fx_riser: cinematic riser sound effect, 8 seconds, builds from quiet t
+Texto completo:  "cinematic riser sound effect, 8 seconds, builds from quiet to loud, white noise sweep, ascending pitch, tension"
+BPM objetivo:    N/A
+Duración:        8.0 s
+Modelo:          stable_audio_open 1.0
+Fecha:           2026-06-25
+GPU:             A10G
+Seed:            47
+
+Resultado (output.wav):
+  Tamaño:        1378 KB
+  Duration real: 8.00 s
+
+Notas del prompt: FX riser para transiciones en REAPER. Comprobar ascenso natural.
+
+Métricas objetivas:
+  CLAP score:    0.4912
+  FAD:           pendiente (requiere fetch_reference_set.sh)
+
+Métricas subjetivas (escucha en REAPER):
+  Fidelidad al prompt:  4/5
+  Calidad de audio:     4/5
+  Musicalidad:          4/5   (¿melodía/ritmo/armonía coherentes?)
+  Loopability:          -/5   (¿el loop cierra sin click?)
+  Usabilidad:           4/5
+  Media:                /5
+
+Observaciones:
+  pendiente

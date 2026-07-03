@@ -1,0 +1,5 @@
+Model: MIDI-LLM (slseanwu/MIDI-LLM_Llama-3.2-1B)
+Source: https://github.com/slSeanWU/MIDI-LLM — assets/example_prompts.txt, prompt 4
+Prompt: "Upbeat and playful jazz music with lively saxophones, like you're going out on a Sunday picnic."
+Reference: no hay audio de referencia oficial pre-generado (demo interactivo en vercel)
+Our command: uv run research_midi_llm.py --prompt "Upbeat and playful jazz music with lively saxophones, like you're going out on a Sunday picnic." --max_tokens 2046 --out generated.mid

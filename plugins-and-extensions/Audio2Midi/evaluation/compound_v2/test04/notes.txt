@@ -1,0 +1,45 @@
+Test 04 — Multi-instrumento sintético: Slakh2100 (pista 1884)
+Audio: symlink → ../../yourmt3/test04/input.wav
+Archivo original: Slakh_test_1884.wav
+Dataset: Slakh2100 (Synthetic Lakh MIDI Dataset, ~2100 pistas sintéticas)
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 10.9 MB → ~3-4 min aprox.
+
+Contenido musical:
+  Pista Slakh #1884 — mezcla sintética multi-instrumento con batería
+  Instrumentos: batería, bajo, guitarra, piano, ensemble, otros
+
+Pipeline compound v2:
+  - Audio completo → YourMT3+ (pitched instruments)
+  - drums.wav (Demucs htdemucs_6s) → ADTOF → drums MIDI
+  - merge: pitched + drums → transcribed_cuda.mid
+
+Resultado (2026-06-24):
+  F1-op  (pitched):    77.5%   (YourMT3+ solo: 77.5% — PARIDAD PERFECTA ✅)
+  F1-oop (pitched):    61.8%   (YourMT3+ solo: 61.8% — idéntico)
+  F1-cls (pitched):    61.5%   (YourMT3+ solo: 61.5% — idéntico)
+  n_ref=2355, n_est=2101 (pitched)
+
+  F1-drm ADTOF (drums, onset ±50ms):
+    BD   40.4%  n_ref=313   n_est=1238  ← sobre-detección 4× (leakage Demucs en kick)
+    CY   27.4%  n_ref=88    n_est=124
+    HH   80.3%  n_ref=1555  n_est=2275  ← mejor clase, pero aún 1.5× over
+    SD   42.6%  n_ref=210   n_est=777   ← sobre-detección 3.7×
+    TT    9.3%  n_ref=33    n_est=652   ← muy ruidoso
+  Macro-F1 drums: 40.0%
+
+  Instrumentos pitched per-class:
+    Piano      93.1%  n_ref=626   n_est=607   ← excelente
+    Guitar     90.9%  n_ref=827   n_est=766   ← excelente
+    Ensemble   63.8%  n_ref=389   n_est=269   ← infra-detecta
+    Bass       42.7%  n_ref=445   n_est=444
+
+  GT classes:  Bass, Chromatic Percussion, Ensemble, Guitar, Other, Piano
+  EST classes: Bass, Ensemble, Guitar, Organ, Piano, Pipe, Reed
+
+Veredicto:
+  ✅ F1 pitched = YourMT3+ standalone (el merge no degrada el canal melódico)
+  ⚠️ F1 drums 40.0% macro — HH detectado bien (80%), pero BD/SD sobre-detectados 3-4×
+     El leakage de Demucs en el stem drums es la causa principal de la sobre-detección.
+
+Métricas subjetivas (escucha en REAPER): pendiente

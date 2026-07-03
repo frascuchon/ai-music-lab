@@ -1,0 +1,10 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Terminological Form + Motif #2
+Prompt: "Create music by incorporating the assigned motif into the predetermined musical arrangement. Only One Section"
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Input: input_abc.txt — motivo musical de 2 compases (C mayor, 4/4)
+Category: motif-form
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Create music by incorporating the assigned motif into the predetermined musical arrangement. Only One Section" --input-abc-file evaluation/chatmusician/test09/input_abc.txt --out-dir evaluation/chatmusician/test09
+Device: CUDA A10G, fp16
+Result: ❌ 0 MIDIs. Modelo responde con contenido incoherente (décadas, series numéricas).
+Notes: Fallo estructural: 'Only One Section' confunde al modelo — interpreta como solicitud de lista/cronología en lugar de instrucción musical. Posible colisión de patrones en el SFT.

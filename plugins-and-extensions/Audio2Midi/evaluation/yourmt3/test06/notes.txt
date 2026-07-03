@@ -1,0 +1,20 @@
+Test 06 — Música de cámara real: MIRST (pista 493)
+Archivo original: mirst493.wav
+Dataset: MIRST (Multi-Instrument Recording for Symbolic Transcription)
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 7.44 MB → ~2-3 min aprox.
+
+Contenido musical:
+  Grabación real de conjunto de cámara (múltiples instrumentos acústicos)
+  Dificultad: ALTA — audio real con reverberación, timbres acústicos complejos
+  Instrumentos esperados: cuerdas, viento u otros instrumentos de cámara
+
+Por qué este test:
+  Música real (no sintética) con múltiples instrumentos.
+  Contraste directo con tests Slakh (sintéticos) — permite medir la brecha
+  entre datos sintéticos y reales en el rendimiento del modelo.
+  YourMT3+ usa cross-dataset stem augmentation para mejorar generalización.
+
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER): pendiente

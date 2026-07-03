@@ -1,0 +1,51 @@
+Track 01 — Half Foot Outside: "In-Out"
+Original: Half Foot Outside - In-Out.mp3
+Género: Jazz contemporáneo / funk
+Dificultad AMT: Alta — multi-instrumento real (batería, bajo, guitarra, piano, voz)
+Tamaño: 9.4 MB
+
+Contenido musical esperado:
+  Batería acústica compleja, bajo eléctrico, guitarra eléctrica, piano/Rhodes
+  Posible voz/coro. Ritmos sincopados, swing. Muy retador para AMT.
+
+Métricas de comparación (sin GT — solo escucha subjetiva):
+  YourMT3+:   yourmt3.mp3   / yourmt3.mid   — 36.6 KB, 12 instr, 4682 notas pitched
+  MIROS:      miros.mp3     / miros.mid     — 38.3 KB
+  Compound v2: compound_v2.mp3 / compound_v2.mid — 41.0 KB, 12 instr + drums (2122 notas drums)
+
+Preguntas para la escucha:
+  - ¿Quién detecta mejor el bajo?
+  - ¿La batería de compound_v2 (ADTOF) es reconocible o es ruido?
+  - ¿MIROS y YourMT3+ coinciden en la detección de instrumentos?
+
+Resultado subjetivo (escucha en REAPER): pendiente
+
+Evaluación subjetiva (escucha en REAPER) — 2026-06-24:
+  General: transcripción bastante caótica en los tres modelos.
+  MIROS: mejor resultado global, especialmente a nivel melódico.
+  YourMT3+: segundo mejor; similar a MIROS pero ligeramente inferior en melodía.
+  Compound v2: igual que YourMT3+ en pitched; batería (ADTOF) fuera de tiempo en ocasiones
+               — causa probable: ADTOF y YourMT3+ se generan independientemente, sin
+               referencia de tempo compartida → desincronización en el merge.
+  Ritmo: mediocre en los tres modelos. Los patrones rítmicos no se detectan correctamente;
+         la batería (en los tres) no captura los patrones reales de la pieza.
+
+Observaciones detalladas (escucha 2026-06-24):
+
+  1. INSTRUMENT BLEED — Una misma línea melódica se fragmenta entre varios instrumentos:
+     ej. guitarra → parte como Guitar, parte como Piano, parte como Celesta.
+     Causa probable: el modelo asigna clase de instrumento frame a frame según la
+     distribución de probabilidad del espectrograma, sin restricción de continuidad
+     de instrumento por frase. Un cambio de timbre dentro de la misma frase (vibrato,
+     ataque diferente) puede saltar a otra clase GM.
+
+  2. HUECOS DE DETECCIÓN — Momentos vacíos donde no se detecta melodía aunque suena.
+     Causa probable: umbral de onset demasiado alto para notas suaves o legato;
+     o frames sin activación suficiente entre notas sostenidas.
+
+  3. SIN DETECCIÓN DE TEMPO — El MIDI usa 120 BPM fijo (default). El tempo real de
+     la canción no se inscribe en el MIDI. Consecuencia: imposible cuantizar o alinear
+     el proyecto MIDI en el DAW; las notas no caen en los beats correctos del grid.
+     Todos los modelos evaluados (YourMT3+, MIROS, compound_v2) tienen este problema.
+     Solución futura: añadir un paso de tempo detection (librosa/madmom) que escriba
+     el tempo map correcto en el MIDI antes de entregarlo al DAW.

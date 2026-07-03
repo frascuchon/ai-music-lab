@@ -1,0 +1,29 @@
+Prompt 08 — percussion_oneshot: single snare drum hit, cracking, bright, studio recording, n
+Texto completo:  "single snare drum hit, cracking, bright, studio recording, no reverb, natural decay"
+BPM objetivo:    N/A
+Duración:        2.0 s
+Modelo:          stable_audio_open 1.0
+Fecha:           2026-06-25
+GPU:             A10G
+Seed:            49
+
+Resultado (output.wav):
+  Tamaño:        344 KB
+  Duration real: 2.00 s
+
+Notas del prompt: One-shot de caja. Comprobar attack, body y decay naturales.
+
+Métricas objetivas:
+  CLAP score:    0.3938
+  FAD:           pendiente (requiere fetch_reference_set.sh)
+
+Métricas subjetivas (escucha en REAPER):
+  Fidelidad al prompt:  /5
+  Calidad de audio:     /5
+  Musicalidad:          /5   (¿melodía/ritmo/armonía coherentes?)
+  Loopability:          N/A  (no rítmico / one-shot)
+  Usabilidad:           /5
+  Media:                /5
+
+Observaciones:
+  pendiente

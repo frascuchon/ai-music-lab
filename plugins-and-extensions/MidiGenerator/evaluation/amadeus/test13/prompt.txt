@@ -1,0 +1,7 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/midi_llm/comparison_2 — comparativa cross-model
+Prompt: "This melodic electronic song, infused with elements of rock, exudes a sense of corporate motivation and happiness. The string ensemble and voice oohs create a soothing ambiance, while the overdriven guitar and drums provide a driving force. Set in A minor with a moderate tempo, the piece features a chord progression of Dm, Emaj7, Cmaj7, Am, and E7."
+Category: cross-model/midi_llm — comparison_2
+---
+v0: 20.6s  16 tracks  1022 notes — strings (239+61), voices (85), soprano-sax (431!), drums, organ, guitar, bass.
+Calidad: 2/5 — strings ✓, voices ✓, drums ✓, guitar ✓; soprano-sax no pedido, sin overdriven guitar explícita. Muy corto (20s).

@@ -1,0 +1,29 @@
+Prompt 05 — synth_lead: analog synth lead melody, 120 BPM, saw wave, slight vibrato,
+Texto completo:  "analog synth lead melody, 120 BPM, saw wave, slight vibrato, A minor scale, punchy attack, 80s style"
+BPM objetivo:    120
+Duración:        8.0 s (4 compases)
+Modelo:          stable_audio_open 1.0
+Fecha:           2026-06-25
+GPU:             A10G
+Seed:            46
+
+Resultado (output.wav):
+  Tamaño:        1378 KB
+  Duration real: 8.00 s
+
+Notas del prompt: Lead melódico. Comprobar si la melodía generada es coherente y musical.
+
+Métricas objetivas:
+  CLAP score:    0.4582
+  FAD:           pendiente (requiere fetch_reference_set.sh)
+
+Métricas subjetivas (escucha en REAPER):
+  Fidelidad al prompt:  4/5
+  Calidad de audio:     4/5
+  Musicalidad:          4/5   (¿melodía/ritmo/armonía coherentes?)
+  Loopability:          4/5   (¿el loop cierra sin click?)
+  Usabilidad:           4/5
+  Media:                /5
+
+Observaciones:
+  pendiente

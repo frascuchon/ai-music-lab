@@ -1,0 +1,8 @@
+Model: Text2midi (amaai-lab/text2midi)
+Source: https://amaai-lab.github.io/Text2midi/ — Demo C
+Prompt: "A soft love song on piano."
+Reference: reference_official.mid/.mp3 — MIDI generado por la implementación oficial del paper
+Our command: uv run research_text2midi.py --prompt "A soft love song on piano." --max_len 2000 --out generated.mid
+Device: mps, fp16
+Result: 6 pistas, 433 notas, 115.1s, instrumentos [35 bass, 0 piano, 0 piano, 66 alto sax, 1 piano, 22 harmonica]
+Notes: Piano presente ✓, duración larga (115s) ✓. Sax y armónica no coinciden con "solo piano" — el modelo añade acompañamiento a pesar del prompt minimalista.

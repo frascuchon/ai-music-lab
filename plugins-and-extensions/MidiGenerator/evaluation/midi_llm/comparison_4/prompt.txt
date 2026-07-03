@@ -1,0 +1,12 @@
+Model: MIDI-LLM (slseanwu/MIDI-LLM_Llama-3.2-1B)
+Source: https://midi-llm-demo.vercel.app/prompts/comparison_4.txt
+Prompt: "A slow and relaxing classical piece featuring a church organ and French horn, likely to be used as a soundtrack in a dramatic or emotional film. Written in A minor and 4/4 time, it's quite lengthy at 361 seconds. The chord progression of E7, Am, and E contributes to the piece's sentimental atmosphere."
+References (from the official Vercel demo):
+  - reference_official_bf16.mp3           (MIDI-LLM bf16 — primary reference)
+  - reference_official_fp8.mp3            (MIDI-LLM FP8 quantized — sanity check)
+  - reference_text2midi_competitor.mp3    (text2midi on same prompt — cross-comparison)
+Note: MIDI ground-truth is not publicly downloadable (demo API only, ngrok backend).
+Note (migration): generated_local_mps_v0.mid/.mp3 come from the former test2 run, which
+  used the shorter prompt without "it's quite lengthy at 361 seconds". The musical content
+  difference is negligible but documented here for reproducibility.
+Our command: uv run research_midi_llm.py --prompt "<see Prompt above>" --max_tokens 2046 --out generated_local_mps_v0.mid

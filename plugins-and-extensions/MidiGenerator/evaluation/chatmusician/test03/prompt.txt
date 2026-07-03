@@ -1,0 +1,9 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Chord Conditioning #3
+Prompt: "Construct musical creations that adhere to the set chord modifications. 'D', 'G', 'C', 'B', 'C', 'D', 'D', 'B'"
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Category: chord-conditioning
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Construct musical creations that adhere to the set chord modifications. 'D', 'G', 'C', 'B', 'C', 'D', 'D', 'B'" --out-dir evaluation/chatmusician/test03
+Device: CUDA A10G, fp16
+Result: ✅ 2 MIDIs generados (v0: 2448B, v1: 2430B). Acordes D/G/C en ABC. K:Dmix.
+Notes: D, G, C presentes. B mayor ignorado. K:Dmix sugiere que el modelo interpretó la tonalidad en Dmixolydian. Calidad: 3/5

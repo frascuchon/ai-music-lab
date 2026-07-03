@@ -1,0 +1,7 @@
+Model: MuseCoco (Microsoft/muzic — XinXuNLPer/MuseCoco)
+Source: Paper MuseCoco (AAAI 2024) — training example ID 2273
+Prompt: Piano, drum, bass — prompt extraído del dataset de entrenamiento (ID 2273)
+Reference: reference_official_2273_v*.mp3 — audio original del dataset de entrenamiento (3 variantes del paper)
+Generated: generated.mid (nuestro script Modal — ya ejecutado)
+Our command: modal run research_musecoco_modal.py::main --out generated.mid
+Note: COMPARACIÓN DIRECTA posible — misma pista que el modelo fue entrenado para reproducir

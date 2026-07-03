@@ -1,0 +1,13 @@
+# Ground truth cache (binarios descargados por fetch_ground_truth.sh)
+evaluation/_ground_truth/
+
+# Python
+research/__pycache__/
+research/*.pyc
+research/.venv/
+research/uv.lock
+
+# Fixtures de audio (descargados por fetch_fixtures.sh)
+research/fixtures/*.wav
+research/fixtures/*.mp3
+research/fixtures/*.flac

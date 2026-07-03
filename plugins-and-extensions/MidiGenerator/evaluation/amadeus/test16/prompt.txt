@@ -1,0 +1,7 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/midi_llm/comparison_5 — comparativa cross-model
+Prompt: "A lively pop song with a touch of electronic elements, exuding happiness and positivity. The melody is carried by a string ensemble, brass section, choir, and piano, creating a motivational and corporate atmosphere. Set in D major with a 4/4 time signature, the song maintains a fast tempo of 129 beats per minute, with the chord progression of D, Bm, Em7, and A appearing throughout."
+Category: cross-model/midi_llm — comparison_5
+---
+v0: 49.5s  10 tracks  1022 notes — electric-piano, organ, bass, strings, brasses, drums (411!), guitar, piano, steel-guitar, voices.
+Calidad: 3/5 — brass ✓, strings ✓, drums ✓, voices ✓, piano ✓. Muchos instrumentos correctos. Drums muy dominantes (411 notas). D major: sin verificar.

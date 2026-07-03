@@ -1,0 +1,13 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/text2midi/test5 — comparativa cross-model (prompt abstracto)
+Prompt: "A cheerful christmas song suitable for children."
+Category: cross-model — short-abstract
+Parameters: temperature=1.25, threshold=0.99, generation_length=1024, sampling_method=top_p
+Our command: modal run research/research_amadeus_modal.py::main --prompt "A cheerful christmas song suitable for children." --out-dir evaluation/amadeus/test08
+Reference cross-model: evaluation/text2midi/test5/generated.mid (calidad 2.5/5 — mejor resultado text2midi)
+Notes: Prompt abstracto que requiere conocimiento semántico de "navidad" y "niños". text2midi obtuvo 2.5/5 aquí — su mejor resultado. Test clave: ¿Amadeus supera a text2midi en prompts semánticos abstractos?
+---
+v0: 55.8s  7 tracks  1022 notes — piano, bass, strings, horn, voices, trumpets.
+v1: 51.0s  9 tracks  1022 notes — piano, bass, drums, flute, guitar, trumpet, pad.
+Calidad: v0=3/5 (orquestal y festivo ✓, voices+brass+strings apropiados para navidad), v1=3/5 (más variado, flute+guitar+trumpet = navideño)
+Comparativa text2midi/test5: Amadeus (3/5) >= text2midi (2.5/5). Ambos capturan el mood navideño.

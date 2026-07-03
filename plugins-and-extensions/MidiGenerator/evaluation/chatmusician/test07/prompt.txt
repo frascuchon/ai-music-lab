@@ -1,0 +1,10 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Alphabetic Form + Motif #1
+Prompt: "Develop a musical piece employing the provided motif and an alphabet-based structure. AB"
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Input: input_abc.txt — motivo musical de 2 compases (D mayor)
+Category: motif-form
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Develop a musical piece employing the provided motif and an alphabet-based structure. AB" --input-abc-file evaluation/chatmusician/test07/input_abc.txt --out-dir evaluation/chatmusician/test07
+Device: CUDA A10G, fp16
+Result: ⚠️ 1/2 MIDIs generados (v1: 439B). v0 falló con respuesta ininteligible.
+Notes: v1: 8 compases en D mayor usando el motivo input (D2 FA d2 cA). Sin contraste A/B real — solo una sección con barra de separación. Motivo reconocible pero estructura AB no diferenciada. Calidad: 2/5

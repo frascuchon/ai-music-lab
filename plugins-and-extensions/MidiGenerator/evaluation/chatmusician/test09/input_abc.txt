@@ -1,0 +1,6 @@
+X:1
+T:Motif
+M:4/4
+L:1/8
+K:C
+|: C2 EG c2 BA | G2 EG F4 :|

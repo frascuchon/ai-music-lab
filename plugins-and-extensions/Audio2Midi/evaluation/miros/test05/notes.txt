@@ -1,0 +1,34 @@
+Test 05 — Multi-instrumento sintético: Slakh2100 (pista 1975)
+Audio: symlink → ../../yourmt3/test05/input.wav
+Archivo original: Slakh_test_1975.wav
+Dataset: Slakh2100
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 8.43 MB → ~2.5-3 min aprox.
+
+Contenido musical:
+  Pista Slakh #1975 — segunda muestra de mezcla sintética multi-instrumento
+
+Por qué este test:
+  Comparación directa MIROS vs YourMT3+ sobre el mismo audio.
+  Ground truth disponible: _ground_truth/slakh/Track01975/all_src.mid
+  YourMT3+ obtuvo F1-op=73.9% en este test.
+
+Métricas objetivo (AMT Challenge 2025):
+  MIROS=0.5998 vs YourMT3-YPTF-MoE-M=0.5938 (media sobre 76 piezas challenge)
+
+Resultado (2026-06-23):
+  Objetivo (mir_eval, onset+pitch):        F1-op  = 64.0%  (YourMT3+: 73.9% — MIROS -9.9pp)
+  Objetivo (mir_eval, onset+offset+pitch): F1-oop = 19.3%  (YourMT3+: 26.5% — MIROS -7.2pp)
+  Objetivo (mir_eval, class F1):           F1-cls = 76.9%  (YourMT3+: 90.9% — MIROS -14pp)
+  n_ref=5645, n_est=4515 (MIROS infra-detecta ~1130 notas)
+  Per-class:
+    Piano       F1=71.0%  n_ref=2920  n_est=2084  ← bajo vs 81.5% de YourMT3+
+    Bass        F1=72.5%  n_ref=304   n_est=311
+    Guitar      F1=41.3%  n_ref=613   n_est=1319  ← sobre-detecta Guitar (1319 vs 613 GT)
+    Ensemble    F1=26.4%  n_ref=1448  n_est=314   ← fuerte infra-detección Ensemble
+    Synth Lead  F1=3.4%   n_ref=360   n_est=400   ← YourMT3+ obtuvo 99% aquí
+    Brass (FP)  F1=0.0%   n_ref=0     n_est=63    ← alucinación
+    Organ (FP)  F1=0.0%   n_ref=0     n_est=15    ← alucinación
+  Clases GT:  Bass, Ensemble, Guitar, Piano, Synth Lead
+  Clases EST: Bass, Brass, Ensemble, Guitar, Organ, Piano, Synth Lead, Synth Pad
+  Subjetivo (escucha REAPER): <pendiente>

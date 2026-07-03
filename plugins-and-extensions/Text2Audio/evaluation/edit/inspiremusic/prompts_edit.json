@@ -1,0 +1,269 @@
+{
+  "_comment": "Benchmark de la subtarea EDICIÓN/VERSIONADO audio2audio: modificar o versionar un audio existente a partir de una instrucción de texto. Cada modelo lee 'sources' + 'cases' y genera evaluation/edit/<model>/<case_id>/output.wav. La sección 'official_smoke' replica el ejemplo documentado de cada proyecto (condiciones oficiales) y se ejecuta ANTES de eval_all para verificar que el script reproduce el comportamiento descrito en la documentación del modelo.",
+  "_strength_hint": "Intensidad de transformación deseada, neutral entre modelos: 'subtle' (cerca del original), 'moderate', 'strong' (transformación libre). Cada script la mapea a su knob nativo — ACE-Step audio_cover_strength (invertido: 1.0=fiel al original), SAO init_noise_level (mayor=más cambio), ZETA tstart (mayor=más cambio), MelodyFlow target_flowstep. El mapeo exacto está documentado en el docstring de cada script.",
+  "_categories": {
+    "style_transfer": "cambio de género/estilo manteniendo el tema",
+    "instrumentation": "cambio de instrumentación manteniendo estructura/armonía",
+    "mood_texture": "cambio de mood/textura",
+    "continuation": "continuación guiada por texto (asistente de composición) — solo modelos con soporte (InspireMusic)"
+  },
+
+  "sources": [
+    {
+      "id": "src01_bach",
+      "file": "edit/source_audio/bach.mp3",
+      "source_prompt": "A recording of a classical baroque piece playing a Bach melody",
+      "origin": "Asset oficial del repo facebookresearch/audiocraft (demo de condicionamiento por melodía de MusicGen)",
+      "url": "https://github.com/facebookresearch/audiocraft/blob/main/assets/bach.mp3",
+      "license": "asset de demo del repo audiocraft (MIT)",
+      "duration_s": 10.03,
+      "sample_rate": 44100,
+      "bpm": null
+    },
+    {
+      "id": "src02_bolero",
+      "file": "edit/source_audio/bolero_ravel.mp3",
+      "source_prompt": "An orchestral recording of Ravel's Bolero with a repetitive snare rhythm and a solo melody",
+      "origin": "Asset oficial de audiocraft; es el audio del ejemplo VERBATIM de edición del demo oficial de MelodyFlow",
+      "url": "https://github.com/facebookresearch/audiocraft/blob/main/assets/bolero_ravel.mp3",
+      "license": "asset de demo del repo audiocraft (MIT)",
+      "duration_s": 10.0,
+      "sample_rate": 32000,
+      "bpm": null
+    },
+    {
+      "id": "src03_electronic",
+      "file": "edit/source_audio/electronic.mp3",
+      "source_prompt": "A recording of an electronic music track with synthesizers and drums",
+      "origin": "Asset oficial del repo audiocraft (demos MusicGen-Style)",
+      "url": "https://github.com/facebookresearch/audiocraft/blob/main/assets/electronic.mp3",
+      "license": "asset de demo del repo audiocraft (MIT)",
+      "duration_s": 3.0,
+      "sample_rate": 44100,
+      "bpm": null,
+      "notes": "Clip corto (3 s) — prueba el caso 'editar un sample/one-shot', dominio DAW-native del plugin."
+    },
+    {
+      "id": "src04_beatbox",
+      "file": "edit/source_audio/beatbox_loop_90bpm.wav",
+      "source_prompt": "A recording of a human beatbox drum loop at 90 BPM",
+      "origin": "Asset oficial del repo audiocraft (CJ_Beatbox_Loop_05_90.wav)",
+      "url": "https://github.com/facebookresearch/audiocraft/blob/main/assets/CJ_Beatbox_Loop_05_90.wav",
+      "license": "asset de demo del repo audiocraft (MIT)",
+      "duration_s": 10.67,
+      "sample_rate": 44100,
+      "bpm": 90
+    },
+    {
+      "id": "src05_sao_guitar",
+      "file": "edit/source_audio/sao_guitar_loop.wav",
+      "source_prompt": "A recording of a clean electric guitar chord loop with jazz chords, warm tone",
+      "origin": "Generado por nosotros con SAO 1.0 en la sesión S1 (prompts.json prompt10) — caso de uso real del plugin: editar un sample generado por Text2Audio",
+      "url": null,
+      "license": "generación propia (SAO 1.0, Stability Community License)",
+      "duration_s": 9.6,
+      "sample_rate": 44100,
+      "bpm": 100
+    }
+  ],
+
+  "cases": [
+    {
+      "id": "case01_bach_jazz",
+      "source_id": "src01_bach",
+      "category": "style_transfer",
+      "target_prompt": "jazz piano version, swing feel, relaxed tempo",
+      "strength_hint": "moderate",
+      "notes": "Inspirado en el ejemplo cover de la doc de ACE-Step 1.5 ('jazz piano version'). Melodía barroca → jazz."
+    },
+    {
+      "id": "case02_bolero_country",
+      "source_id": "src02_bolero",
+      "category": "style_transfer",
+      "target_prompt": "A cheerful country song with acoustic guitars",
+      "strength_hint": "moderate",
+      "notes": "Par VERBATIM del ejemplo oficial de edición del demo de MelodyFlow (bolero_ravel.mp3 + este prompt). Sirve de ancla cross-modelo con condiciones oficiales."
+    },
+    {
+      "id": "case03_electronic_lofi",
+      "source_id": "src03_electronic",
+      "category": "style_transfer",
+      "target_prompt": "lo-fi hip hop remix, chill, dusty vinyl texture, slow tempo",
+      "strength_hint": "moderate",
+      "notes": "Mismo género que sao_smoke_03/mag_smoke_03 del benchmark text2audio — permite comparar la versión editada con las generaciones desde cero."
+    },
+    {
+      "id": "case04_electronic_orchestral",
+      "source_id": "src03_electronic",
+      "category": "style_transfer",
+      "target_prompt": "orchestral symphonic arrangement",
+      "strength_hint": "strong",
+      "notes": "Caption VERBATIM del ejemplo cover de la doc de ACE-Step 1.5. Electrónica → sinfónico, transformación fuerte sobre clip corto."
+    },
+    {
+      "id": "case05_bach_arcade",
+      "source_id": "src01_bach",
+      "category": "style_transfer",
+      "target_prompt": "8-bit chiptune arcade video game soundtrack version",
+      "strength_hint": "strong",
+      "notes": "Eco de los ejemplos de la página oficial de ZETA (edición hacia 'arcade game soundtrack')."
+    },
+    {
+      "id": "case06_bach_strings",
+      "source_id": "src01_bach",
+      "category": "instrumentation",
+      "target_prompt": "the same melody played by a string quartet",
+      "strength_hint": "moderate",
+      "notes": "Cambio de instrumentación clásico en papers de edición. Debe preservar la melodía (croma alto)."
+    },
+    {
+      "id": "case07_guitar_piano",
+      "source_id": "src05_sao_guitar",
+      "category": "instrumentation",
+      "target_prompt": "the same chord progression played on a grand piano, jazz voicings, warm and intimate",
+      "strength_hint": "moderate",
+      "notes": "Flujo DAW real: mismo loop, otro instrumento. Preservación armónica esperada alta."
+    },
+    {
+      "id": "case08_beatbox_drumkit",
+      "source_id": "src04_beatbox",
+      "category": "instrumentation",
+      "target_prompt": "acoustic drum kit playing the same rhythm, tight studio recording, 90 BPM",
+      "strength_hint": "moderate",
+      "bpm": 90,
+      "notes": "Beatbox → batería real. Verificar en REAPER que el groove sigue clavado a 90 BPM."
+    },
+    {
+      "id": "case09_guitar_dark",
+      "source_id": "src05_sao_guitar",
+      "category": "mood_texture",
+      "target_prompt": "dark ambient version, heavy reverb, ominous and haunting mood",
+      "strength_hint": "strong",
+      "notes": "Cambio de mood drástico manteniendo material tonal reconocible."
+    },
+    {
+      "id": "case10_bolero_ambient",
+      "source_id": "src02_bolero",
+      "category": "mood_texture",
+      "target_prompt": "soft dreamy ambient rendition with gentle synth pads",
+      "strength_hint": "strong",
+      "notes": "Orquesta → textura ambient. Trade-off adherencia/preservación esperado extremo."
+    },
+    {
+      "id": "case11_guitar_continue_jazz",
+      "source_id": "src05_sao_guitar",
+      "category": "continuation",
+      "target_prompt": "Continue to generate jazz music.",
+      "strength_hint": null,
+      "notes": "Frase VERBATIM del README de InspireMusic para continuation con texto. Continuar nuestro loop de guitarra jazz."
+    },
+    {
+      "id": "case12_electronic_continue",
+      "source_id": "src03_electronic",
+      "category": "continuation",
+      "target_prompt": "Continue to generate energetic electronic dance music.",
+      "strength_hint": null,
+      "notes": "Continuación de un clip corto (3 s) — asistente de composición: '¿cómo seguiría este sample?'"
+    }
+  ],
+
+  "official_smoke": {
+    "acestep15": {
+      "_source": "https://github.com/ace-step/ACE-Step-1.5/blob/main/docs/en/INFERENCE.md",
+      "_nota": "El repo NO incluye audios de ejemplo. El smoke es autocontenido en dos pasos con los ejemplos VERBATIM de la doc: (1) text2music genera el source, (2) cover lo transforma. Turbo: inference_steps=8, shift=3.0, guidance_scale auto=1.0. Salida 48 kHz.",
+      "steps": [
+        {
+          "id": "ace_smoke_01_source",
+          "task_type": "text2music",
+          "caption": "calm ambient music with soft piano and strings",
+          "duration": 30,
+          "bpm": 80,
+          "keyscale": "C Major",
+          "notes": "Ejemplo text2music de la doc (duration reducida de 60 a 30 s para abaratar el smoke)."
+        },
+        {
+          "id": "ace_smoke_02_cover",
+          "task_type": "cover",
+          "src_audio": "<output de ace_smoke_01_source>",
+          "caption": "orchestral symphonic arrangement",
+          "audio_cover_strength": 0.7,
+          "notes": "Ejemplo cover VERBATIM de la doc (caption y strength 0.7). Éxito: mantiene estructura/tempo del source con timbre orquestal."
+        }
+      ]
+    },
+    "sao_a2a": {
+      "_source": "https://github.com/Stability-AI/stable-audio-tools (style transfer con init_audio/init_noise_level) + model card stabilityai/stable-audio-open-1.0",
+      "_nota": "stable-audio-tools documenta el style transfer inicializando el ruido con audio. Prompt adaptado del oficial del model card ('128 BPM tech house drum loop') al BPM del source beatbox (90). seconds = duración del source.",
+      "prompts": [
+        {
+          "id": "sao_a2a_smoke_01",
+          "source_id": "src04_beatbox",
+          "target_prompt": "90 BPM tech house drum loop",
+          "seconds": 10.67,
+          "init_noise_level": null,
+          "notes": "init_noise_level=null → usa el default del script (tomado del gradio oficial de stable-audio-tools). Éxito: drum loop tech house que conserva el groove del beatbox."
+        }
+      ]
+    },
+    "musicgen_melody": {
+      "_source": "https://github.com/facebookresearch/audiocraft/blob/main/docs/MUSICGEN.md + model card facebook/musicgen-melody",
+      "_nota": "Demo oficial: bach.mp3 como melodía de referencia + descripción del model card. Params oficiales: duration=8-10, top_k=250.",
+      "prompts": [
+        {
+          "id": "mgm_smoke_01",
+          "source_id": "src01_bach",
+          "target_prompt": "An 80s driving pop song with heavy drums and synth pads in the background",
+          "seconds": 10.0,
+          "notes": "Combinación oficial del demo de MusicGen-melody. Éxito: pop 80s cuyo contorno melódico sigue al bach.mp3."
+        }
+      ]
+    },
+    "melodyflow": {
+      "_source": "https://huggingface.co/spaces/facebook/MelodyFlow (demos/melodyflow_app.py, ejemplo de edición) + https://huggingface.co/facebook/melodyflow-t24-30secs",
+      "_nota": "Ejemplo de edición VERBATIM del demo oficial: bolero_ravel.mp3 + prompt country. Params del ejemplo: solver=euler, steps=125, target_flowstep=0.0, regularize=true, lambda_kl=0.2.",
+      "prompts": [
+        {
+          "id": "mf_smoke_01",
+          "source_id": "src02_bolero",
+          "target_prompt": "A cheerful country song with acoustic guitars",
+          "solver": "euler",
+          "steps": 125,
+          "target_flowstep": 0.0,
+          "regularize": true,
+          "lambda_kl": 0.2,
+          "notes": "Es el mismo par que case02_bolero_country. Éxito: country reconocible que preserva la estructura del bolero."
+        }
+      ]
+    },
+    "zeta_audioldm2": {
+      "_source": "https://github.com/HilaManor/AudioEditingCode (README + defaults de code/main_run.py) + https://hilamanor.github.io/AudioEditing/",
+      "_nota": "Defaults oficiales del repo (los del user study): model_id=cvssp/audioldm2-music, num_diffusion_steps=200, cfg_src=3, cfg_tar=12, tstart=100, mode=ours. El par de prompts sigue el patrón de la página oficial de ejemplos ('A recording of X' → 'A recording of Y'). El repo no incluye audios (MedleyDB requiere descarga aparte); se usa un source compartido.",
+      "prompts": [
+        {
+          "id": "zeta_smoke_01",
+          "source_id": "src03_electronic",
+          "source_prompt": "A recording of an electronic music track with synthesizers and drums",
+          "target_prompt": "A recording of a jazz song with piano and double bass",
+          "tstart": 100,
+          "cfg_src": 3.0,
+          "cfg_tar": 12.0,
+          "num_diffusion_steps": 200,
+          "notes": "Patrón 'hard rock → jazz' de la página oficial adaptado al source electrónico. Éxito: jazz que conserva estructura rítmica del original."
+        }
+      ]
+    },
+    "inspiremusic": {
+      "_source": "https://github.com/FunAudioLLM/InspireMusic (README quickstart)",
+      "_nota": "API VERBATIM del README: model.inference(\"continuation\", \"Continue to generate jazz music.\", \"audio_prompt.wav\"). El repo no incluye un audio de ejemplo real (audio_prompt.wav es placeholder); se usa nuestro loop de guitarra jazz como audio prompt. Modelo: InspireMusic-1.5B-Long (48 kHz).",
+      "prompts": [
+        {
+          "id": "im_smoke_01",
+          "source_id": "src05_sao_guitar",
+          "target_prompt": "Continue to generate jazz music.",
+          "task": "continuation",
+          "notes": "Éxito: la continuación arranca coherente con el loop (tonalidad/tempo) y sigue en estilo jazz, sin silencio ni ruido."
+        }
+      ]
+    }
+  }
+}

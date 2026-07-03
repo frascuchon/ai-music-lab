@@ -1,0 +1,7 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/midi_llm/comparison_8 — comparativa cross-model
+Prompt: "A melodic electronic song with a dark and cinematic feel, featuring electric guitar, tremolo strings, synth brass, piano, and drums, set in the key of Eb minor with a tempo of 124 BPM and a 4/4 time signature, creating a relaxing yet slightly unsettling atmosphere throughout its duration."
+Category: cross-model/midi_llm — comparison_8
+---
+v0: 68.6s  8 tracks  1022 notes — electric-piano, electric-guitar (285+74), synth-brasses (182), strings, voices, (prog=100).
+Calidad: 3/5 — electric-guitar ✓, synth-brass ✓, strings ✓; piano presente (electric-piano). Drums ausentes. Eb minor: sin verificar. Mood dark/cinematic: razonable.

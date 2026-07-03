@@ -1,0 +1,10 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Terminological Form + Motif #1
+Prompt: "Develop melodies by fusing the assigned musical pattern with the given motif. Binary, Sectional: Verse/Chorus"
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Input: input_abc.txt — motivo musical de 2 compases (G mayor, 3/4)
+Category: motif-form
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Develop melodies by fusing the assigned musical pattern with the given motif. Binary, Sectional: Verse/Chorus" --input-abc-file evaluation/chatmusician/test08/input_abc.txt --out-dir evaluation/chatmusician/test08
+Device: CUDA A10G, fp16
+Result: ✅ 2 MIDIs generados (v0: 1648B, v1: 511B). 3/4 G mayor con acordes.
+Notes: v0 tiene armonía rica (G/C/D/Em/Am/Bm/A7). Motivo del input (G2 A2 B2) visible en el output. v1 más corto pero válido. Calidad: 3/5

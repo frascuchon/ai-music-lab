@@ -1,0 +1,7 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/midi_llm/comparison_11 — comparativa cross-model
+Prompt: "A slow-paced instrumental rock song in Bb minor, brimming with dark, melodic energy and an epic atmosphere. Distorted guitars, synth pads, and a string ensemble featuring cellos weave together, while choir vocals add a haunting touch. The piece follows a chord progression of F, Bb7, F#, Ab, and Bbmaj7, creating an immersive and action-packed soundscape."
+Category: cross-model/midi_llm — comparison_11
+---
+v0: 27.5s  5 tracks  1022 notes — electric-guitar/distortion (286), synth-bass (121), voices (384), drums (187), alto-sax (44).
+Calidad: 2.5/5 — distortion guitar ✓, synth-pad (→bass) ✓, drums ✓; voices muy prominentes (384 notas), sin cello ni string-ensemble, sin choir explícito. Corto (27s).

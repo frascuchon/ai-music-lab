@@ -1,0 +1,7 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/midi_llm/comparison_9 — comparativa cross-model
+Prompt: "An electronic song with a moderate tempo, featuring a melodic synth lead accompanied by a string ensemble, electric bass, acoustic guitar, and synth brass. The piece is set in C minor and follows a chord progression of Fm, Bb6, Eb, and Ab. With a duration of 266 seconds, it evokes a sense of happiness and has a space-like atmosphere."
+Category: cross-model/midi_llm — comparison_9
+---
+v0: 26.3s  7 tracks  1022 notes — piano, nylon-guitar, electric-bass (143), strings (575!), trumpet, trombone, synth-brasses.
+Calidad: 2.5/5 — strings ✓, bass ✓, synth-brass ✓; guitar presente (nylon ≈ acoustic), sin synth-lead. Strings overwhelming (575 notas). Corto (26s vs 266s pedido).

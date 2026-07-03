@@ -1,0 +1,10 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Melody Harmonization #1
+Prompt: "Formulate chord combinations to increase the harmonic complexity of the specified musical excerpt."
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Input: input_abc.txt — melodía sin acordes en G mayor (4/4)
+Category: melody-harmonization
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Formulate chord combinations to increase the harmonic complexity of the specified musical excerpt." --input-abc-file evaluation/chatmusician/test10/input_abc.txt --out-dir evaluation/chatmusician/test10
+Device: CUDA A10G, fp16
+Result: ❌ 0 MIDIs. Modelo genera solo 'A: G2 AB cBAG' (primera barra del input sin X: header).
+Notes: Armonización de melodía desnuda. Evaluar si el modelo añade anotaciones de acordes ["..."] al ABC generado y si son coherentes con la melodía.

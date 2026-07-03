@@ -1,0 +1,39 @@
+Smoke 02 — sfx_oneshot: The sound of a hammer hitting a wooden surface
+Texto completo:  "The sound of a hammer hitting a wooden surface."
+Origen:          Ejemplo SFX del model card stabilityai/stable-audio-open-1.0
+BPM objetivo:    N/A (one-shot)
+Duración:        3.0 s
+Modelo:          stable_audio_open 1.0
+Fecha:           pendiente
+GPU:             A10G
+Seed:            43  (seed base + 1)
+
+Resultado (output.wav):
+  Tamaño:        pendiente
+  Duration real: pendiente
+
+Métricas objetivas:
+  CLAP score:    pendiente  (umbral mínimo: ≥ 0.20)
+  Tiempo inf.:   pendiente  (umbral máximo: < 60 s en A10G)
+
+Métricas subjetivas (escucha en REAPER):
+  Fidelidad al prompt:  /5   (¿suena a golpe de martillo sobre madera?)
+  Calidad de audio:     /5   (¿hay artefactos, distorsión?)
+  Musicalidad:          N/A  (SFX — no aplica)
+  Loopability:          N/A  (one-shot — no aplica)
+  Usabilidad:           /5   (¿usable como SFX en un proyecto REAPER?)
+  Media:                /5   (sin contar N/A)
+
+Comparación con referencia:
+  Referencia descargable: evaluation/stable_audio_open/reference_demos/ (requiere HF_TOKEN)
+  Referencia manual:      https://huggingface.co/spaces/artificialguybr/Stable-Audio-Open-Zero
+  Prompt idéntico → comparar el attack, el timbre percusivo y el decay natural.
+
+Criterio de éxito (smoke test):
+  ✓ WAV estéreo 44100 Hz, duración ≈ 3.0 s (±0.5 s)
+  ✓ El audio suena a impacto percusivo (no a música ni a ruido)
+  ✓ CLAP ≥ 0.20
+  ✓ Tiempo de inferencia < 60 s en A10G
+
+Observaciones:
+  pendiente

@@ -1,0 +1,45 @@
+Test 05 — Multi-instrumento sintético: Slakh2100 (pista 1975)
+Audio: symlink → ../../yourmt3/test05/input.wav
+Archivo original: Slakh_test_1975.wav
+Dataset: Slakh2100 (Synthetic Lakh MIDI Dataset, ~2100 pistas sintéticas)
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+Tamaño: 8.4 MB
+
+Contenido musical:
+  Pista Slakh #1975 — mezcla sintética multi-instrumento
+  Instrumentos GT (pitched): Bass, Ensemble, Guitar, Piano, Synth Lead
+
+Pipeline compound v2:
+  - Audio completo → YourMT3+ (pitched instruments)
+  - drums.wav (Demucs htdemucs_6s) → ADTOF → drums MIDI
+  - merge: pitched + drums → transcribed_cuda.mid
+
+Resultado (2026-06-24):
+  F1-op  (pitched):    73.9%   (YourMT3+ solo: 73.9% — PARIDAD PERFECTA ✅)
+  F1-oop (pitched):    26.5%   (YourMT3+ solo no medido aquí)
+  F1-cls (pitched):    90.9%   (5/5 clases correctas + 1 FP Pipe)
+  n_ref=5645, n_est=3826 (pitched)
+
+  F1-drm ADTOF (drums, onset ±50ms):
+    BD   74.9%  n_ref=289   n_est=480   ← razonable (1.7× over)
+    HH   66.0%  n_ref=364   n_est=627
+    SD   48.8%  n_ref=194   n_est=581
+    TT   24.5%  n_ref=46    n_est=150
+    CY   33.8%  n_ref=308   n_est=106   ← infra-detecta cymbals
+  Macro-F1 drums: 49.6%
+
+  Instrumentos pitched per-class:
+    Synth Lead  98.9%  n_ref=360   n_est=358   ← casi perfecto
+    Piano       81.5%  n_ref=2920  n_est=2435
+    Bass        73.9%  n_ref=304   n_est=289
+    Guitar      67.8%  n_ref=613   n_est=428
+    Ensemble    30.2%  n_ref=1448  n_est=315   ← YourMT3+ infra-detecta Ensemble
+
+  GT classes:  Bass, Ensemble, Guitar, Piano, Synth Lead
+  EST classes: Bass, Ensemble, Guitar, Piano, Pipe, Synth Lead
+
+Veredicto:
+  ✅ F1 pitched = YourMT3+ standalone (merge no degrada)
+  ✅ F1 drums 49.6% — mejor que test04 (menos leakage de Demucs en esta pista)
+
+Métricas subjetivas (escucha en REAPER): pendiente

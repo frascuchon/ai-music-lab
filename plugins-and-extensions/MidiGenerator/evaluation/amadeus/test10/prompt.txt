@@ -1,0 +1,9 @@
+Model: Amadeus (longyu1315/Amadeus-S)
+Source: Mismo prompt que evaluation/text2midi/test3 — comparativa cross-model
+Prompt: "A soft love song on piano."
+Category: cross-model/text2midi — short-piano
+---
+v0: 291.0s  1 track  792 notes — solo piano.
+Calidad: 3.5/5 — solo piano ✓✓, 791 notas en 291s = piano suave (densidad baja). Duración muy larga.
+Nota: solo 792 notas (vs 1022 habitual) — el modelo generó un MIDI con mayor espaciado temporal. Coherente con "soft".
+Comparativa text2midi/test3: Amadeus (3.5/5) > text2midi (1.5/5). Piano solo, duración apropiada.

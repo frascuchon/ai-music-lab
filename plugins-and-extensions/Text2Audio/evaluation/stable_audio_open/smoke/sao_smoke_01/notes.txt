@@ -1,0 +1,39 @@
+Smoke 01 — drum_loop: 128 BPM tech house drum loop
+Texto completo:  "128 BPM tech house drum loop"
+Origen:          Prompt canónico del model card stabilityai/stable-audio-open-1.0
+BPM objetivo:    128
+Duración:        8.0 s
+Modelo:          stable_audio_open 1.0
+Fecha:           pendiente
+GPU:             A10G
+Seed:            42
+
+Resultado (output.wav):
+  Tamaño:        pendiente
+  Duration real: pendiente
+
+Métricas objetivas:
+  CLAP score:    pendiente  (umbral mínimo: ≥ 0.20)
+  Tiempo inf.:   pendiente  (umbral máximo: < 60 s en A10G)
+
+Métricas subjetivas (escucha en REAPER):
+  Fidelidad al prompt:  /5   (¿suena a drum loop de tech house a 128 BPM?)
+  Calidad de audio:     /5   (¿hay artefactos, clipping, ruido?)
+  Musicalidad:          /5   (¿el patrón rítmico es coherente?)
+  Loopability:          /5   (¿el loop cierra sin click al repetir?)
+  Usabilidad:           /5   (¿lo usarías en un proyecto REAPER real?)
+  Media:                /5
+
+Comparación con referencia:
+  Referencia descargable: evaluation/stable_audio_open/reference_demos/ (requiere HF_TOKEN)
+  Referencia manual:      https://huggingface.co/spaces/artificialguybr/Stable-Audio-Open-Zero
+  Prompt idéntico → comparar el patrón rítmico, la textura y el BPM percibido.
+
+Criterio de éxito (smoke test):
+  ✓ WAV estéreo 44100 Hz, duración ≈ 8.0 s (±0.5 s)
+  ✓ El audio suena a drum loop, no a ruido ni silencio
+  ✓ CLAP ≥ 0.20
+  ✓ Tiempo de inferencia < 60 s en A10G
+
+Observaciones:
+  pendiente

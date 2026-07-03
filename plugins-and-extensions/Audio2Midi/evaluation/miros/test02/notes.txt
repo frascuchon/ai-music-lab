@@ -1,0 +1,20 @@
+Test 02 — Piano solo clásico: Chopin Étude (MAPS dataset)
+Audio: symlink → ../../yourmt3/test02/input.wav
+Archivo original: MAPS_MUS-chpn-e01_ENSTDkCl.wav
+Dataset: MAPS (MIDI Aligned Piano Sounds), piano real Disklavier Kawai EX
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+
+Contenido musical:
+  Chopin Étude Op. 10 No. 1 (arpegiados rápidos)
+  Instrumento: piano solo, alto nivel de polifonía y velocidad
+
+Por qué este test:
+  Comparación directa MIROS vs YourMT3+ sobre el mismo audio.
+  Sin ground truth disponible → evaluación subjetiva únicamente.
+
+Métricas objetivo (AMT Challenge 2025):
+  MIROS=0.5998 vs YourMT3-YPTF-MoE-M=0.5938 (media sobre 76 piezas challenge)
+
+Resultado:
+  Objetivo (mir_eval): sin GT disponible
+  Subjetivo (escucha REAPER): <pendiente>

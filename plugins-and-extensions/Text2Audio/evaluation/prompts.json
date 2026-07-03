@@ -1,0 +1,113 @@
+{
+  "_comment": "Prompts DAW curados para la evaluación de modelos text-to-audio. Compartidos entre modelos para comparación 1:1. Cada modelo genera evaluation/<model>/promptNN/output.wav a partir de cada entrada. BPM y seconds orientativos al DAW (4 compases a X BPM). Algunos prompts incluyen un reference_audio relativo a evaluation/ para el condicionamiento de melodía en MusicGen-melody.",
+  "prompts": [
+    {
+      "id": "prompt01",
+      "category": "drum_loop",
+      "text": "tight acoustic drum loop, 120 BPM, four on the floor kick, snare on 2 and 4, hi-hat eighth notes, dry studio sound",
+      "seconds": 8.0,
+      "bpm": 120,
+      "bars": 4,
+      "notes": "4 compases @ 120 BPM = 8.0 s exactos. Comprobar que el loop cierra sin click."
+    },
+    {
+      "id": "prompt02",
+      "category": "drum_loop",
+      "text": "hip-hop drum loop, 90 BPM, boom bap, swung 16th hi-hats, deep 808 kick, fat snare with room reverb",
+      "seconds": 10.667,
+      "bpm": 90,
+      "bars": 4,
+      "notes": "4 compases @ 90 BPM = 10.667 s. Boom bap clásico."
+    },
+    {
+      "id": "prompt03",
+      "category": "bassline",
+      "text": "funk electric bass loop, 100 BPM, slap bass, syncopated groove, C minor, tight and percussive",
+      "seconds": 9.6,
+      "bpm": 100,
+      "bars": 4,
+      "notes": "4 compases @ 100 BPM = 9.6 s. Baseline funk con slap."
+    },
+    {
+      "id": "prompt04",
+      "category": "synth_pad",
+      "text": "lush ambient synth pad, slow attack slow release, C major, ethereal and warm, long evolving texture, no rhythm",
+      "seconds": 20.0,
+      "bpm": null,
+      "bars": null,
+      "notes": "Textura larga sin ritmo. Comprobar calidad de la evolución y ausencia de artefactos."
+    },
+    {
+      "id": "prompt05",
+      "category": "synth_lead",
+      "text": "analog synth lead melody, 120 BPM, saw wave, slight vibrato, A minor scale, punchy attack, 80s style",
+      "seconds": 8.0,
+      "bpm": 120,
+      "bars": 4,
+      "notes": "Lead melódico. Comprobar si la melodía generada es coherente y musical."
+    },
+    {
+      "id": "prompt06",
+      "category": "fx_riser",
+      "text": "cinematic riser sound effect, 8 seconds, builds from quiet to loud, white noise sweep, ascending pitch, tension",
+      "seconds": 8.0,
+      "bpm": null,
+      "bars": null,
+      "notes": "FX riser para transiciones en REAPER. Comprobar ascenso natural."
+    },
+    {
+      "id": "prompt07",
+      "category": "ambient_texture",
+      "text": "dark ambient texture, industrial drone, slow modulation, deep rumble with high frequency shimmer, 20 seconds",
+      "seconds": 20.0,
+      "bpm": null,
+      "bars": null,
+      "notes": "Textura de ambiente oscuro. Sin ritmo definido."
+    },
+    {
+      "id": "prompt08",
+      "category": "percussion_oneshot",
+      "text": "single snare drum hit, cracking, bright, studio recording, no reverb, natural decay",
+      "seconds": 2.0,
+      "bpm": null,
+      "bars": null,
+      "notes": "One-shot de caja. Comprobar attack, body y decay naturales."
+    },
+    {
+      "id": "prompt09",
+      "category": "arpeggio",
+      "text": "electronic arpeggio, 120 BPM, 16th notes, E minor, sawtooth waveform, slightly detuned, driving and hypnotic",
+      "seconds": 8.0,
+      "bpm": 120,
+      "bars": 4,
+      "notes": "Arpegio rítmico. Verificar si las notas están sincronizadas al BPM."
+    },
+    {
+      "id": "prompt10",
+      "category": "guitar_loop",
+      "text": "clean electric guitar chord loop, 100 BPM, jazz chords, Cmaj7 Fmaj7 progression, warm tone, light compression",
+      "seconds": 9.6,
+      "bpm": 100,
+      "bars": 4,
+      "notes": "Acordes de guitarra jazz. Comprobar si la progresión armónica es coherente."
+    },
+    {
+      "id": "prompt11",
+      "category": "piano_loop",
+      "text": "upright piano loop, 85 BPM, melancholic chord progression, Am - F - C - G, light room reverb, intimate recording",
+      "seconds": 11.294,
+      "bpm": 85,
+      "bars": 4,
+      "notes": "Loop de piano con progresión Am-F-C-G. Comprobar afinación y musicalidad."
+    },
+    {
+      "id": "prompt12",
+      "category": "sfx_transition",
+      "text": "downlifter transition sound effect, whoosh downward sweep, 3 seconds, electronic music production, impactful",
+      "seconds": 3.0,
+      "bpm": null,
+      "bars": null,
+      "notes": "Downlifter para transiciones. Comprobar inmediatez del sweep descendente."
+    }
+  ]
+}

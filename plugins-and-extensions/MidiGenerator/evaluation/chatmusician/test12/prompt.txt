@@ -1,0 +1,10 @@
+Model: ChatMusician (m-a-p/ChatMusician)
+Source: https://ezmonyi.github.io/ChatMusician/ — Melody Harmonization #3
+Prompt: "Develop a series of chord pairings that amplify the harmonious elements in the given music piece."
+Reference: reference_demo.png — output renderizado del demo oficial (solo visual, sin audio descargable)
+Input: input_abc.txt — melodía en G mayor con acordes parciales, reel (6/8) — ejemplo verbatim del model card
+Category: melody-harmonization
+Our command: modal run research/research_chatmusician_modal.py::main --prompt "Develop a series of chord pairings that amplify the harmonious elements in the given music piece." --input-abc-file evaluation/chatmusician/test12/input_abc.txt --out-dir evaluation/chatmusician/test12
+Device: CUDA A10G, fp16
+Result: ❌ 0 MIDIs. Modelo genera fragmentos de ABC de la melodía input sin X: header completo.
+Notes: La melodía con acordes parciales preexistentes confunde al modelo. En lugar de ampliar la armonización, genera continuaciones del fragmento input. Posiblemente el input más largo (16 compases + acordes) excede la ventana de atención efectiva.

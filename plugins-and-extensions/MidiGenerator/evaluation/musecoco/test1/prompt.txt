@@ -1,0 +1,6 @@
+Model: MuseCoco (Microsoft/muzic — XinXuNLPer/MuseCoco)
+Source: https://github.com/microsoft/muzic/tree/main/musecoco
+Prompt: "jazz piano trio, 120 BPM, C major, happy mood"
+Reference: no hay audio de referencia oficial para este prompt genérico
+Generated: generated.mid (nuestro script Modal — ya ejecutado)
+Our command: modal run research_musecoco_modal.py::main --prompt "jazz piano trio, 120 BPM, C major, happy mood" --out generated.mid

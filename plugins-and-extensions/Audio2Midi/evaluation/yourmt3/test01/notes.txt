@@ -1,0 +1,23 @@
+Test 01 — Funk multi-instrumento (MIRST dataset)
+Archivo original: 00_Funk1-97-C_comp_mic_pshift-3.wav
+Dataset: MIRST (Multi-Instrument Recording for Symbolic Transcription)
+Fuente: HuggingFace Space mimbres/YourMT3 examples/
+
+Contenido musical:
+  Groove funk a 97 BPM en Do mayor
+  Instrumentos esperados: batería, bajo, guitarra, teclado
+  Dificultad: MEDIA — ritmo funk con variaciones, polifonía moderada
+  Duración: ~30s
+
+Por qué este test:
+  Caso representativo de música popular con múltiples instrumentos simultáneos.
+  YourMT3+ fue entrenado en MIRST — resultado esperado: BUENO.
+  Permite evaluar separación de pistas rítmicas vs melódicas.
+
+Métricas objetivo (ref. paper YourMT3+ tabla 2):
+  F1 nota (onset+pitch): >60%
+  F1 nota+instrumento: >40%
+
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER): pendiente

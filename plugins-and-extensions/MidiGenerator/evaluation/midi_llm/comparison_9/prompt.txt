@@ -1,0 +1,9 @@
+Model: MIDI-LLM (slseanwu/MIDI-LLM_Llama-3.2-1B)
+Source: https://midi-llm-demo.vercel.app/prompts/comparison_9.txt
+Prompt: "An electronic song with a moderate tempo, featuring a melodic synth lead accompanied by a string ensemble, electric bass, acoustic guitar, and synth brass. The piece is set in C minor and follows a chord progression of Fm, Bb6, Eb, and Ab. With a duration of 266 seconds, it evokes a sense of happiness and has a space-like atmosphere."
+References (from the official Vercel demo):
+  - reference_official_bf16.mp3           (MIDI-LLM bf16 — primary reference)
+  - reference_official_fp8.mp3            (MIDI-LLM FP8 quantized — sanity check)
+  - reference_text2midi_competitor.mp3    (text2midi on same prompt — cross-comparison)
+Note: MIDI ground-truth is not publicly downloadable (demo API only, ngrok backend).
+Our command: uv run research_midi_llm.py --prompt "<see Prompt above>" --max_tokens 2046 --out generated_local_mps_v0.mid

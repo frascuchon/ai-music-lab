@@ -1,0 +1,22 @@
+Test 02 (compound) — Piano solo clásico (MAPS Chopin)
+Audio: mismo que yourmt3/test02 — MAPS_MUS-chpn-e01_ENSTDkCl.wav
+Pipeline: Demucs htdemucs_6s → Basic Pitch por stem
+
+Por qué este test:
+  Piano solo: caso donde el pipeline compuesto DEBERÍA rendir similar a YourMT3+
+  porque Demucs con un solo instrumento no necesita separar nada.
+  Permite cuantificar el overhead del pipeline compuesto vs end-to-end en caso simple.
+
+Expectativas:
+  - piano: Demucs asigna todo al stem "piano" o "other" → Basic Pitch transcribe → VARIABLE
+  - otros stems: vacíos (solo piano en el audio) → MIDI vacío
+
+Si el rendimiento es significativamente peor que YourMT3+ aquí, indica que
+el pipeline compuesto introduce degradación incluso sin separación real necesaria.
+
+Resultado:
+  Sin ground truth disponible para este test.
+  Métricas subjetivas (escucha en REAPER):
+    Impresión general: MALO — resultado claramente inferior a YourMT3+.
+    BasicPitch genera demasiadas notas falsas (sobre-detección) y leakage entre stems.
+    Pipeline Demucs + BasicPitch DESCARTADO. Puntuación por instrumento: no realizada.
