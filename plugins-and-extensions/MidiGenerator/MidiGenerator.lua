@@ -73,14 +73,18 @@ local S = {
   field_chords      = "",
   -- ChatMusician: seed opcional para armonización
   cm_use_seed = false,
-  -- Seed MIDI (ChatMusician armonización + AMT)
+  -- Seed MIDI (ChatMusician armonización)
   seed_path       = "",
   seed_label      = "",
   -- Parámetros AMT
   amt_mode_idx     = 1,   -- 1=accompaniment, 2=continuation
   amt_duration     = 20,  -- clip_length (accompaniment) o duration (continuation)
   amt_prompt_len   = 5,   -- prompt_length (solo accompaniment)
-  amt_melody_instr = 0,   -- melody_instrument (solo accompaniment)
+  -- AMT: pista de melodía
+  amt_melody_take  = nil,
+  amt_melody_label = "",
+  -- AMT: pistas de seed de acompañamiento
+  amt_seed_takes   = {},  -- lista de {take=take, label="nombre pista"}
   -- Parámetros comunes
   n_outputs   = 2,
   temperature = 1.0,
@@ -199,6 +203,61 @@ local function write_midi_from_take(take, filepath)
   -- Tempo track
   f:write("MTrk" .. _u32be(#tmp) .. tmp)
   -- Notas track
+  f:write("MTrk" .. _u32be(#trk) .. trk)
+  f:close()
+  return true, nil
+end
+
+-- ── COMBINAR MÚLTIPLES TOMAS EN UN SOLO MIDI (para AMT) ─────────
+-- melodía → canal 0, cada seed take → canal 1,2,3...
+local function write_combined_midi(melody_take, seed_takes, filepath)
+  local PPQ = 480
+  local bpm = reaper.Master_GetTempo()
+  local tempo_uspb = math.floor(60000000 / bpm)
+  local events = {}
+
+  local function collect_take(take, force_chan)
+    local t0 = reaper.MIDI_GetProjTimeFromPPQPos(take, 0)
+    local _, nc = reaper.MIDI_CountEvts(take)
+    for i = 0, (nc or 0) - 1 do
+      local _, _, _, sp, ep, _, pitch, vel = reaper.MIDI_GetNote(take, i)
+      local ts = reaper.MIDI_GetProjTimeFromPPQPos(take, sp) - t0
+      local te = reaper.MIDI_GetProjTimeFromPPQPos(take, ep) - t0
+      local ps = math.floor(ts * (bpm/60) * PPQ + 0.5)
+      local pe = math.floor(te * (bpm/60) * PPQ + 0.5)
+      if pe > ps then
+        table.insert(events, { tick=ps, status=0x90+force_chan, d1=pitch, d2=vel })
+        table.insert(events, { tick=pe, status=0x80+force_chan, d1=pitch, d2=0   })
+      end
+    end
+  end
+
+  collect_take(melody_take, 0)
+  for i, entry in ipairs(seed_takes) do
+    collect_take(entry.take, math.min(i, 15))
+  end
+  table.sort(events, function(a,b) return a.tick < b.tick end)
+
+  local trk = ""
+  local prev = 0
+  for _, ev in ipairs(events) do
+    local d = math.max(0, ev.tick - prev)
+    trk = trk .. _vlq(d) .. string.char(ev.status, ev.d1, ev.d2)
+    prev = ev.tick
+  end
+  trk = trk .. "\000\255\047\000"
+
+  local tmp = "\000\255\081\003"
+    .. string.char(
+        math.floor(tempo_uspb/65536)%256,
+        math.floor(tempo_uspb/256)%256,
+        tempo_uspb%256)
+    .. "\000\255\047\000"
+
+  local f = io.open(filepath, "wb")
+  if not f then return false, "No se pudo crear " .. filepath end
+  f:write("MThd" .. _u32be(6) .. _u16be(1) .. _u16be(2) .. _u16be(PPQ))
+  f:write("MTrk" .. _u32be(#tmp) .. tmp)
   f:write("MTrk" .. _u32be(#trk) .. trk)
   f:close()
   return true, nil
@@ -454,6 +513,61 @@ local function grab_midi_from_reaper()
   end
 end
 
+local function _get_track_label(item)
+  local tr = reaper.GetMediaItemTrack(item)
+  if not tr then return "?" end
+  local _, tname = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
+  local tnum = reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")
+  return (tname ~= "" and tname) or ("Pista " .. math.floor(tnum))
+end
+
+local function grab_melody_item()
+  local item = nil
+  local n = reaper.CountSelectedMediaItems(0)
+  if n > 0 then
+    item = reaper.GetSelectedMediaItem(0, 0)
+  else
+    local tcnt = reaper.CountSelectedTracks(0)
+    if tcnt > 0 then
+      local tr = reaper.GetSelectedTrack(0, 0)
+      for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
+        local it = reaper.GetTrackMediaItem(tr, i)
+        if it then item = it; break end
+      end
+    end
+  end
+  if not item then
+    reaper.MB("No hay ningún item MIDI seleccionado en REAPER.", "MidiGenerator", 0)
+    return
+  end
+  local take = reaper.GetActiveTake(item)
+  if not take or not reaper.TakeIsMIDI(take) then
+    reaper.MB("El item seleccionado no contiene MIDI.", "MidiGenerator", 0)
+    return
+  end
+  S.amt_melody_take  = take
+  S.amt_melody_label = _get_track_label(item)
+  add_log("Melodía capturada: " .. S.amt_melody_label)
+end
+
+local function add_seed_items_from_reaper()
+  local added = 0
+  for i = 0, reaper.CountSelectedMediaItems(0) - 1 do
+    local item = reaper.GetSelectedMediaItem(0, i)
+    local take = reaper.GetActiveTake(item)
+    if take and reaper.TakeIsMIDI(take) then
+      local label = _get_track_label(item)
+      table.insert(S.amt_seed_takes, { take=take, label=label })
+      added = added + 1
+    end
+  end
+  if added == 0 then
+    reaper.MB("No hay items MIDI seleccionados en REAPER.", "MidiGenerator", 0)
+  else
+    add_log("Añadidas " .. added .. " pista(s) de seed.")
+  end
+end
+
 -- ── LANZAR GENERACIÓN ────────────────────────────────────────────
 local function clear_run(label)
   local f = io.open(PROGRESS_F, "w")
@@ -477,10 +591,17 @@ local function launch_generate()
     reaper.MB("Escribe un prompt de texto antes de generar.", "MidiGenerator", 0)
     return
   end
-  if is_amt and (not S.seed_path or S.seed_path == "") then
+  if is_amt and not S.amt_melody_take then
     reaper.MB(
-      "Anticipatory necesita un seed MIDI.\n"
-      .. "Selecciona un item MIDI en REAPER (botón R) o elige un fichero .mid (botón ...).",
+      "Anticipatory necesita una pista de melodía.\n"
+      .. "Selecciona un item MIDI en REAPER y clic R junto a 'Melodía'.",
+      "MidiGenerator", 0)
+    return
+  end
+  if is_amt and #S.amt_seed_takes == 0 then
+    reaper.MB(
+      "Anticipatory necesita al menos una pista de seed de acompañamiento.\n"
+      .. "Selecciona items MIDI en REAPER y clic '+' junto a 'Seed acc.'.",
       "MidiGenerator", 0)
     return
   end
@@ -527,15 +648,24 @@ local function launch_generate()
       extra = extra .. " --seed-file " .. q(S.seed_path)
     end
   else
-    -- AMT
+    -- AMT: construir MIDI combinado (melodía canal 0 + seed canales 1..N)
+    local seed_path = run_dir .. "combined_seed.mid"
+    local ok_s, err_s = write_combined_midi(S.amt_melody_take, S.amt_seed_takes, seed_path)
+    if not ok_s then
+      reaper.MB("Error al construir seed MIDI: " .. (err_s or "?"), "MidiGenerator", 0)
+      S.running = false
+      return
+    end
     local mode = AMT_MODES[S.amt_mode_idx]
     add_log("Modo AMT: " .. mode)
-    add_log("Seed: " .. (S.seed_label ~= "" and S.seed_label or S.seed_path))
-    extra = extra .. " --seed "              .. q(S.seed_path)
+    add_log("Melodía: " .. S.amt_melody_label)
+    add_log("Seed tracks: " .. #S.amt_seed_takes)
+    add_log("Seed MIDI combinado: " .. seed_path)
+    extra = extra .. " --seed "              .. q(seed_path)
     extra = extra .. " --mode "              .. q(mode)
     extra = extra .. " --prompt-length "     .. tostring(S.amt_prompt_len)
     extra = extra .. " --clip-length "       .. tostring(S.amt_duration)
-    extra = extra .. " --melody-instrument " .. tostring(S.amt_melody_instr)
+    extra = extra .. " --melody-instrument 0"
     -- --n-outputs ya está en base; midigen.py lo mapea internamente a --multiplicity
   end
 
@@ -667,23 +797,40 @@ local function loop()
     end
 
   else
-    -- ── AMT: seed + parámetros ─────────────────────────────────────
-    g.row_label("Seed MIDI:", t.sc(90))
-    g.next_width(-(2 * t.SPACING_X + 2 * t.sc(44)))
-    widgets.input_text("##amt_seed_disp",
-      S.seed_label ~= "" and S.seed_label or "(ninguno — selecciona un item MIDI)",
+    -- ── AMT: melodía + seed de acompañamiento ─────────────────────
+    local lw_amt = t.sc(90)
+
+    -- Pista de melodía
+    g.row_label("Melodía:", lw_amt)
+    g.next_width(-(t.SPACING_X + t.sc(44)))
+    widgets.input_text("##amt_mel_disp",
+      S.amt_melody_label ~= "" and S.amt_melody_label or "(ninguna — selecciona un item MIDI)",
       { readonly=true })
     g.same_line()
-    if g.button("...", t.sc(44), t.ITEM_H) then
-      local ok, fn = reaper.GetUserFileNameForRead("", "Seed MIDI", "mid")
-      if ok then S.seed_path = fn; S.seed_label = fn:match("[^/\\]+$") or fn end
-    end
-    g.same_line()
-    if g.button("R", t.sc(44), t.ITEM_H) then grab_midi_from_reaper() end
-    g.text_disabled("  Clic en R para capturar el item MIDI seleccionado en REAPER.")
+    if g.button("R##amt_mel_r", t.sc(44), t.ITEM_H) then grab_melody_item() end
+    g.text_disabled("  Selecciona el item de melodía en REAPER y clic R.")
 
     g.spacing()
-    g.row_label("Modo:", t.sc(90))
+
+    -- Pistas de seed de acompañamiento
+    g.row_label("Seed acc.:", lw_amt)
+    if g.button("+##amt_seed_add", t.sc(44), t.ITEM_H) then add_seed_items_from_reaper() end
+    g.same_line(t.sc(8))
+    if g.button("Limpiar##amt_seed_clr", t.sc(70), t.ITEM_H) then
+      S.amt_seed_takes = {}
+      add_log("Seed de acompañamiento limpiado.")
+    end
+    if #S.amt_seed_takes == 0 then
+      g.text_disabled("  (ninguna pista añadida)")
+    else
+      for _, entry in ipairs(S.amt_seed_takes) do
+        g.text_disabled("  • " .. entry.label)
+      end
+    end
+    g.text_disabled("  Selecciona pistas de acompañamiento en REAPER y clic '+'.")
+
+    g.spacing()
+    g.row_label("Modo:", lw_amt)
     g.next_width(t.sc(160))
     S.amt_mode_idx = widgets.combo("##amt_mode", S.amt_mode_idx, AMT_MODE_LABELS)
     local amt_mode_key = AMT_MODES[S.amt_mode_idx]
@@ -702,15 +849,10 @@ local function loop()
       rv, nv = g.slider_int("##amt_plen", S.amt_prompt_len, 1, 15)
       if rv then S.amt_prompt_len = nv end
 
-      g.row_label("Pista melodía:", lw)
-      g.next_width(t.sc(80))
-      rv, nv = g.slider_int("##amt_mel", S.amt_melody_instr, 0, 15)
-      if rv then S.amt_melody_instr = nv end
-      g.text_disabled("  (índice de canal MIDI — 0 = primer instrumento)")
       g.spacing()
       g.text_colored(
-        "⚠  El seed debe contener ≥" .. S.amt_prompt_len ..
-        "s de historia (no solo melodía) para resultados densos.", "YELLOW")
+        "⚠  El seed de acompañamiento debe contener ≥" .. S.amt_prompt_len ..
+        "s de historia para resultados densos.", "YELLOW")
     end
   end
 
