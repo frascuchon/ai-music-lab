@@ -164,9 +164,23 @@ def _inference_impl(
             from anticipation.sample import generate
 
             events = midi_to_events(input_path)
-            history = clip(events, 0, 5)
-            new_events = generate(model, 5, 5 + duration, inputs=history, top_p=0.98)
+            if not events:
+                raise ValueError(
+                    "El seed MIDI no contiene eventos. "
+                    "Asegúrate de que el item seleccionado tiene notas MIDI."
+                )
+            # Usa prompt_length para la ventana de historia (no hardcoded 5s)
+            history = clip(events, 0, prompt_length)
+            if not history:
+                raise ValueError(
+                    f"El seed MIDI no tiene eventos en los primeros {prompt_length}s. "
+                    f"Usa un item más largo o reduce prompt_length ({prompt_length}s)."
+                )
+            new_events = generate(model, prompt_length, prompt_length + duration,
+                                  inputs=history, top_p=top_p)
             combined = sort(history + new_events)
+            if not combined:
+                raise ValueError("AMT no generó ningún evento MIDI. Prueba con otro seed o aumenta duration.")
             midi_out = events_to_midi(combined)
 
         elif mode == "accompaniment":

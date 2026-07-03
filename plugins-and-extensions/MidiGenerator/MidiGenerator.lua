@@ -148,6 +148,11 @@ local function write_midi_from_take(take, filepath)
   local bpm = reaper.Master_GetTempo()
   local tempo_uspb = math.floor(60000000 / bpm)
 
+  -- Tiempo de proyecto en tick 0 del take (posición del item + offset de fuente).
+  -- Restarlo normaliza todos los eventos a t=0 relativo al inicio del item,
+  -- que es lo que esperan las librerías AMT (anticipation usa clip(events, 0, N)).
+  local t_item_start = reaper.MIDI_GetProjTimeFromPPQPos(take, 0)
+
   -- Recoger notas: {ppq_start, ppq_end, chan, pitch, vel}
   -- MIDI_CountEvts devuelve (retval, notes, ccs, sysex)
   local _, noteCount = reaper.MIDI_CountEvts(take)
@@ -156,9 +161,9 @@ local function write_midi_from_take(take, filepath)
   for i = 0, noteCount - 1 do
     local _, _, _, startppq, endppq, chan, pitch, vel =
       reaper.MIDI_GetNote(take, i)
-    -- Convertir a tiempo (s) y luego a PPQ-480
-    local t_start = reaper.MIDI_GetProjTimeFromPPQPos(take, startppq)
-    local t_end   = reaper.MIDI_GetProjTimeFromPPQPos(take, endppq)
+    -- Convertir a tiempo relativo (s desde inicio del item) y luego a PPQ-480
+    local t_start = reaper.MIDI_GetProjTimeFromPPQPos(take, startppq) - t_item_start
+    local t_end   = reaper.MIDI_GetProjTimeFromPPQPos(take, endppq)   - t_item_start
     local p_start = math.floor(t_start * (bpm/60) * PPQ + 0.5)
     local p_end   = math.floor(t_end   * (bpm/60) * PPQ + 0.5)
     if p_end > p_start then
