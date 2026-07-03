@@ -584,10 +584,12 @@ def main(
     call = generate.spawn(prompt=prompt, n_samples=n_samples, instruments=instr_list)
     print(f"[spawned] object_id={call.object_id}")
 
-    # Persistir call_id localmente para poder hacer recover si el cliente cae
+    # Persistir call_id localmente para poder hacer recover si el cliente cae.
+    # Usar /tmp/ porque el directorio de trabajo puede ser read-only (Modal local runner).
     _state = {"call_id": call.object_id, "out": str(out_path), "prompt": prompt}
-    Path(".musecoco_last_call.json").write_text(json.dumps(_state, indent=2))
-    print(f"[recovery] estado guardado en .musecoco_last_call.json")
+    _state_path = Path("/tmp/.musecoco_last_call.json")
+    _state_path.write_text(json.dumps(_state, indent=2))
+    print(f"[recovery] estado guardado en {_state_path}")
 
     # Polling cada 30s para no depender de una conexión gRPC larga
     rel_paths = None
@@ -656,7 +658,7 @@ def recover(
 ) -> None:
     """
     Descarga el resultado de un generate() spawneado previamente.
-    Sin argumentos, lee .musecoco_last_call.json del directorio actual.
+    Sin argumentos, lee /tmp/.musecoco_last_call.json.
 
     Ejemplo:
         modal run research_musecoco_modal.py::recover
@@ -665,9 +667,9 @@ def recover(
     import time
 
     if not call_id:
-        state_file = Path(".musecoco_last_call.json")
+        state_file = Path("/tmp/.musecoco_last_call.json")
         if not state_file.exists():
-            print("[recover] No hay .musecoco_last_call.json y no se pasó --call-id")
+            print("[recover] No hay /tmp/.musecoco_last_call.json y no se pasó --call-id")
             return
         state = json.loads(state_file.read_text())
         call_id = state["call_id"]
