@@ -114,6 +114,10 @@ local function make_run_dir()
   _run_id = _run_id + 1
   local d = TMPDIR .. "midigen_run" .. _run_id .. "/"
   os.execute("mkdir -p " .. q(d))
+  -- Limpiar runs anteriores (pero no el actual) para que no contaminen _collect_outputs
+  os.execute(string.format(
+    "find %s -maxdepth 1 -type d -name 'midigen_run*' ! -name 'midigen_run%d' -exec rm -rf {} + 2>/dev/null || true",
+    q(TMPDIR), _run_id))
   return d
 end
 
@@ -371,6 +375,7 @@ local function _import_one(mid_path, folder_name)
     add_log("Aviso: InsertMedia no añadió pistas para " .. mid_path:match("[^/\\]+$"))
     return
   end
+  add_log(string.format("DEBUG: delta=%d tcnt_before=%d tcnt_after=%d", delta, tcnt_before, reaper.CountTracks(0)))
 
   -- Corregir posición: InsertMedia para MIDI multi-track puede ignorar
   -- SetEditCurPos e insertar los items en posición 0. Detectar y offsetear.
@@ -406,6 +411,7 @@ local function _import_one(mid_path, folder_name)
   -- Siempre crear estructura de carpeta (independientemente de cuántas pistas)
   reaper.InsertTrackAtIndex(tcnt_before, true)
   local folder_tr = reaper.GetTrack(0, tcnt_before)
+  add_log(string.format("DEBUG: folder_tr created at index %d, name='%s'", tcnt_before, folder_name))
   reaper.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", folder_name, true)
   reaper.SetMediaTrackInfo_Value(folder_tr, "I_FOLDERDEPTH", 1)
   for i = 1, delta do
