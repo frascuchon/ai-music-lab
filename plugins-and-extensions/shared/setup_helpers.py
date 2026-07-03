@@ -21,8 +21,9 @@ El subcomando 'check' añade líneas CHECK| tras la cabecera:
 
 Checks core (siempre): python, uv, modal-cli, modal-auth
 Checks extras por plugin (si la carpeta existe junto a shared/):
-  StemsSeparator → demucs (pip local), hf-secret (Modal secret)
-  Audio2Midi     → (ninguno extra — pesos en Modal Volumes)
+  StemsSeparator  → demucs (pip local), hf-secret (Modal secret)
+  Audio2Midi      → (ninguno extra — pesos en Modal Volumes)
+  MidiGenerator   → (ninguno extra — pesos en Modal Volumes)
 
 Subcommands:
   check                                  Detecta entorno, escribe CHECK lines.
@@ -413,6 +414,63 @@ def cmd_prewarm_yourmt3(args) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Subcommands: prewarm-midigen-*  (MidiGenerator — 6 modelos)
+# ---------------------------------------------------------------------------
+
+_MG_MODELS = {
+    "amadeus":      ("research_amadeus_modal.py",      "setup"),
+    "midi-llm":     ("research_midi_llm_modal.py",     "setup"),
+    "text2midi":    ("research_text2midi_modal.py",     "setup"),
+    "chatmusician": ("research_chatmusician_modal.py",  "setup"),
+    "musecoco":     ("research_musecoco_modal.py",      "setup_weights"),
+    "anticipatory": ("research_anticipatory_modal.py",  "setup"),
+}
+
+_MG_RESEARCH = PLUGINS_DIR / "MidiGenerator" / "research"
+
+
+def _prewarm_midigen_model(model_name: str, pf) -> None:
+    entry = _MG_MODELS.get(model_name)
+    if entry is None:
+        write(pf, "error", 0, f"Modelo MidiGenerator desconocido: {model_name!r}")
+        return
+    script_name, entrypoint = entry
+    script = _MG_RESEARCH / script_name
+    if not script.exists():
+        write(pf, "error", 0, f"Script no encontrado: {script}")
+        return
+    uv = _find_uv()
+    if uv is None:
+        write(pf, "error", 0, "uv no encontrado")
+        return
+    msg = f"Descargando pesos {model_name} en Modal Volume..."
+    write(pf, "running", 0.05, msg)
+    _stream(pf,
+            [str(uv), "run", "--project", str(_MG_RESEARCH),
+             "modal", "run", f"{script}::{entrypoint}"],
+            done_msg=f"Pesos {model_name} cacheados en Modal Volume")
+
+
+def cmd_prewarm_midigen_amadeus(args) -> None:
+    _prewarm_midigen_model("amadeus", Path(args.progress) if args.progress else None)
+
+def cmd_prewarm_midigen_midi_llm(args) -> None:
+    _prewarm_midigen_model("midi-llm", Path(args.progress) if args.progress else None)
+
+def cmd_prewarm_midigen_text2midi(args) -> None:
+    _prewarm_midigen_model("text2midi", Path(args.progress) if args.progress else None)
+
+def cmd_prewarm_midigen_chatmusician(args) -> None:
+    _prewarm_midigen_model("chatmusician", Path(args.progress) if args.progress else None)
+
+def cmd_prewarm_midigen_musecoco(args) -> None:
+    _prewarm_midigen_model("musecoco", Path(args.progress) if args.progress else None)
+
+def cmd_prewarm_midigen_anticipatory(args) -> None:
+    _prewarm_midigen_model("anticipatory", Path(args.progress) if args.progress else None)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -451,6 +509,10 @@ def main() -> None:
     p_pw_yt3 = sub.add_parser("prewarm-yourmt3")
     p_pw_yt3.add_argument("--progress", default="")
 
+    for mg_model in ["amadeus", "midi-llm", "text2midi", "chatmusician", "musecoco", "anticipatory"]:
+        p_mg = sub.add_parser(f"prewarm-midigen-{mg_model}")
+        p_mg.add_argument("--progress", default="")
+
     args = p.parse_args()
     {
         "check":                cmd_check,
@@ -462,6 +524,12 @@ def main() -> None:
         "prewarm-sam":          cmd_prewarm_sam,
         "prewarm-miros":        cmd_prewarm_miros,
         "prewarm-yourmt3":      cmd_prewarm_yourmt3,
+        "prewarm-midigen-amadeus":      cmd_prewarm_midigen_amadeus,
+        "prewarm-midigen-midi-llm":     cmd_prewarm_midigen_midi_llm,
+        "prewarm-midigen-text2midi":    cmd_prewarm_midigen_text2midi,
+        "prewarm-midigen-chatmusician": cmd_prewarm_midigen_chatmusician,
+        "prewarm-midigen-musecoco":     cmd_prewarm_midigen_musecoco,
+        "prewarm-midigen-anticipatory": cmd_prewarm_midigen_anticipatory,
     }[args.cmd](args)
 
 

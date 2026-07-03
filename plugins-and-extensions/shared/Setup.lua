@@ -41,11 +41,14 @@ local function plugin_exists(name)
   if test then test:close(); return true end
   test = io.open(PLUGINS_DIR .. name .. "/Audio2Midi.lua", "r")
   if test then test:close(); return true end
+  test = io.open(PLUGINS_DIR .. name .. "/MidiGenerator.lua", "r")
+  if test then test:close(); return true end
   return false
 end
 
 local HAS_STEMS = plugin_exists("StemsSeparator")
 local HAS_A2M   = plugin_exists("Audio2Midi")
+local HAS_MG    = plugin_exists("MidiGenerator")
 
 local PF = {
   check        = TMPDIR .. "reaperai_setup_check.txt",
@@ -57,6 +60,13 @@ local PF = {
   prewarm_sam  = TMPDIR .. "reaperai_setup_prewarm_sam.txt",
   prewarm_mir  = TMPDIR .. "reaperai_setup_prewarm_miros.txt",
   prewarm_yt3  = TMPDIR .. "reaperai_setup_prewarm_yourmt3.txt",
+  -- MidiGenerator
+  prw_mg_amadeus      = TMPDIR .. "reaperai_setup_prw_mg_amadeus.txt",
+  prw_mg_midi_llm     = TMPDIR .. "reaperai_setup_prw_mg_midi_llm.txt",
+  prw_mg_text2midi    = TMPDIR .. "reaperai_setup_prw_mg_text2midi.txt",
+  prw_mg_chatmusician = TMPDIR .. "reaperai_setup_prw_mg_chatmusician.txt",
+  prw_mg_musecoco     = TMPDIR .. "reaperai_setup_prw_mg_musecoco.txt",
+  prw_mg_anticipatory = TMPDIR .. "reaperai_setup_prw_mg_anticipatory.txt",
 }
 
 local function launch(key, subcmd_args)
@@ -111,6 +121,13 @@ local ST = {
   prw_sam_state   = "idle", prw_sam_msg   = "", prw_sam_pct   = 0.0,
   prw_mir_state   = "idle", prw_mir_msg   = "", prw_mir_pct   = 0.0,
   prw_yt3_state   = "idle", prw_yt3_msg   = "", prw_yt3_pct   = 0.0,
+  -- MidiGenerator
+  prw_mg_amadeus_state      = "idle", prw_mg_amadeus_msg      = "", prw_mg_amadeus_pct      = 0.0,
+  prw_mg_midi_llm_state     = "idle", prw_mg_midi_llm_msg     = "", prw_mg_midi_llm_pct     = 0.0,
+  prw_mg_text2midi_state    = "idle", prw_mg_text2midi_msg    = "", prw_mg_text2midi_pct    = 0.0,
+  prw_mg_chatmusician_state = "idle", prw_mg_chatmusician_msg = "", prw_mg_chatmusician_pct = 0.0,
+  prw_mg_musecoco_state     = "idle", prw_mg_musecoco_msg     = "", prw_mg_musecoco_pct     = 0.0,
+  prw_mg_anticipatory_state = "idle", prw_mg_anticipatory_msg = "", prw_mg_anticipatory_pct = 0.0,
 }
 
 -- ── POLLING ──────────────────────────────────────────────────────
@@ -250,6 +267,15 @@ local function loop()
   poll_prewarm("prw_sam_state", "prw_sam_msg", "prw_sam_pct", "prewarm_sam")
   poll_prewarm("prw_mir_state", "prw_mir_msg", "prw_mir_pct", "prewarm_mir")
   poll_prewarm("prw_yt3_state", "prw_yt3_msg", "prw_yt3_pct", "prewarm_yt3")
+  -- MidiGenerator prewarms
+  if HAS_MG then
+    poll_prewarm("prw_mg_amadeus_state",      "prw_mg_amadeus_msg",      "prw_mg_amadeus_pct",      "prw_mg_amadeus")
+    poll_prewarm("prw_mg_midi_llm_state",     "prw_mg_midi_llm_msg",     "prw_mg_midi_llm_pct",     "prw_mg_midi_llm")
+    poll_prewarm("prw_mg_text2midi_state",    "prw_mg_text2midi_msg",    "prw_mg_text2midi_pct",    "prw_mg_text2midi")
+    poll_prewarm("prw_mg_chatmusician_state", "prw_mg_chatmusician_msg", "prw_mg_chatmusician_pct", "prw_mg_chatmusician")
+    poll_prewarm("prw_mg_musecoco_state",     "prw_mg_musecoco_msg",     "prw_mg_musecoco_pct",     "prw_mg_musecoco")
+    poll_prewarm("prw_mg_anticipatory_state", "prw_mg_anticipatory_msg", "prw_mg_anticipatory_pct", "prw_mg_anticipatory")
+  end
 
   -- Recheck after action finishes
   local function maybe_recheck(key)
@@ -491,6 +517,60 @@ local function loop()
       g.text_colored("OK  YourMT3+ cacheado en Modal Volume", "GREEN")
     elseif ST.prw_yt3_state == "error" then
       g.text_colored("Error YourMT3+: " .. ST.prw_yt3_msg:sub(1,48), "RED")
+    end
+  end
+
+  -- ── SECCIÓN: MIDI GENERATOR ────────────────────────────────────
+  if HAS_MG then
+    g.spacing(); g.separator(); g.spacing()
+    g.push_font(t.F.H1)
+    g.text("MidiGenerator")
+    g.pop_font()
+    g.spacing()
+    g.text_colored("[OK]", "GREEN")
+    g.same_line(6)
+    g.text("Sin dependencias locales — pesos en Modal Volumes")
+    g.spacing()
+    g.text("Pre-cargar pesos en Modal (opcional — primera vez puede tardar 10-20 min)")
+    g.text_disabled("Recomendado: Amadeus + MIDI-LLM + Anticipatory. MuseCoco = ~16 GB.")
+    g.spacing()
+
+    local MG_PREWARM = {
+      { key="amadeus",      label="Descargar Amadeus (~2.5 GB)",      cost="A10G",  state="prw_mg_amadeus_state",      msg="prw_mg_amadeus_msg",      pct="prw_mg_amadeus_pct",      subcmd="prewarm-midigen-amadeus" },
+      { key="midi_llm",     label="Descargar MIDI-LLM (~3.5 GB)",     cost="A10G",  state="prw_mg_midi_llm_state",     msg="prw_mg_midi_llm_msg",     pct="prw_mg_midi_llm_pct",     subcmd="prewarm-midigen-midi-llm" },
+      { key="text2midi",    label="Descargar text2midi (~900 MB)",     cost="A10G",  state="prw_mg_text2midi_state",    msg="prw_mg_text2midi_msg",    pct="prw_mg_text2midi_pct",    subcmd="prewarm-midigen-text2midi" },
+      { key="chatmusician", label="Descargar ChatMusician (~13 GB)",   cost="A10G",  state="prw_mg_chatmusician_state", msg="prw_mg_chatmusician_msg", pct="prw_mg_chatmusician_pct", subcmd="prewarm-midigen-chatmusician" },
+      { key="musecoco",     label="Descargar MuseCoco (~16 GB)",       cost="A100",  state="prw_mg_musecoco_state",     msg="prw_mg_musecoco_msg",     pct="prw_mg_musecoco_pct",     subcmd="prewarm-midigen-musecoco" },
+      { key="anticipatory", label="Descargar Anticipatory (~1.6 GB)",  cost="A10G",  state="prw_mg_anticipatory_state", msg="prw_mg_anticipatory_msg", pct="prw_mg_anticipatory_pct", subcmd="prewarm-midigen-anticipatory" },
+    }
+
+    for _, m in ipairs(MG_PREWARM) do
+      local pf_key = m.state:gsub("_state$", ""):gsub("prw_", "prw_")
+      g.begin_disabled(ST[m.state] == "running")
+      g.next_width(-1)
+      if g.button(m.label .. "  [" .. m.cost .. "]") then
+        ST[m.state] = "running"; ST[m.msg] = ""; ST[m.pct] = 0
+        -- launch usando la PF key correcta
+        local pf_map_key = m.state:gsub("_state$","")
+        local f = io.open(PF[pf_map_key], "w")
+        if f then f:write("running|0.00|Iniciando..."); f:close() end
+        local log = TMPDIR .. "reaperai_setup.log"
+        local cmd = string.format('%s %s %s --progress %s >>%s 2>&1 &',
+          q(PYTHON), q(HELPER), m.subcmd, q(PF[pf_map_key]), q(log))
+        os.execute(cmd)
+      end
+      g.end_disabled()
+      if ST[m.state] == "running" then
+        g.progress_bar(ST[m.pct], nil, t.sc(12),
+          string.format("%d%%", math.floor(ST[m.pct] * 100)))
+        if ST[m.msg] ~= "" then
+          g.text_colored(ST[m.msg]:sub(1,68), "YELLOW")
+        end
+      elseif ST[m.state] == "done" then
+        g.same_line(6); g.text_colored("OK  cacheado", "GREEN")
+      elseif ST[m.state] == "error" then
+        g.text_colored("Error: " .. ST[m.msg]:sub(1,60), "RED")
+      end
     end
   end
 
