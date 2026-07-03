@@ -168,6 +168,9 @@ def _build_cmd(
             cmd += ["--force"]
         if model == "midi_llm" and args.gpu:
             cmd += ["--gpu", args.gpu]
+        # AMT (anticipatory) también acepta --gpu
+        if model == "anticipatory" and args.gpu:
+            cmd += ["--gpu", args.gpu]
         # ChatMusician: seed opcional para armonización
         if model == "chatmusician" and args.seed_file and Path(args.seed_file).exists():
             cmd += ["--input-file", args.seed_file]

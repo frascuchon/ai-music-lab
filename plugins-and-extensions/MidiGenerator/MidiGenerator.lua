@@ -44,10 +44,10 @@ end
 -- MuseCoco usa nombre diferente en disco
 MG_SCRIPTS["musecoco"] = SCRIPT_DIR .. "research/research_musecoco_modal.py"
 
-local MG_GPUS        = { "A10G", "A100", "T4", "L4" }
+local MG_GPUS        = { "A10G", "A100-40GB", "T4", "L4" }
 local MG_GPU_DEFAULT = {
   amadeus="A10G", midi_llm="A10G", text2midi="A10G",
-  chatmusician="A10G", musecoco="A100", anticipatory="A10G",
+  chatmusician="A10G", musecoco="A100-40GB", anticipatory="A10G",
 }
 -- Modelos donde GPU es pasada al script (los demás la ignoran)
 local MG_GPU_RELEVANT = { midi_llm=true, anticipatory=true }
