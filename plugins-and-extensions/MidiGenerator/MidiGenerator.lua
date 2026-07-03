@@ -338,29 +338,24 @@ local function _import_one(mid_path, folder_name)
     end
   end
 
-  -- Estructura de carpeta
-  if delta == 1 then
-    local tr = reaper.GetTrack(0, tcnt_before)
-    reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", folder_name, true)
-    add_log("Importado: " .. folder_name)
-  else
-    reaper.InsertTrackAtIndex(tcnt_before, true)
-    local folder_tr = reaper.GetTrack(0, tcnt_before)
-    reaper.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", folder_name, true)
-    reaper.SetMediaTrackInfo_Value(folder_tr, "I_FOLDERDEPTH", 1)
-    for i = 1, delta do
-      local tr = reaper.GetTrack(0, tcnt_before + i)
-      if tr then
-        local _, existing = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
-        if existing == "" then
-          reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", folder_name .. " " .. i, true)
-        end
+  -- Siempre crear estructura de carpeta (independientemente de cuántas pistas)
+  reaper.InsertTrackAtIndex(tcnt_before, true)
+  local folder_tr = reaper.GetTrack(0, tcnt_before)
+  reaper.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", folder_name, true)
+  reaper.SetMediaTrackInfo_Value(folder_tr, "I_FOLDERDEPTH", 1)
+  for i = 1, delta do
+    local tr = reaper.GetTrack(0, tcnt_before + i)
+    if tr then
+      local _, existing = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
+      if existing == "" then
+        reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", folder_name .. " " .. i, true)
       end
     end
-    local last_tr = reaper.GetTrack(0, tcnt_before + delta)
-    if last_tr then reaper.SetMediaTrackInfo_Value(last_tr, "I_FOLDERDEPTH", -1) end
-    add_log(string.format("Importado en carpeta '%s' (%d pistas)", folder_name, delta))
   end
+  local last_tr = reaper.GetTrack(0, tcnt_before + delta)
+  if last_tr then reaper.SetMediaTrackInfo_Value(last_tr, "I_FOLDERDEPTH", -1) end
+  add_log(string.format("Importado en carpeta '%s' (%d pista%s)",
+    folder_name, delta, delta == 1 and "" or "s"))
 end
 
 function import_midi_all()
