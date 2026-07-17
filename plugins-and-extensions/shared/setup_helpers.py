@@ -386,7 +386,7 @@ def cmd_prewarm_miros(args) -> None:
     write(pf, "running", 0.05,
           "Downloading MIROS weights to Modal Volume (may take 10-15 min)...")
     _stream(pf,
-            [str(uv), "run", "--project", str(PLUGINS_DIR / "Audio2Midi" / "research"),
+            [str(uv), "run", "--project", str(SCRIPT_DIR),
              "modal", "run", f"{script}::setup"],
             done_msg="MIROS weights downloaded and cached in Modal Volume")
 
@@ -408,7 +408,7 @@ def cmd_prewarm_yourmt3(args) -> None:
     write(pf, "running", 0.05,
           "Downloading YourMT3+ weights to Modal Volume (may take 5-10 min)...")
     _stream(pf,
-            [str(uv), "run", "--project", str(PLUGINS_DIR / "Audio2Midi" / "research"),
+            [str(uv), "run", "--project", str(SCRIPT_DIR),
              "modal", "run", f"{script}::setup"],
             done_msg="YourMT3+ weights downloaded and cached in Modal Volume")
 
@@ -446,7 +446,7 @@ def _prewarm_midigen_model(model_name: str, pf) -> None:
     msg = f"Downloading {model_name} weights to Modal Volume..."
     write(pf, "running", 0.05, msg)
     _stream(pf,
-            [str(uv), "run", "--project", str(_MG_RESEARCH),
+            [str(uv), "run", "--project", str(SCRIPT_DIR),
              "modal", "run", f"{script}::{entrypoint}"],
             done_msg=f"{model_name} weights cached in Modal Volume")
 

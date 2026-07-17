@@ -58,6 +58,8 @@ Requirements: Python 3.11+, uv, Modal account (free tier sufficient)]]></descrip
         <changelog><![CDATA[Initial release — MIROS beat-tracking + YourMT3+ multi-instrument]]></changelog>
         <source file="Audio2Midi/Audio2Midi.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/Audio2Midi.lua</source>
         <source file="Audio2Midi/transcribe.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/transcribe.py</source>
+        <source file="Audio2Midi/research/research_miros_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/research/research_miros_modal.py</source>
+        <source file="Audio2Midi/research/research_yourmt3_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/research/research_yourmt3_modal.py</source>
         <dependency name="reaper-ai-plugins-shared" type="script"/>
       </version>
     </reapack>
@@ -86,6 +88,12 @@ Requirements: Python 3.11+, uv, Modal account]]></description>
         <source file="MidiGenerator/MidiGenerator.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/MidiGenerator.lua</source>
         <source file="MidiGenerator/midigen.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/midigen.py</source>
         <source file="MidiGenerator/prompt_adapters.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/prompt_adapters.py</source>
+        <source file="MidiGenerator/research/research_amadeus_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_amadeus_modal.py</source>
+        <source file="MidiGenerator/research/research_midi_llm_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_midi_llm_modal.py</source>
+        <source file="MidiGenerator/research/research_text2midi_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_text2midi_modal.py</source>
+        <source file="MidiGenerator/research/research_chatmusician_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_chatmusician_modal.py</source>
+        <source file="MidiGenerator/research/research_musecoco_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_musecoco_modal.py</source>
+        <source file="MidiGenerator/research/research_anticipatory_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_anticipatory_modal.py</source>
         <dependency name="reaper-ai-plugins-shared" type="script"/>
       </version>
     </reapack>
