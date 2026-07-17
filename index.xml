@@ -29,8 +29,8 @@ This package is installed automatically as a dependency when you install any of 
   · Setup wizard (Setup.lua) with uv + Modal configuration
   · Python dependency manifest (pyproject.toml)]]></description>
       </metadata>
-      <version name="1.0.0" author="AI Music Lab" time="2026-07-03T00:00:00Z">
-        <changelog><![CDATA[Initial release]]></changelog>
+      <version name="1.0.1" author="AI Music Lab" time="2026-07-17T00:00:00Z">
+        <changelog><![CDATA[Fix prewarm commands to use shared/ project instead of research/ subdirectories]]></changelog>
         <source file="shared/Setup.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/Setup.lua</source>
         <source file="shared/setup_helpers.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/setup_helpers.py</source>
         <source file="shared/pyproject.toml">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/pyproject.toml</source>
@@ -54,8 +54,8 @@ Native gfx UI: no external REAPER extension dependencies.
 Requirements: Python 3.11+, uv, Modal account (free tier sufficient)]]></description>
         <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
-      <version name="1.0.0" author="AI Music Lab" time="2026-07-03T00:00:00Z">
-        <changelog><![CDATA[Initial release — MIROS beat-tracking + YourMT3+ multi-instrument]]></changelog>
+      <version name="1.0.1" author="AI Music Lab" time="2026-07-17T00:00:00Z">
+        <changelog><![CDATA[Add missing Modal scripts (research_miros_modal.py, research_yourmt3_modal.py) required for transcription and preload]]></changelog>
         <source file="Audio2Midi/Audio2Midi.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/Audio2Midi.lua</source>
         <source file="Audio2Midi/transcribe.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/transcribe.py</source>
         <source file="Audio2Midi/research/research_miros_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/research/research_miros_modal.py</source>
@@ -83,8 +83,8 @@ Native gfx UI; no REAPER extension dependencies.
 Requirements: Python 3.11+, uv, Modal account]]></description>
         <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
-      <version name="1.0.0" author="AI Music Lab" time="2026-07-03T00:00:00Z">
-        <changelog><![CDATA[Initial release — 6 evaluated MIDI generation models]]></changelog>
+      <version name="1.0.1" author="AI Music Lab" time="2026-07-17T00:00:00Z">
+        <changelog><![CDATA[Add missing Modal scripts for all 6 models (required for generation and preload)]]></changelog>
         <source file="MidiGenerator/MidiGenerator.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/MidiGenerator.lua</source>
         <source file="MidiGenerator/midigen.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/midigen.py</source>
         <source file="MidiGenerator/prompt_adapters.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/prompt_adapters.py</source>
