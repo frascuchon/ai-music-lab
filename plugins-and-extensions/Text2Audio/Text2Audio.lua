@@ -1,4 +1,4 @@
--- @description AI Music Lab - Text2Audio — AI audio generation and editing
+-- @description AI Music Lab - Text2Audio - AI audio generation and editing
 -- @version 1.1
 -- @author AI Music Lab
 -- @about Generates audio from text or edits an existing audio using cloud AI

@@ -1,4 +1,4 @@
--- @description AI Music Lab - MidiGenerator — AI MIDI generation
+-- @description AI Music Lab - MidiGenerator - AI MIDI generation
 -- @version 1.0
 -- @author AI Music Lab
 -- @about Generates MIDI from text or seed MIDI using 6 cloud-evaluated models

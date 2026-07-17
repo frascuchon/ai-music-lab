@@ -1,4 +1,4 @@
--- @description AI Music Lab - Stem Separator — Demucs + SAM Audio
+-- @description AI Music Lab - Stem Separator - Demucs + SAM Audio
 -- @version 3.0
 -- @author AI Music Lab
 -- @about Stem separation with Demucs (local) and SAM Audio (Modal cloud).

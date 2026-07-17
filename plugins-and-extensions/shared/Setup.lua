@@ -1,4 +1,4 @@
--- @description AI Music Lab - Setup — Global configuration
+-- @description AI Music Lab - Setup - Global configuration
 -- @version 1.0
 -- @author AI Music Lab
 -- @about Global configuration wizard for all REAPER AI plugins.

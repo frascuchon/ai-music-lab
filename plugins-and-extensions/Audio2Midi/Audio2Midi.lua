@@ -1,4 +1,4 @@
--- @description AI Music Lab - Audio2Midi — Audio to MIDI transcription
+-- @description AI Music Lab - Audio2Midi - Audio to MIDI transcription
 -- @version 1.0
 -- @author AI Music Lab
 -- @about Transcribes a track, item or audio section to MIDI using cloud AI
