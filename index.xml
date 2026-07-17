@@ -45,11 +45,11 @@ This package is installed automatically as a dependency when you install any of 
     <reapack name="Audio2Midi" type="script"
              desc="Audio to MIDI transcription with AI (MIROS, YourMT3+)">
       <metadata>
-        <description><![CDATA[Transcribe un track, item o sección de audio a MIDI usando modelos de IA en la nube (Modal). Soporta MIROS y YourMT3+.
+        <description><![CDATA[Transcribes a track, item or audio section to MIDI using cloud AI models (Modal). Supports MIROS and YourMT3+.
 
-Input: pista, item o split (sección) seleccionado en REAPER.
-Output: una pista MIDI nueva (mono-instrumento) o carpeta de pistas (multi-instrumento), insertadas en la posición del audio fuente.
-UI nativa gfx: sin dependencias externas de extensiones REAPER.
+Input: selected REAPER track, item or split (section).
+Output: a new MIDI track (mono-instrument) or a folder of tracks (multi-instrument), inserted at the source audio position.
+Native gfx UI: no external REAPER extension dependencies.
 
 Requirements: Python 3.11+, uv, Modal account (free tier sufficient)]]></description>
         <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
@@ -66,17 +66,17 @@ Requirements: Python 3.11+, uv, Modal account (free tier sufficient)]]></descrip
     <reapack name="MidiGenerator" type="script"
              desc="MIDI generation from text or seed MIDI with AI (6 models)">
       <metadata>
-        <description><![CDATA[Genera MIDI desde texto o seed MIDI usando 6 modelos evaluados en la nube (Modal CUDA).
+        <description><![CDATA[Generates MIDI from text or seed MIDI using 6 cloud-evaluated models (Modal CUDA).
 
-Modelos disponibles:
-  · Amadeus — mejor instrumentación general
-  · text2midi — generación desde descripción de texto
-  · MIDI-LLM — LLM especializado en MIDI
-  · ChatMusician — notación ABC vía LLM
-  · MuseCoco — control simbólico de atributos
-  · Anticipatory MT — acompañamiento y continuación desde seed
+Available models:
+  · Amadeus — best overall instrumentation
+  · text2midi — generation from text description
+  · MIDI-LLM — MIDI-specialised LLM
+  · ChatMusician — ABC notation via LLM
+  · MuseCoco — symbolic attribute control
+  · Anticipatory MT — accompaniment and continuation from seed
 
-UI nativa gfx; sin dependencias de extensiones REAPER.
+Native gfx UI; no REAPER extension dependencies.
 
 Requirements: Python 3.11+, uv, Modal account]]></description>
         <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
@@ -94,19 +94,19 @@ Requirements: Python 3.11+, uv, Modal account]]></description>
     <reapack name="Text2Audio" type="script"
              desc="Text to audio generation and audio editing with AI (8+ models)">
       <metadata>
-        <description><![CDATA[Genera audio desde texto o edita un audio existente usando modelos de IA en la nube (Modal). Dos modos:
+        <description><![CDATA[Generates audio from text or edits an existing audio using cloud AI models (Modal). Two modes:
 
-Generar (texto → WAV estéreo):
+Generate (text → stereo WAV):
   · SAO 1.0 (top CLAP score), Foundation-1, ACE-Step 1.5
   · InspireMusic, Mustango, AudioGen, MusicGen, MAGNeT
 
-Editar (audio + intención → WAV transformado):
+Edit (audio + intent → transformed WAV):
   · SAO style transfer, ACE-Step 1.5, MusicGen-melody
   · MelodyFlow, ZETA/AudioLDM2, InspireMusic continuation
 
-Input edición: pista, item o split (sección) seleccionado en REAPER.
-Output: pista de audio nueva con el WAV generado.
-UI nativa gfx: sin dependencias externas.
+Edit input: selected REAPER track, item or split (section).
+Output: new audio track with the generated WAV, at the source position.
+Native gfx UI: no external REAPER extension dependencies.
 
 Requirements: Python 3.11+, uv, Modal account]]></description>
         <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
@@ -123,15 +123,15 @@ Requirements: Python 3.11+, uv, Modal account]]></description>
     <reapack name="StemsSeparator" type="script"
              desc="Stem separation with Demucs (local) and SAM Audio (cloud)">
       <metadata>
-        <description><![CDATA[Separación de stems con Demucs (local) y SAM Audio (Modal cloud).
+        <description><![CDATA[Stem separation with Demucs (local) and SAM Audio (Modal cloud).
 
-Modos:
-  · Demucs — separación local en CPU/GPU (vocals, bass, drums, other)
-  · SAM Audio — separación en la nube con modelos avanzados (Modal)
+Modes:
+  · Demucs — local separation on CPU/GPU (vocals, bass, drums, other)
+  · SAM Audio — cloud separation with advanced models (Modal)
 
-Input: pista, item o split (sección) seleccionada en REAPER.
-Output: pistas de audio separadas insertadas en el proyecto.
-UI nativa gfx: sin dependencias externas de extensiones REAPER.
+Input: selected REAPER track, item or split (section).
+Output: separated audio tracks inserted into the project.
+Native gfx UI: no external REAPER extension dependencies.
 
 Requirements: Python 3.11+, uv
 For SAM Audio mode: Modal account]]></description>
