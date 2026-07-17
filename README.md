@@ -41,7 +41,7 @@ If you don't have ReaPack yet:
 2. Click **Import a repository**
 3. Paste the URL:
    ```
-   https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/index.xml
+   https://github.com/frascuchon/ai-music-lab/raw/main/index.xml
    ```
 4. Click **OK** and confirm. ReaPack will fetch the package list.
 
