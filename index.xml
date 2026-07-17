@@ -29,8 +29,8 @@ This package is installed automatically as a dependency when you install any of 
   · Setup wizard (ai-music-lab-Setup.lua) with uv + Modal configuration
   · Python dependency manifest (pyproject.toml)]]></description>
       </metadata>
-      <version name="1.0.1" author="AI Music Lab" time="2026-07-17T00:00:00Z">
-        <changelog><![CDATA[Fix prewarm commands to use shared/ project instead of research/ subdirectories]]></changelog>
+      <version name="1.0.2" author="AI Music Lab" time="2026-07-17T00:00:00Z">
+        <changelog><![CDATA[Rename entry point to ai-music-lab-Setup.lua for action list grouping]]></changelog>
         <source file="shared/ai-music-lab-Setup.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/ai-music-lab-Setup.lua</source>
         <source file="shared/setup_helpers.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/setup_helpers.py</source>
         <source file="shared/pyproject.toml">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/pyproject.toml</source>
@@ -54,8 +54,8 @@ Native gfx UI: no external REAPER extension dependencies.
 Requirements: Python 3.11+, uv, Modal account (free tier sufficient)]]></description>
         <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
-      <version name="1.0.1" author="AI Music Lab" time="2026-07-17T00:00:00Z">
-        <changelog><![CDATA[Add missing Modal scripts (research_miros_modal.py, research_yourmt3_modal.py) required for transcription and preload]]></changelog>
+      <version name="1.0.2" author="AI Music Lab" time="2026-07-17T00:00:00Z">
+        <changelog><![CDATA[Rename entry point to ai-music-lab-Audio2Midi.lua for action list grouping]]></changelog>
         <source file="Audio2Midi/ai-music-lab-Audio2Midi.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/ai-music-lab-Audio2Midi.lua</source>
         <source file="Audio2Midi/transcribe.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/transcribe.py</source>
         <source file="Audio2Midi/research/research_miros_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/research/research_miros_modal.py</source>
@@ -83,8 +83,8 @@ Native gfx UI; no REAPER extension dependencies.
 Requirements: Python 3.11+, uv, Modal account]]></description>
         <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
-      <version name="1.0.1" author="AI Music Lab" time="2026-07-17T00:00:00Z">
-        <changelog><![CDATA[Add missing Modal scripts for all 6 models (required for generation and preload)]]></changelog>
+      <version name="1.0.2" author="AI Music Lab" time="2026-07-17T00:00:00Z">
+        <changelog><![CDATA[Rename entry point to ai-music-lab-MidiGenerator.lua for action list grouping]]></changelog>
         <source file="MidiGenerator/ai-music-lab-MidiGenerator.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/ai-music-lab-MidiGenerator.lua</source>
         <source file="MidiGenerator/midigen.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/midigen.py</source>
         <source file="MidiGenerator/prompt_adapters.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/prompt_adapters.py</source>
@@ -119,8 +119,8 @@ Native gfx UI: no external REAPER extension dependencies.
 Requirements: Python 3.11+, uv, Modal account]]></description>
         <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
-      <version name="1.1.0" author="AI Music Lab" time="2026-07-03T00:00:00Z">
-        <changelog><![CDATA[Generate and Edit modes with 8+ models; native gfx UI]]></changelog>
+      <version name="1.1.1" author="AI Music Lab" time="2026-07-17T00:00:00Z">
+        <changelog><![CDATA[Rename entry point to ai-music-lab-Text2Audio.lua for action list grouping]]></changelog>
         <source file="Text2Audio/ai-music-lab-Text2Audio.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/ai-music-lab-Text2Audio.lua</source>
         <source file="Text2Audio/text2audio.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/text2audio.py</source>
         <dependency name="reaper-ai-plugins-shared" type="script"/>
@@ -145,8 +145,8 @@ Requirements: Python 3.11+, uv
 For SAM Audio mode: Modal account]]></description>
         <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
-      <version name="3.0.0" author="AI Music Lab" time="2026-07-03T00:00:00Z">
-        <changelog><![CDATA[Native gfx UI — no external extension dependencies; Demucs local + SAM Audio cloud]]></changelog>
+      <version name="3.0.1" author="AI Music Lab" time="2026-07-17T00:00:00Z">
+        <changelog><![CDATA[Rename entry point to ai-music-lab-StemSeparator.lua for action list grouping]]></changelog>
         <source file="StemsSeparator/ai-music-lab-StemSeparator.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/ai-music-lab-StemSeparator.lua</source>
         <source file="StemsSeparator/separate_demucs.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/separate_demucs.py</source>
         <source file="StemsSeparator/separate_sam.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/separate_sam.py</source>
