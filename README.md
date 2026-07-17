@@ -119,10 +119,10 @@ Each plugin appears in the REAPER action list after installation. Search for `AI
 
 | Action name | Plugin |
 |---|---|
-| `AI Music Lab - Audio2Midi - Audio to MIDI transcription` | Transcribe selected audio item to MIDI |
-| `AI Music Lab - MidiGenerator - AI MIDI generation` | Generate MIDI from prompt or seed |
-| `AI Music Lab - Text2Audio - AI audio generation and editing` | Generate or edit audio from text |
-| `AI Music Lab - Stem Separator - Demucs + SAM Audio` | Separate selected audio into stems |
+| `ai-music-lab-Audio2Midi` | Transcribe selected audio item to MIDI |
+| `ai-music-lab-MidiGenerator` | Generate MIDI from prompt or seed |
+| `ai-music-lab-Text2Audio` | Generate or edit audio from text |
+| `ai-music-lab-StemSeparator` | Separate selected audio into stems |
 
 Select an audio or MIDI item in REAPER, open the plugin from the action list, configure the options, and click the generate button. Progress is shown live in the plugin's log panel. Results are imported back into REAPER automatically.
 
