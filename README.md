@@ -67,7 +67,7 @@ After installing, run the **Setup wizard** once to configure the environment.
 
 ### Open Setup
 
-- **Actions → Show action list** → search for `AI Music Lab - Setup - Global configuration` → **Run**
+- **Actions → Show action list** → search for `ai-music setup` → **Run**
 
 Or navigate to:
 ```
