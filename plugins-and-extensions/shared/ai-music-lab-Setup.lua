@@ -37,11 +37,11 @@ local function plugin_exists(name)
   -- best-effort: check if any file exists in the dir
   local test = io.open(PLUGINS_DIR .. name .. "/README.md", "r")
   if test then test:close(); return true end
-  test = io.open(PLUGINS_DIR .. name .. "/StemSeparator.lua", "r")
+  test = io.open(PLUGINS_DIR .. name .. "/ai-music-lab-StemSeparator.lua", "r")
   if test then test:close(); return true end
-  test = io.open(PLUGINS_DIR .. name .. "/Audio2Midi.lua", "r")
+  test = io.open(PLUGINS_DIR .. name .. "/ai-music-lab-Audio2Midi.lua", "r")
   if test then test:close(); return true end
-  test = io.open(PLUGINS_DIR .. name .. "/MidiGenerator.lua", "r")
+  test = io.open(PLUGINS_DIR .. name .. "/ai-music-lab-MidiGenerator.lua", "r")
   if test then test:close(); return true end
   return false
 end

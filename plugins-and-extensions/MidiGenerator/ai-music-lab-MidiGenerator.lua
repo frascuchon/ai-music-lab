@@ -727,7 +727,7 @@ local function loop()
   poll_setup_check()
   if setup_checked and #setup_missing > 0 then
     g.text_wrapped("⚠  Incomplete setup: " .. table.concat(setup_missing, " · "))
-    g.text_disabled("Load shared/Setup.lua in Actions > Load ReaScript.")
+    g.text_disabled("Load shared/ai-music-lab-Setup.lua in Actions > Load ReaScript.")
     g.spacing()
   end
 

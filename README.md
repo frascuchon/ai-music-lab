@@ -67,11 +67,11 @@ After installing, run the **Setup wizard** once to configure the environment.
 
 ### Open Setup
 
-- **Actions → Show action list** → search for `AI Music Lab - Setup` → **Run**
+- **Actions → Show action list** → search for `AI Music Lab - Setup - Global configuration` → **Run**
 
 Or navigate to:
 ```
-~/Library/Application Support/REAPER/Scripts/ai-music-lab/shared/Setup.lua
+~/Library/Application Support/REAPER/Scripts/ai-music-lab/shared/ai-music-lab-Setup.lua
 ```
 and run it from the ReaScript editor.
 
@@ -115,14 +115,14 @@ The Setup wizard's **Python (REAPER)** check will confirm the path is correct an
 
 ## Usage
 
-Each plugin appears in the REAPER action list after installation:
+Each plugin appears in the REAPER action list after installation. Search for `AI Music Lab` to find them all:
 
 | Action name | Plugin |
 |---|---|
-| `AI Music Lab - Audio2Midi` | Transcribe selected audio item to MIDI |
-| `AI Music Lab - MidiGenerator` | Generate MIDI from prompt or seed |
-| `AI Music Lab - Text2Audio` | Generate or edit audio from text |
-| `AI Music Lab - StemsSeparator` | Separate selected audio into stems |
+| `AI Music Lab - Audio2Midi - Audio to MIDI transcription` | Transcribe selected audio item to MIDI |
+| `AI Music Lab - MidiGenerator - AI MIDI generation` | Generate MIDI from prompt or seed |
+| `AI Music Lab - Text2Audio - AI audio generation and editing` | Generate or edit audio from text |
+| `AI Music Lab - Stem Separator - Demucs + SAM Audio` | Separate selected audio into stems |
 
 Select an audio or MIDI item in REAPER, open the plugin from the action list, configure the options, and click the generate button. Progress is shown live in the plugin's log panel. Results are imported back into REAPER automatically.
 
@@ -161,25 +161,25 @@ All cloud inference costs are billed to your Modal account. Typical costs:
 ├── index.xml                       ReaPack package index
 └── plugins-and-extensions/
     ├── Audio2Midi/
-    │   ├── Audio2Midi.lua          Main plugin UI
-    │   ├── transcribe.py           Python backend
-    │   └── research/               Modal inference scripts
+    │   ├── ai-music-lab-Audio2Midi.lua   Main plugin UI
+    │   ├── transcribe.py                 Python backend
+    │   └── research/                     Modal inference scripts
     ├── MidiGenerator/
-    │   ├── MidiGenerator.lua
+    │   ├── ai-music-lab-MidiGenerator.lua
     │   ├── midigen.py
     │   ├── prompt_adapters.py
     │   └── research/
     ├── Text2Audio/
-    │   ├── Text2Audio.lua
+    │   ├── ai-music-lab-Text2Audio.lua
     │   ├── text2audio.py
     │   └── research/
     ├── StemsSeparator/
-    │   ├── StemSeparator.lua
-    │   ├── separate_demucs.py      Local Demucs backend
-    │   ├── separate_sam.py         SAM Audio (Modal) backend
-    │   └── modal_sam_audio.py      Modal inference app
+    │   ├── ai-music-lab-StemSeparator.lua
+    │   ├── separate_demucs.py            Local Demucs backend
+    │   ├── separate_sam.py               SAM Audio (Modal) backend
+    │   └── modal_sam_audio.py            Modal inference app
     └── shared/
-        ├── Setup.lua               Global setup wizard
+        ├── ai-music-lab-Setup.lua        Global setup wizard
         ├── setup_helpers.py        Setup CLI backend
         ├── pyproject.toml          uv project (modal, protobuf)
         └── lib/
