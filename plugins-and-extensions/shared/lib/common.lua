@@ -25,10 +25,17 @@ function M.detect_reaper_python()
   local parent = libpath:match("^(.*)/lib$")
               or libpath:match("^(.+)/lib[^/]*$")
               or libpath
-  local exe = parent .. "/bin/python3"
-  local tf = io.open(exe, "r")
-  if tf then tf:close(); return exe, nil end
-  return "python3", "Not found: " .. exe
+  -- If the configured path points inside lib/ (e.g. lib/python3.11/config-...)
+  -- instead of at lib/ itself, walk up ancestors looking for bin/python3.
+  for _ = 1, 4 do
+    local exe = parent .. "/bin/python3"
+    local tf = io.open(exe, "r")
+    if tf then tf:close(); return exe, nil end
+    local up = parent:match("^(.*)/[^/]+$")
+    if not up or up == parent then break end
+    parent = up
+  end
+  return "python3", "Not found: " .. libpath
 end
 
 -- Returns nil if file missing/empty/unparseable, else:

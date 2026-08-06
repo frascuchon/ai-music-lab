@@ -104,9 +104,11 @@ Click **Re-check all** at any time to refresh the status of every check.
 The plugins use the Python interpreter that REAPER itself is configured to use.
 
 1. **REAPER → Preferences → Plug-ins → ReaScript**
-2. Under **Python library path**, set the path to your Python `lib/` directory.
+2. Under **Python library path**, set the path to your Python `lib/` directory — the
+   folder itself, not a subfolder inside it (e.g. not `lib/python3.11/config-3.11-darwin`).
    - macOS with Homebrew Python 3.11: `/opt/homebrew/Cellar/python@3.11/<version>/Frameworks/Python.framework/Versions/3.11/lib`
    - macOS system Python: `/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib`
+   - macOS official python.org installer: `/Library/Frameworks/Python.framework/Versions/3.11/lib`
 3. Restart REAPER.
 
 The Setup wizard's **Python (REAPER)** check will confirm the path is correct and show the detected version.

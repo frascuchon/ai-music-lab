@@ -127,9 +127,20 @@ def _chk_python(ini_path: Path) -> tuple[str, str]:
             break
     if not libpath:
         return "missing", "pythonlibpath not found in reaper.ini"
-    exe = Path(libpath).parent / "bin" / "python3"
-    if not exe.exists():
-        return "missing", f"Python not found: {exe}"
+    # If the configured path points inside lib/ (e.g. lib/python3.11/config-...)
+    # instead of at lib/ itself, walk up ancestors looking for bin/python3.
+    parent = Path(libpath).parent
+    exe = None
+    for _ in range(4):
+        candidate = parent / "bin" / "python3"
+        if candidate.exists():
+            exe = candidate
+            break
+        if parent.parent == parent:
+            break
+        parent = parent.parent
+    if exe is None:
+        return "missing", f"Python not found: {libpath}"
     rc, out, _ = _run([str(exe), "--version"])
     return ("ok", f"{exe.name} ({out})") if rc == 0 else ("missing", str(exe))
 
