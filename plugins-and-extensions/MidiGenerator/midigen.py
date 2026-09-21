@@ -57,7 +57,12 @@ import os
 import re
 import shutil
 import sys
+from collections import deque
 from pathlib import Path
+
+# How many trailing lines of the subprocess's raw stdout to keep and surface
+# to the user on failure (see _pick_error_message / tail_lines below).
+_LOG_TAIL_LINES = 20
 
 # ---------------------------------------------------------------------------
 # Import adapters (same directory)
@@ -135,6 +140,34 @@ def _collect_outputs(out_dir: Path) -> list[Path]:
     return mids
 
 
+def _pick_error_message(
+    returncode: int, out_dir: Path,
+    last_error_line: str | None, last_warn_line: str | None,
+) -> str:
+    """Build the final error message shown to the user, preferring a
+    root-cause line captured from the subprocess's own stdout (e.g. the
+    research_*_modal.py script's own "ERROR: ..." on seed-conversion
+    failure) over the generic ones below.
+
+    - Non-zero exit: an "ERROR:" line, if seen, names the actual failure
+      (e.g. missing midi2abc); otherwise fall back to the exit-code message.
+    - Zero exit but no outputs: a "[warn]" line, if seen, usually explains
+      why the model was fed a degraded/unseeded prompt (e.g. an unrecognized
+      seed extension); appended to the generic "no outputs" message.
+    """
+    if returncode != 0:
+        if last_error_line:
+            return last_error_line
+        return f"Modal failed (code {returncode}). Check the log for details."
+
+    msg = (f"No .mid files found in {out_dir}. "
+           "The process ended without error but produced no output.")
+    cause = last_error_line or last_warn_line
+    if cause:
+        msg += f" Possible cause: {cause}"
+    return msg
+
+
 # ---------------------------------------------------------------------------
 # Build modal run command per model
 # ---------------------------------------------------------------------------
@@ -173,7 +206,13 @@ def _build_cmd(
         if model == "anticipatory" and args.gpu:
             cmd += ["--gpu", args.gpu]
         # ChatMusician: optional seed for harmonization
-        if model == "chatmusician" and args.seed_file and Path(args.seed_file).exists():
+        if model == "chatmusician" and args.seed_file:
+            if not Path(args.seed_file).exists():
+                raise FileNotFoundError(
+                    f"Seed MIDI not found: {args.seed_file!r}. "
+                    "It may have been deleted before the run started — "
+                    "re-select the MIDI item and try again."
+                )
             cmd += ["--input-file", args.seed_file]
 
     elif kind == "text_file":
@@ -352,11 +391,27 @@ def main() -> int:
         return 1
 
     # --- Parse stdout for progress -----------------------------------------
+    last_error_line: str | None = None
+    last_warn_line: str | None = None
+    # Rolling tail of raw subprocess output, written as "extra" progress
+    # lines on failure so the REAPER log panel can show real context around
+    # the failure instead of just one collapsed summary line — the single
+    # captured ERROR:/[warn] line is a best-effort guess at THE cause, but
+    # the surrounding lines (model response preview, per-candidate outcomes)
+    # often matter too when the guess is incomplete.
+    tail_lines: deque[str] = deque(maxlen=_LOG_TAIL_LINES)
     for line in iter(proc.stdout.readline, ""):
         line = line.rstrip()
         if not line:
             continue
         print(line, flush=True)
+        tail_lines.append(line)
+
+        stripped = line.strip()
+        if stripped.startswith("ERROR:"):
+            last_error_line = stripped[len("ERROR:"):].strip()
+        elif stripped.startswith("[warn]"):
+            last_warn_line = stripped[len("[warn]"):].strip()
 
         pct = 0.1
         m = re.search(r'\[(\d+)/(\d+)\]', line)
@@ -384,8 +439,9 @@ def main() -> int:
 
     if proc.returncode != 0:
         write_progress(pf, "error", 0,
-                       f"Modal failed (code {proc.returncode}). "
-                       "Check the log for details.")
+                       _pick_error_message(proc.returncode, out_dir,
+                                           last_error_line, last_warn_line),
+                       extra=list(tail_lines))
         return 1
 
     # --- Collect outputs ---------------------------------------------------
@@ -394,8 +450,9 @@ def main() -> int:
     mids = _collect_outputs(out_dir)
     if not mids:
         write_progress(pf, "error", 0,
-                       f"No .mid files found in {out_dir}. "
-                       "The process ended without error but produced no output.")
+                       _pick_error_message(proc.returncode, out_dir,
+                                           last_error_line, last_warn_line),
+                       extra=list(tail_lines))
         return 1
 
     # Count instruments on the first candidate for the status message

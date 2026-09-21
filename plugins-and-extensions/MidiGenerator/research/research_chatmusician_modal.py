@@ -117,6 +117,27 @@ image = (
 
 app = modal.App("chatmusician-inference", image=image)
 
+# ---------------------------------------------------------------------------
+# Prompt adapter — small, SELF-HOSTED LLM that rewrites the user's free-text
+# prompt into ChatMusician's validated harmonization-instruction style
+# before a seeded request is sent to the model (see _adapt_prompt_for_seed /
+# adapt_prompt below). Runs entirely inside its own Modal container — no
+# external API, no secret to configure — sharing the same weights Volume as
+# ChatMusician for its (much smaller) model cache.
+# ---------------------------------------------------------------------------
+ADAPTER_MODEL_ID = "Qwen/Qwen2.5-1.5B-Instruct"  # Apache-2.0, ~3GB fp16, fast
+
+adapt_image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .pip_install(
+        "torch==2.4.0",
+        "transformers==4.44.2",
+        "huggingface_hub>=0.24",
+        "accelerate>=0.34",
+        extra_index_url="https://download.pytorch.org/whl/cu121",
+    )
+)
+
 
 # ---------------------------------------------------------------------------
 # Pre-descarga de pesos al Volume
@@ -139,6 +160,27 @@ def setup():
 
     weights_vol.commit()
     print("[setup] Pesos committed al Volume.")
+
+
+@app.function(
+    volumes={WEIGHTS_MOUNT: weights_vol},
+    timeout=600,
+)
+def setup_adapter():
+    """Descarga los pesos del prompt-adapter (~3 GB) al Volume persistente.
+    Opcional — sin esto, la primera llamada a adapt_prompt() descarga los
+    pesos on-demand (más lenta pero funciona igual)."""
+    from huggingface_hub import snapshot_download
+
+    os.environ["HF_HOME"] = HF_CACHE
+    os.makedirs(HF_CACHE, exist_ok=True)
+
+    print(f"[setup_adapter] Descargando {ADAPTER_MODEL_ID} (~3 GB) → {HF_CACHE} ...")
+    path = snapshot_download(ADAPTER_MODEL_ID, cache_dir=HF_CACHE)
+    print(f"[setup_adapter] Descargado en {path}")
+
+    weights_vol.commit()
+    print("[setup_adapter] Pesos committed al Volume.")
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +238,16 @@ def _abc_to_midi_bytes(abc_text: str) -> bytes:
         return midi_path.read_bytes()
 
 
+# All valid ABC 2.1 information-field letters (abcnotation.com/wiki/abc:standard:v2.1
+# section 3): A B C D F G H I K L M N O P Q R S T U V W X Z (E/J/Y are not fields).
+# The fallback below used to check only a subset (TMKLQRBCGSPFHZONU) — when a
+# harmonization response starts with one of the missing letters (seen in practice:
+# a model that echoes the seed's own "V:1" voice header, or answers with an "A:"
+# field) the whole block was invisible to both regexes and _extract_abc raised
+# "No ABC notation found" even though a usable field block followed a line later.
+_ABC_FIELD_LETTERS = "ABCDFGHIKLMNOPQRSTUVWXZ"
+
+
 def _extract_abc(response: str) -> str:
     """
     Extrae la primera sección ABC de la respuesta del modelo.
@@ -214,7 +266,7 @@ def _extract_abc(response: str) -> str:
     # 2. Fallback: bloque con headers ABC reconocidos pero sin X:
     #    Busca la primera línea con patrón "Letra: contenido" (campo ABC)
     m = re.search(
-        r"^([TMKLQRBCGSPFHZONU]:[^\n]*(?:\n[^\n]*)*)",
+        rf"^([{_ABC_FIELD_LETTERS}]:[^\n]*(?:\n[^\n]*)*)",
         response + "\n",
         re.MULTILINE,
     )
@@ -288,13 +340,18 @@ def _infer_one(model, tokenizer, instruction: str, temperature: float = 0.2) -> 
 def generate(
     prompts: list[str],
     n_outputs: int = 2,
-    temperature: float = 0.2,
+    temperature: float = 0.5,
 ) -> list[list[tuple[bytes, str]]]:
     """
     Genera n_outputs variantes para cada prompt.
 
-    temperature: 0.2 (default, verbatim model card) — subir a 0.5-0.7 para
-    prompts abstractos que producen respuestas en modo ensayo.
+    temperature: 0.5 default — NOT the bare model-card value (0.2). Our own
+    RESEARCH.md ChatMusician evaluation (harmonization/chord/form/motif
+    tests) found 0.2 too conservative for abstract/seeded prompts (model
+    answers in academic prose instead of ABC — MusicPile is full of music
+    theory text) and settled on 0.5 as the "GenerationConfig recomendado
+    (ajustado tras evaluación)". See main()'s automatic retry for the case a
+    caller explicitly passes an even lower temperature.
 
     Returns: list[prompt] → list[output] → (midi_bytes, abc_text)
     """
@@ -317,7 +374,19 @@ def generate(
                 )
             except Exception as e:
                 elapsed = time.time() - t0
-                print(f"[modal] [{i+1}/{len(prompts)}] v{v}: ERROR {e}  {elapsed:.0f}s")
+                # Collapse embedded newlines (e.g. abc2midi's stderr, or the
+                # first 500 chars of a malformed response in _extract_abc's
+                # ValueError) onto one line so the whole cause survives as a
+                # single line for the orchestrator (midigen.py) to capture
+                # and surface to the user — a bare "ERROR" keyword buried in
+                # a "[modal] ..." line used to be invisible to it, and this
+                # per-candidate failure alone didn't fail the overall run,
+                # so the only thing reaching the user was the unrelated,
+                # generic "No .mid files found" from the output-collection
+                # stage several steps later.
+                err_str = str(e).replace("\n", " | ")
+                print(f"ERROR: [{i+1}/{len(prompts)}] v{v} generation failed: "
+                      f"{err_str} ({elapsed:.0f}s)")
                 midi_bytes, abc_text = b"", ""
             prompt_results.append((midi_bytes, abc_text))
         results.append(prompt_results)
@@ -334,7 +403,7 @@ def main(
     input_file: str = "",
     out_dir: str = ".",
     n_outputs: int = 2,
-    temperature: float = 0.2,
+    temperature: float = 0.5,
     force: bool = False,
 ):
     """
@@ -369,14 +438,38 @@ def main(
         print(f"[skip] Ya existen {len(existing)} ficheros en {out_dir}. Usa --force para sobreescribir.")
         return
 
-    instruction = _build_instruction(prompt, input_file)
+    try:
+        instruction = _build_instruction(prompt, input_file)
+    except RuntimeError as e:
+        # Seed conversion failed (e.g. midi2abc missing/failing on the
+        # exported take) — fail fast with a one-line, greppable cause
+        # instead of silently running unseeded and wasting a GPU call.
+        print(f"ERROR: {e}")
+        sys.exit(1)
 
     print(f"[main] n_outputs={n_outputs}")
     print(f"[main] Instruction (primeros 200 chars): {instruction[:200]}")
 
-    results = generate.remote([instruction], n_outputs=n_outputs, temperature=temperature)
-    output_list = results[0]
+    output_list = generate.remote([instruction], n_outputs=n_outputs, temperature=temperature)[0]
 
+    # A conservative temperature occasionally makes the model answer in
+    # music-theory prose instead of ABC notation — MusicPile (its training
+    # data) is full of theory text, and RESEARCH.md's own ChatMusician
+    # evaluation documents this exact failure mode plus the fix ("subir a
+    # 0.5-0.7 mejora la tasa de éxito para prompts abstractos"; test06 only
+    # passed once raised to 0.5). Rather than surface a first failure at
+    # <=0.5 straight away, retry once at 0.7 (the documented upper end of
+    # that range — higher still tends toward the "chaotic"/noise failure
+    # mode instead) before giving up. One extra ~30-90s GPU call is cheap
+    # next to forcing the user to manually retune and rerun from REAPER.
+    if not any(midi for midi, _ in output_list) and temperature <= 0.5:
+        retry_temp = 0.7
+        print(f"[main] All {n_outputs} candidate(s) failed at temperature={temperature:.2f} — "
+              f"retrying once at temperature={retry_temp:.2f} (mid-range temperature often "
+              "rescues responses that come back as prose instead of ABC notation).")
+        output_list = generate.remote([instruction], n_outputs=n_outputs, temperature=retry_temp)[0]
+
+    n_saved = 0
     for v, (midi_bytes, abc_text) in enumerate(output_list):
         if not midi_bytes:
             print(f"[main] v{v}: sin salida (error en inferencia)")
@@ -387,8 +480,23 @@ def main(
         abc_file.write_text(abc_text, encoding="utf-8")
         print(f"[main] → {mid_file}  ({len(midi_bytes)} bytes)")
         print(f"[main] → {abc_file}  ({len(abc_text)} chars)")
+        n_saved += 1
 
-    print(f"[main] Completado — {len(output_list)} outputs en {out_dir}")
+    if n_saved == 0:
+        # Every candidate failed inside generate() (each already printed its
+        # own "ERROR: ..." line above with the actual cause — ABC extraction,
+        # abc2midi, etc.). Deliberately NOT printing a new "ERROR:" line
+        # here: midigen.py surfaces the LAST such line it saw, and the most
+        # specific per-candidate cause above is more useful to the user than
+        # a generic wrapper would be. Exiting non-zero — instead of silently
+        # returning 0 as before — is what makes midigen.py look at that
+        # captured line at all, instead of falling through to its own
+        # generic, unrelated "No .mid files found in <out_dir>" message.
+        print(f"[main] 0/{len(output_list)} candidates produced a valid MIDI "
+              "output — see the ERROR line(s) above for the per-candidate cause.")
+        sys.exit(1)
+
+    print(f"[main] Completado — {n_saved}/{len(output_list)} outputs en {out_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +602,126 @@ def eval_all(
 # ---------------------------------------------------------------------------
 # Helper local — construye la instrucción completa (prompt + condicionante)
 # ---------------------------------------------------------------------------
+# Character budget for the seed ABC block. LLaMA2 7B (ChatMusician's base) has a
+# 4096-token context and generation reserves max_new_tokens=1536 of it, leaving
+# roughly 2500 tokens for "Human: {prompt}\n{seed abc}". Our own evaluation notes
+# (evaluation/chatmusician/test12) already diagnosed a real harmonization failure
+# ("0 MIDIs ... posiblemente el input más largo excede la ventana de atención
+# efectiva") on a 16-bar seed — and panel.lua lets a user attach an entire track
+# with no length warning (unlike the Anticipatory seed, which does warn). ~2400
+# chars is a generous margin (~3-4 chars/ABC token) that keeps a full short
+# melody intact while capping pathological whole-song seeds before they push the
+# model past its effective attention window and break extraction for every output.
+_MAX_SEED_ABC_CHARS = 2400
+
+
+def _truncate_seed_abc(abc_text: str, max_chars: int = _MAX_SEED_ABC_CHARS) -> str:
+    """Cap the seed ABC block to max_chars, cutting at the last full line so the
+    result stays syntactically valid ABC (no half-written note/bar)."""
+    if len(abc_text) <= max_chars:
+        return abc_text
+    truncated = abc_text[:max_chars]
+    last_nl = truncated.rfind("\n")
+    if last_nl > 0:
+        truncated = truncated[:last_nl]
+    print(f"[build_instruction] Seed ABC truncated: {len(abc_text)} -> {len(truncated)} chars "
+          "(long seeds can exceed ChatMusician's effective attention window and "
+          "break extraction for every output — see test12 in evaluation/chatmusician)")
+    return truncated
+
+
+_SEED_BRIDGE = "Here is the musical excerpt in ABC notation:"
+
+# System prompt for the adapter: teaches it ChatMusician's known-good
+# instruction shape, verified empirically (2026-09-14) against a real Modal
+# run — the official web demo's harmonization examples (which DO work) all
+# share the same shape: imperative mood, one sentence, ending with an
+# explicit reference to the attached excerpt. A short/casual user prompt
+# like "simplify the verses" that skips that reference makes the model
+# respond with clarifying questions instead of ABC notation, regardless of
+# temperature.
+_ADAPT_SYSTEM_PROMPT = """You rewrite short, casual music-editing requests into the precise instruction style that the ChatMusician model was fine-tuned on for melody harmonization/elaboration. ChatMusician only reliably follows instructions shaped like these official, verified-working examples:
+- "Formulate chord combinations to increase the harmonic complexity of the specified musical excerpt."
+- "Design a fitting succession of chords that blend well with the provided musical score."
+- "Develop a series of chord pairings that amplify the harmonious elements in the given music piece."
+
+Rewrite the user's request so it:
+1. Preserves their actual musical intent (harmonize, simplify, add chords, change rhythm/texture, etc.) — do not silently change what they asked for.
+2. Ends with an explicit reference to the attached excerpt (e.g. "...of the following musical excerpt.").
+3. Is one sentence, imperative mood, no preamble, no explanation, no quotes.
+
+Reply with ONLY the rewritten instruction, nothing else."""
+
+
+@app.function(
+    image=adapt_image,
+    volumes={WEIGHTS_MOUNT: weights_vol},
+    timeout=300,
+    gpu="T4",
+)
+def adapt_prompt(user_prompt: str) -> str:
+    """Rewrite user_prompt into ChatMusician's validated instruction style
+    using a small, self-hosted instruction-tuned LLM (Qwen2.5-1.5B-Instruct)
+    — runs entirely inside this Modal container on a cheap T4 GPU. No
+    external API, no secret to configure; weights are cached in the same
+    Volume as ChatMusician's (see setup_adapter() to pre-warm)."""
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    os.environ["HF_HOME"] = HF_CACHE
+
+    tokenizer = AutoTokenizer.from_pretrained(ADAPTER_MODEL_ID, cache_dir=HF_CACHE)
+    model = AutoModelForCausalLM.from_pretrained(
+        ADAPTER_MODEL_ID,
+        torch_dtype=torch.float16,
+        device_map="cuda",
+        cache_dir=HF_CACHE,
+    ).eval()
+
+    messages = [
+        {"role": "system", "content": _ADAPT_SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
+    input_ids = tokenizer.apply_chat_template(
+        messages, add_generation_prompt=True, return_tensors="pt"
+    ).to(model.device)
+
+    with torch.no_grad():
+        output = model.generate(
+            input_ids,
+            max_new_tokens=100,
+            do_sample=False,  # deterministic — this is a rewrite task, not a creative one
+            pad_token_id=tokenizer.eos_token_id,
+        )
+
+    text = tokenizer.decode(
+        output[0][input_ids.shape[1]:], skip_special_tokens=True
+    ).strip()
+    # Small instruct models sometimes wrap the answer in quotes despite the
+    # system prompt saying not to — strip them rather than pass them through.
+    return text.strip("\"' ")
+
+
+def _adapt_prompt_for_seed(prompt: str) -> str:
+    """Local-side wrapper around adapt_prompt.remote() with a graceful
+    fallback: prompt adaptation is a reliability BOOSTER, not a hard
+    requirement, so any failure (adapter container error, empty reply,
+    cold-start timeout) must fall back to the user's original prompt rather
+    than break the run — a seeded generation that used to at least attempt
+    to run unassisted must keep doing so even if the adapter is unavailable.
+    """
+    try:
+        adapted = adapt_prompt.remote(prompt).strip()
+    except Exception as e:
+        print(f"[warn] Prompt adaptation skipped ({e}). Using the original prompt.")
+        return prompt
+    if not adapted:
+        print("[warn] Prompt adaptation returned empty text — using original prompt.")
+        return prompt
+    print(f"[build_instruction] Prompt adapted for ChatMusician: {adapted[:150]}")
+    return adapted
+
+
 def _build_instruction(prompt: str, input_file: str = "") -> str:
     """
     Construye la instrucción que va dentro de "Human: {instruction} </s> Assistant: ".
@@ -503,7 +731,34 @@ def _build_instruction(prompt: str, input_file: str = "") -> str:
       - .abc    → lee el ABC y lo concatena al prompt
       - .mid    → convierte MIDI→ABC (via tools.midi_abc.midi_to_abc_text) y concatena
 
-    La detección es automática por extensión del fichero.
+    La detección es automática por extensión del fichero. En ambos casos el ABC
+    resultante se trunca a _MAX_SEED_ABC_CHARS (ver _truncate_seed_abc) y se
+    antepone con _SEED_BRIDGE.
+
+    Por qué el bridge: la web demo oficial (evaluation/chatmusician/test10-12)
+    solo tiene éxito cuando el PROMPT DEL USUARIO ya termina refiriéndose
+    explícitamente al material adjunto ("...of the provided musical score",
+    "...of the specified musical excerpt"). Verificado empíricamente
+    (2026-09-14): con un prompt corto que no hace esa referencia (p.ej.
+    "simplify the verses") y el seed simplemente concatenado con un salto de
+    línea (sin bridge), el modelo no entiende que el bloque ABC es el
+    material a transformar y responde con preguntas aclaratorias ("What is
+    the last note of this music? Is there a specific key signature...")
+    en vez de generar — cero ABC en la respuesta, para cualquier prompt que
+    el usuario escriba. Insertar una frase-puente fija después del prompt
+    ata el bloque ABC a la instrucción sin depender de que el usuario
+    redacte su prompt con esa referencia explícita.
+
+    El bridge por sí solo no basta si el prompt del usuario está muy lejos
+    del estilo de instrucción con el que ChatMusician fue afinado (p.ej.
+    "simplify the verses" verificado empíricamente: sigue fallando incluso
+    con el bridge). Por eso, cuando hay seed, el prompt pasa primero por
+    _adapt_prompt_for_seed — reescribe la petición del usuario al estilo
+    validado usando un LLM pequeño self-hosted (Qwen2.5-1.5B-Instruct, ver
+    adapt_prompt) que corre dentro de su propio contenedor Modal — sin API
+    externa ni secret que configurar. Si el contenedor del adaptador falla
+    o tarda demasiado en arrancar (cold-start), se usa el prompt original
+    sin más — es un refuerzo de fiabilidad, no un requisito duro.
     """
     if not input_file:
         return prompt
@@ -523,14 +778,16 @@ def _build_instruction(prompt: str, input_file: str = "") -> str:
         sys.path.insert(0, str(Path(__file__).parent))
         from tools.midi_abc import midi_to_abc_text
         print(f"[build_instruction] Convirtiendo MIDI→ABC: {in_p.name}")
-        try:
-            abc_text = midi_to_abc_text(str(in_p)).strip()
-        except RuntimeError as e:
-            print(f"[warn] {e}\n  Falling back: usando prompt sin condicionante")
-            return prompt
+        # No silent fallback here: a seed the user explicitly picked that
+        # fails to convert (midi2abc missing/failing) must abort the run
+        # loudly, not proceed as an unseeded prompt that then fails ABC
+        # extraction 3 stages later with no clue why.
+        abc_text = midi_to_abc_text(str(in_p)).strip()
 
     else:
         print(f"[warn] Extensión no reconocida en input_file: {suffix}. Ignorando.")
         return prompt
 
-    return f"{prompt}\n{abc_text}"
+    abc_text = _truncate_seed_abc(abc_text)
+    prompt = _adapt_prompt_for_seed(prompt)
+    return f"{prompt}\n{_SEED_BRIDGE}\n{abc_text}"

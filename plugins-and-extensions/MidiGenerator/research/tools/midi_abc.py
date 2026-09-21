@@ -24,10 +24,24 @@ Uso como CLI:
 """
 
 import argparse
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# REAPER launched from Finder/Dock (i.e. not from a terminal) inherits
+# macOS's minimal launchd PATH, not the user's shell PATH — so `brew install
+# abcmidi` can leave midi2abc/abc2midi perfectly present on disk yet
+# invisible to a plain PATH lookup from inside REAPER's subprocess tree
+# (panel.lua -> midigen.py -> here). Fall back to the well-known install
+# locations before giving up.
+_COMMON_TOOL_DIRS = [
+    "/opt/homebrew/bin",  # Homebrew, Apple Silicon
+    "/usr/local/bin",     # Homebrew, Intel Mac / manual installs
+    "/opt/local/bin",     # MacPorts
+]
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +56,7 @@ def midi_to_abc_text(input_path: str) -> str:
         FileNotFoundError: si input_path no existe.
         RuntimeError: si midi2abc falla o no está en PATH.
     """
-    _check_tool("midi2abc")
+    tool = _resolve_tool("midi2abc")
     in_p = Path(input_path)
     if not in_p.exists():
         raise FileNotFoundError(f"MIDI file not found: {input_path}")
@@ -50,7 +64,12 @@ def midi_to_abc_text(input_path: str) -> str:
     with tempfile.TemporaryDirectory() as tmpdir:
         out_p = Path(tmpdir) / "score.abc"
         result = subprocess.run(
-            ["midi2abc", str(in_p), "-o", str(out_p)],
+            # -title overrides midi2abc's default "T: from <input path>" — left
+            # alone, that default embeds the full local temp-file path (e.g.
+            # /var/folders/.../midigen_seed_3.mid) as the tune's title, which
+            # burns prompt tokens on a meaningless string and hands the LLM
+            # out-of-distribution "text" in a field it expects to be a title.
+            [tool, str(in_p), "-o", str(out_p), "-title", "Seed"],
             capture_output=True, text=True,
         )
         if result.returncode != 0:
@@ -65,14 +84,14 @@ def abc_to_midi_bytes(abc_text: str) -> bytes:
     Raises:
         RuntimeError: si abc2midi falla o no está en PATH.
     """
-    _check_tool("abc2midi")
+    tool = _resolve_tool("abc2midi")
     with tempfile.TemporaryDirectory() as tmpdir:
         abc_path = Path(tmpdir) / "score.abc"
         midi_path = Path(tmpdir) / "score.mid"
         abc_path.write_text(abc_text, encoding="utf-8")
 
         result = subprocess.run(
-            ["abc2midi", str(abc_path), "-o", str(midi_path)],
+            [tool, str(abc_path), "-o", str(midi_path)],
             capture_output=True, text=True,
         )
         if result.returncode != 0:
@@ -87,14 +106,29 @@ def abc_to_midi_bytes(abc_text: str) -> bytes:
 # Helper interno
 # ---------------------------------------------------------------------------
 
-def _check_tool(name: str) -> None:
-    result = subprocess.run(["which", name], capture_output=True)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"'{name}' no encontrado en PATH.\n"
-            f"  macOS:  brew install abcmidi\n"
-            f"  Linux:  apt install abcmidi"
-        )
+def _resolve_tool(name: str) -> str:
+    """Locate an abcMIDI binary, tolerating a restricted PATH (see
+    _COMMON_TOOL_DIRS above for why). Returns the resolved absolute path.
+
+    Raises:
+        RuntimeError: not found in PATH nor in any common install location.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    for d in _COMMON_TOOL_DIRS:
+        candidate = Path(d) / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    raise RuntimeError(
+        f"'{name}' no encontrado ni en PATH ni en las ubicaciones habituales "
+        f"({', '.join(_COMMON_TOOL_DIRS)}).\n"
+        f"  macOS:  brew install abcmidi\n"
+        f"  Linux:  apt install abcmidi\n"
+        "  Si ya está instalado pero REAPER se abrió desde Finder/Dock: "
+        "REAPER no hereda el PATH de tu shell — usa la pestaña Setup de "
+        "AI Music Lab para verificar/instalar abcmidi."
+    )
 
 
 # ---------------------------------------------------------------------------
