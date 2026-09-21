@@ -227,7 +227,7 @@ def separate(
     reranking_candidates: int = 1,
     confidence_threshold: float = 0.0,
     predict_spans: bool = True,
-    internal_candidates: int = 2,
+    internal_candidates: int = 1,
 ) -> tuple[bytes, bytes]:
     """
     Run SAM-Audio separation on the remote GPU.
@@ -407,23 +407,19 @@ def separate(
         chunk_samples = total
     else:
         starts = list(range(0, total, step))
-        # Ensure coverage: if the last start + chunk_samples doesn't reach the end,
-        # add one more start so the last chunk covers the tail.
-        if starts[-1] + chunk_samples < total:
-            starts.append(total - chunk_samples)
-
-    # If the last chunk would be shorter than chunk_samples, merge it into the
-    # previous chunk by removing its start. The previous chunk
-    # will extend to `total` in the loop below (since it becomes the last).
-    if len(starts) > 1 and total - starts[-1] < chunk_samples:
-        starts.pop()
+        # Drop a degenerate final chunk shorter than the crossfade window: the
+        # previous chunk already reaches `total` once its end is clamped below,
+        # so we avoid feeding the model a tiny, poorly-conditioned slice.
+        # NOTE: every chunk is clamped to `total` (never longer than
+        # chunk_samples) — an oversized tail chunk was the DAC-VAE OOM trigger.
+        if len(starts) > 1 and total - starts[-1] < overlap_samples:
+            starts.pop()
 
     target_out = residual_out = None
     t0 = time.time()
 
     for i, start in enumerate(starts):
-        is_last = i == len(starts) - 1
-        end     = total if is_last else min(start + chunk_samples, total)
+        end   = min(start + chunk_samples, total)
         chunk = audio[..., start:end]
         print(f"  Chunk {i+1}/{len(starts)}: {start/SR:.1f}s – {end/SR:.1f}s", flush=True)
 
@@ -485,6 +481,13 @@ def separate(
             target_out   = cosine_crossfade(target_out,   t_chunk,   overlap_samples)
             residual_out = cosine_crossfade(residual_out, r_chunk,   overlap_samples)
 
+        # Drop per-chunk GPU tensors before the next iteration — the oversized
+        # DAC-VAE decoder activations are the OOM hot spot, so free eagerly.
+        batch = chunk = t_chunk = r_chunk = None
+        if use_audio_query:
+            cand_targets = cand_residuals = cand_embeds = None
+        else:
+            result = None
         torch.cuda.empty_cache()
 
     elapsed = time.time() - t0
@@ -570,7 +573,7 @@ def main(
     reranking_candidates: int = 1,
     confidence_threshold: float = 0.0,
     predict_spans: bool = True,
-    internal_candidates: int = 2,
+    internal_candidates: int = 1,
 ):
     input_path = Path(input)
     audio_bytes = input_path.read_bytes()

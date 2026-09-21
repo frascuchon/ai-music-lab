@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from collections import deque
 from pathlib import Path
 
 
@@ -71,7 +72,7 @@ def main():
                    help="Directory containing shared pyproject.toml / uv.lock "
                         "(default: --sam-dir for backward compatibility).")
     p.add_argument("--model", default="facebook/sam-audio-large")
-    p.add_argument("--gpu", default="A100")
+    p.add_argument("--gpu", default="A100-80GB")
     p.add_argument("--steps", type=int, default=64)
     p.add_argument("--ode-method", default="midpoint", dest="ode_method")
     p.add_argument("--chunk", type=float, default=15.0)
@@ -80,7 +81,7 @@ def main():
     p.add_argument("--candidates", type=int, default=1)
     p.add_argument("--predict-spans", default=True, dest="predict_spans",
                    action=argparse.BooleanOptionalAction)
-    p.add_argument("--internal-candidates", type=int, default=2,
+    p.add_argument("--internal-candidates", type=int, default=1,
                    dest="internal_candidates")
     p.add_argument("--start", type=float, default=None,
                    help="Start time within source file (seconds)")
@@ -184,11 +185,13 @@ def main():
                        f"Permission denied: '{uv_bin}' is not executable.")
         return 1
 
+    tail = deque(maxlen=40)  # last output lines, surfaced on failure
     for line in iter(proc.stdout.readline, ""):
         line = line.rstrip()
         if not line:
             continue
         print(line, flush=True)
+        tail.append(line)
         pct = 0.1
         if "Chunk" in line and "/" in line:
             try:
@@ -204,8 +207,22 @@ def main():
         shutil.rmtree(temp_dir, ignore_errors=True)
 
     if proc.returncode != 0:
-        write_progress(pf, "error", 0,
-                       f"SAM Audio failed with code {proc.returncode}")
+        tail_lines = list(tail)
+        joined = "\n".join(tail_lines)
+        is_oom = ("OutOfMemoryError" in joined
+                  or "CUDA out of memory" in joined
+                  or "OOM" in joined)
+        if is_oom:
+            msg = ("SAM Audio ran out of GPU memory. Pick a larger GPU in the "
+                   "SAM Audio tab (A100-80GB or H100) or lower Chunk s, then "
+                   "run again.")
+        else:
+            last = next((ln for ln in reversed(tail_lines) if ln.strip()), "")
+            msg = (f"SAM Audio failed (code {proc.returncode}) - see Full log. "
+                   f"Last: {last[:160]}")
+        extra = ["GPUs: A10G 24GB | A100 40GB | A100-80GB 80GB | H100 80GB",
+                 "--- last output lines ---"] + tail_lines
+        write_progress(pf, "error", 0, msg, extra)
         return 1
 
     # --- discover output files -----------------------------------------------

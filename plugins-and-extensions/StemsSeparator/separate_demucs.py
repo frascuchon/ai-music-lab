@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections import deque
 from pathlib import Path
 
 
@@ -100,11 +101,13 @@ def main():
         text=True, bufsize=1,
     )
 
+    tail = deque(maxlen=40)  # last output lines, surfaced on failure
     for line in iter(proc.stdout.readline, ""):
         line = line.rstrip()
         if not line:
             continue
         print(line, flush=True)
+        tail.append(line)
         pct = 0.5
         if "%" in line:
             try:
@@ -112,7 +115,7 @@ def main():
                 pct = 0.05 + pct * 0.85
             except (ValueError, IndexError):
                 pass
-        write_progress(pf, "running", min(pct, 0.95), line[:80])
+        write_progress(pf, "running", min(pct, 0.95), line[:200])
 
     proc.wait()
     if temp_dir:
@@ -123,9 +126,13 @@ def main():
             pass
 
     if proc.returncode != 0:
+        tail_lines = list(tail)
+        last = next((ln for ln in reversed(tail_lines) if ln.strip()), "")
         write_progress(
             pf, "error", 0,
-            f"Demucs failed with code {proc.returncode}",
+            f"Demucs failed (code {proc.returncode}) - see Full log. "
+            f"Last: {last[:160]}",
+            ["--- last output lines ---"] + tail_lines,
         )
         return 1
 

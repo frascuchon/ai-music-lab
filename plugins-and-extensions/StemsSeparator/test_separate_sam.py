@@ -254,7 +254,7 @@ class TestCommandConstruction(TestCase):
         self.assertIn("reranking-candidates 2", stdout)
         self.assertIn("chunk-dur 10.0", stdout)
         self.assertIn("overlap 1.5", stdout)
-        self.assertIn("internal-candidates 2", stdout)
+        self.assertIn("internal-candidates 1", stdout)
         self.assertIn("predict-spans", stdout)
         self.assertIn("::main", stdout)
 
@@ -305,7 +305,7 @@ class TestCommandConstruction(TestCase):
         self.assertNotEqual(proc.returncode, 0)
         state, _, msg = parse_progress(self.progress_file)
         self.assertEqual(state, "error")
-        self.assertIn("No encontrado", msg)
+        self.assertIn("Not found", msg)
 
     @classmethod
     def tearDownClass(cls):
@@ -466,7 +466,8 @@ class TestErrorHandling(TestCase):
         self.assertNotEqual(proc.returncode, 0)
         state, _, msg = parse_progress(self.progress_file)
         self.assertEqual(state, "error")
-        self.assertIn("fallo", msg)
+        self.assertIn("failed", msg)
+        self.assertIn("42", msg)
 
     def test_missing_input_handled(self):
         self._ensure_modal_stub(0)
@@ -590,7 +591,7 @@ class TestIntegrationWithStemSeparatorLua(TestCase):
         self.assertEqual(parsed["ode_method"], "midpoint")
         self.assertEqual(parsed["chunk_dur"], 15.0)
         self.assertEqual(parsed["overlap"], 2.0)
-        self.assertEqual(parsed["internal_candidates"], 2)
+        self.assertEqual(parsed["internal_candidates"], 1)
         self.assertEqual(parsed["predict_spans"], True)
 
     def test_progress_written_on_success(self):
