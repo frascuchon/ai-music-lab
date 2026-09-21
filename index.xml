@@ -17,75 +17,44 @@
 
   <category name="scripts">
 
-    <!-- ── Shared Library (required by all other plugins) ── -->
-    <reapack name="reaper-ai-plugins-shared" type="script"
-             desc="Shared library for REAPER AI Plugins">
+    <!-- ── AI Music Lab (unified plugin) ── -->
+    <reapack name="AI Music Lab" type="script"
+             desc="Unified AI Music Lab plugin: Audio2Midi, MidiGenerator, Text2Audio, StemsSeparator, Setup">
       <metadata>
-        <description><![CDATA[Common UI widgets, theme, and setup helpers shared by all REAPER AI Plugins.
+        <description><![CDATA[Single REAPER window with a tab per tool, replacing the 4 previous standalone
+plugins plus the standalone Setup wizard:
 
-This package is installed automatically as a dependency when you install any of the AI plugins. It provides:
-  · Native gfx widget toolkit (gui.lua, widgets_extra.lua, theme.lua)
-  · Common utilities (common.lua)
-  · Setup wizard (ai-music-lab-Setup.lua) with uv + Modal configuration
-  · Python dependency manifest (pyproject.toml)]]></description>
+  · Audio2Midi — audio to MIDI transcription (MIROS, YourMT3+)
+  · MidiGenerator — MIDI generation from text or seed MIDI (6 models)
+  · Text2Audio — text to audio generation and audio editing (14+ models)
+  · Stems Separator — stem separation with Demucs (local) and SAM Audio (cloud)
+  · Setup — global environment configuration (uv, Modal, per-tool prewarm)
+
+Native gfx UI: no external REAPER extension dependencies.
+
+Requirements: Python 3.11+, uv, Modal account (free tier sufficient for most models)]]></description>
+        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
-      <version name="1.0.2" author="AI Music Lab" time="2026-07-17T00:00:00Z">
-        <changelog><![CDATA[Rename entry point to ai-music-lab-Setup.lua for action list grouping]]></changelog>
-        <source file="shared/ai-music-lab-Setup.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/ai-music-lab-Setup.lua</source>
+      <version name="1.0.0" author="AI Music Lab" time="2026-08-11T00:00:00Z">
+        <changelog><![CDATA[Consolidate Audio2Midi, MidiGenerator, Text2Audio and StemsSeparator (plus the
+standalone Setup wizard) into a single tabbed plugin. The 4 previous packages
+are now deprecated stubs that open this plugin on the matching tab.]]></changelog>
+        <source file="ai-music-lab.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/ai-music-lab.lua</source>
+
+        <source file="shared/panel_setup.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/panel_setup.lua</source>
         <source file="shared/setup_helpers.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/setup_helpers.py</source>
         <source file="shared/pyproject.toml">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/pyproject.toml</source>
         <source file="shared/lib/common.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/common.lua</source>
         <source file="shared/lib/gui.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/gui.lua</source>
         <source file="shared/lib/theme.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/theme.lua</source>
         <source file="shared/lib/widgets_extra.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/widgets_extra.lua</source>
-      </version>
-    </reapack>
 
-    <!-- ── Audio2Midi ── -->
-    <reapack name="Audio2Midi" type="script"
-             desc="Audio to MIDI transcription with AI (MIROS, YourMT3+)">
-      <metadata>
-        <description><![CDATA[Transcribes a track, item or audio section to MIDI using cloud AI models (Modal). Supports MIROS and YourMT3+.
-
-Input: selected REAPER track, item or split (section).
-Output: a new MIDI track (mono-instrument) or a folder of tracks (multi-instrument), inserted at the source audio position.
-Native gfx UI: no external REAPER extension dependencies.
-
-Requirements: Python 3.11+, uv, Modal account (free tier sufficient)]]></description>
-        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
-      </metadata>
-      <version name="1.0.2" author="AI Music Lab" time="2026-07-17T00:00:00Z">
-        <changelog><![CDATA[Rename entry point to ai-music-lab-Audio2Midi.lua for action list grouping]]></changelog>
-        <source file="Audio2Midi/ai-music-lab-Audio2Midi.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/ai-music-lab-Audio2Midi.lua</source>
+        <source file="Audio2Midi/panel.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/panel.lua</source>
         <source file="Audio2Midi/transcribe.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/transcribe.py</source>
         <source file="Audio2Midi/research/research_miros_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/research/research_miros_modal.py</source>
         <source file="Audio2Midi/research/research_yourmt3_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/research/research_yourmt3_modal.py</source>
-        <dependency name="reaper-ai-plugins-shared" type="script"/>
-      </version>
-    </reapack>
 
-    <!-- ── MidiGenerator ── -->
-    <reapack name="MidiGenerator" type="script"
-             desc="MIDI generation from text or seed MIDI with AI (6 models)">
-      <metadata>
-        <description><![CDATA[Generates MIDI from text or seed MIDI using 6 cloud-evaluated models (Modal CUDA).
-
-Available models:
-  · Amadeus — best overall instrumentation
-  · text2midi — generation from text description
-  · MIDI-LLM — MIDI-specialised LLM
-  · ChatMusician — ABC notation via LLM
-  · MuseCoco — symbolic attribute control
-  · Anticipatory MT — accompaniment and continuation from seed
-
-Native gfx UI; no REAPER extension dependencies.
-
-Requirements: Python 3.11+, uv, Modal account]]></description>
-        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
-      </metadata>
-      <version name="1.0.2" author="AI Music Lab" time="2026-07-17T00:00:00Z">
-        <changelog><![CDATA[Rename entry point to ai-music-lab-MidiGenerator.lua for action list grouping]]></changelog>
-        <source file="MidiGenerator/ai-music-lab-MidiGenerator.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/ai-music-lab-MidiGenerator.lua</source>
+        <source file="MidiGenerator/panel.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/panel.lua</source>
         <source file="MidiGenerator/midigen.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/midigen.py</source>
         <source file="MidiGenerator/prompt_adapters.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/prompt_adapters.py</source>
         <source file="MidiGenerator/research/research_amadeus_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_amadeus_modal.py</source>
@@ -94,64 +63,130 @@ Requirements: Python 3.11+, uv, Modal account]]></description>
         <source file="MidiGenerator/research/research_chatmusician_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_chatmusician_modal.py</source>
         <source file="MidiGenerator/research/research_musecoco_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_musecoco_modal.py</source>
         <source file="MidiGenerator/research/research_anticipatory_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_anticipatory_modal.py</source>
-        <dependency name="reaper-ai-plugins-shared" type="script"/>
-      </version>
-    </reapack>
 
-    <!-- ── Text2Audio ── -->
-    <reapack name="Text2Audio" type="script"
-             desc="Text to audio generation and audio editing with AI (8+ models)">
-      <metadata>
-        <description><![CDATA[Generates audio from text or edits an existing audio using cloud AI models (Modal). Two modes:
-
-Generate (text → stereo WAV):
-  · SAO 1.0 (top CLAP score), Foundation-1, ACE-Step 1.5
-  · InspireMusic, Mustango, AudioGen, MusicGen, MAGNeT
-
-Edit (audio + intent → transformed WAV):
-  · SAO style transfer, ACE-Step 1.5, MusicGen-melody
-  · MelodyFlow, ZETA/AudioLDM2, InspireMusic continuation
-
-Edit input: selected REAPER track, item or split (section).
-Output: new audio track with the generated WAV, at the source position.
-Native gfx UI: no external REAPER extension dependencies.
-
-Requirements: Python 3.11+, uv, Modal account]]></description>
-        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
-      </metadata>
-      <version name="1.1.1" author="AI Music Lab" time="2026-07-17T00:00:00Z">
-        <changelog><![CDATA[Rename entry point to ai-music-lab-Text2Audio.lua for action list grouping]]></changelog>
-        <source file="Text2Audio/ai-music-lab-Text2Audio.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/ai-music-lab-Text2Audio.lua</source>
+        <source file="Text2Audio/panel.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/panel.lua</source>
         <source file="Text2Audio/text2audio.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/text2audio.py</source>
-        <dependency name="reaper-ai-plugins-shared" type="script"/>
-      </version>
-    </reapack>
+        <source file="Text2Audio/research/research_stable_audio_open_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_stable_audio_open_modal.py</source>
+        <source file="Text2Audio/research/research_foundation1_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_foundation1_modal.py</source>
+        <source file="Text2Audio/research/research_acestep_gen_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_acestep_gen_modal.py</source>
+        <source file="Text2Audio/research/research_inspiremusic_gen_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_inspiremusic_gen_modal.py</source>
+        <source file="Text2Audio/research/research_mustango_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_mustango_modal.py</source>
+        <source file="Text2Audio/research/research_audiogen_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_audiogen_modal.py</source>
+        <source file="Text2Audio/research/research_musicgen_gen_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_musicgen_gen_modal.py</source>
+        <source file="Text2Audio/research/research_magnet_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_magnet_modal.py</source>
+        <source file="Text2Audio/research/research_sao_edit_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_sao_edit_modal.py</source>
+        <source file="Text2Audio/research/research_acestep_edit_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_acestep_edit_modal.py</source>
+        <source file="Text2Audio/research/research_musicgen_melody_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_musicgen_melody_modal.py</source>
+        <source file="Text2Audio/research/research_melodyflow_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_melodyflow_modal.py</source>
+        <source file="Text2Audio/research/research_zeta_edit_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_zeta_edit_modal.py</source>
+        <source file="Text2Audio/research/research_inspiremusic_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_inspiremusic_modal.py</source>
 
-    <!-- ── StemsSeparator ── -->
-    <reapack name="StemsSeparator" type="script"
-             desc="Stem separation with Demucs (local) and SAM Audio (cloud)">
-      <metadata>
-        <description><![CDATA[Stem separation with Demucs (local) and SAM Audio (Modal cloud).
-
-Modes:
-  · Demucs — local separation on CPU/GPU (vocals, bass, drums, other)
-  · SAM Audio — cloud separation with advanced models (Modal)
-
-Input: selected REAPER track, item or split (section).
-Output: separated audio tracks inserted into the project.
-Native gfx UI: no external REAPER extension dependencies.
-
-Requirements: Python 3.11+, uv
-For SAM Audio mode: Modal account]]></description>
-        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
-      </metadata>
-      <version name="3.0.1" author="AI Music Lab" time="2026-07-17T00:00:00Z">
-        <changelog><![CDATA[Rename entry point to ai-music-lab-StemSeparator.lua for action list grouping]]></changelog>
-        <source file="StemsSeparator/ai-music-lab-StemSeparator.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/ai-music-lab-StemSeparator.lua</source>
+        <source file="StemsSeparator/panel.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/panel.lua</source>
         <source file="StemsSeparator/separate_demucs.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/separate_demucs.py</source>
         <source file="StemsSeparator/separate_sam.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/separate_sam.py</source>
         <source file="StemsSeparator/modal_sam_audio.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/modal_sam_audio.py</source>
-        <dependency name="reaper-ai-plugins-shared" type="script"/>
+      </version>
+    </reapack>
+
+    <!-- ── Audio2Midi (deprecated — merged into "AI Music Lab") ── -->
+    <reapack name="Audio2Midi" type="script"
+             desc="DEPRECATED — merged into 'AI Music Lab' (Audio2Midi tab)">
+      <metadata>
+        <description><![CDATA[DEPRECATED: Audio2Midi is now the "Audio2Midi" tab inside the unified
+"AI Music Lab" plugin. This package only installs a small stub that opens
+the unified plugin directly on that tab, so any keyboard shortcut or
+toolbar button you already assigned keeps working.
+
+Install/update "AI Music Lab" instead for new setups.]]></description>
+        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
+      </metadata>
+      <version name="2.0.0" author="AI Music Lab" time="2026-08-11T00:00:00Z">
+        <changelog><![CDATA[Deprecated: replaced with a stub that opens the unified "AI Music Lab" plugin
+on the Audio2Midi tab.]]></changelog>
+        <source file="Audio2Midi/ai-music-lab-Audio2Midi.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/ai-music-lab-Audio2Midi.lua</source>
+        <dependency name="AI Music Lab" type="script"/>
+      </version>
+    </reapack>
+
+    <!-- ── MidiGenerator (deprecated — merged into "AI Music Lab") ── -->
+    <reapack name="MidiGenerator" type="script"
+             desc="DEPRECATED — merged into 'AI Music Lab' (MidiGenerator tab)">
+      <metadata>
+        <description><![CDATA[DEPRECATED: MidiGenerator is now the "MidiGenerator" tab inside the unified
+"AI Music Lab" plugin. This package only installs a small stub that opens
+the unified plugin directly on that tab, so any keyboard shortcut or
+toolbar button you already assigned keeps working.
+
+Install/update "AI Music Lab" instead for new setups.]]></description>
+        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
+      </metadata>
+      <version name="2.0.0" author="AI Music Lab" time="2026-08-11T00:00:00Z">
+        <changelog><![CDATA[Deprecated: replaced with a stub that opens the unified "AI Music Lab" plugin
+on the MidiGenerator tab.]]></changelog>
+        <source file="MidiGenerator/ai-music-lab-MidiGenerator.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/ai-music-lab-MidiGenerator.lua</source>
+        <dependency name="AI Music Lab" type="script"/>
+      </version>
+    </reapack>
+
+    <!-- ── Text2Audio (deprecated — merged into "AI Music Lab") ── -->
+    <reapack name="Text2Audio" type="script"
+             desc="DEPRECATED — merged into 'AI Music Lab' (Text2Audio tab)">
+      <metadata>
+        <description><![CDATA[DEPRECATED: Text2Audio is now the "Text2Audio" tab inside the unified
+"AI Music Lab" plugin. This package only installs a small stub that opens
+the unified plugin directly on that tab, so any keyboard shortcut or
+toolbar button you already assigned keeps working.
+
+Install/update "AI Music Lab" instead for new setups.]]></description>
+        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
+      </metadata>
+      <version name="2.0.0" author="AI Music Lab" time="2026-08-11T00:00:00Z">
+        <changelog><![CDATA[Deprecated: replaced with a stub that opens the unified "AI Music Lab" plugin
+on the Text2Audio tab.]]></changelog>
+        <source file="Text2Audio/ai-music-lab-Text2Audio.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/ai-music-lab-Text2Audio.lua</source>
+        <dependency name="AI Music Lab" type="script"/>
+      </version>
+    </reapack>
+
+    <!-- ── StemsSeparator (deprecated — merged into "AI Music Lab") ── -->
+    <reapack name="StemsSeparator" type="script"
+             desc="DEPRECATED — merged into 'AI Music Lab' (Stems Separator tab)">
+      <metadata>
+        <description><![CDATA[DEPRECATED: StemsSeparator is now the "Stems Separator" tab inside the
+unified "AI Music Lab" plugin. This package only installs a small stub that
+opens the unified plugin directly on that tab, so any keyboard shortcut or
+toolbar button you already assigned keeps working.
+
+Install/update "AI Music Lab" instead for new setups.]]></description>
+        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
+      </metadata>
+      <version name="4.0.0" author="AI Music Lab" time="2026-08-11T00:00:00Z">
+        <changelog><![CDATA[Deprecated: replaced with a stub that opens the unified "AI Music Lab" plugin
+on the Stems Separator tab.]]></changelog>
+        <source file="StemsSeparator/ai-music-lab-StemSeparator.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/ai-music-lab-StemSeparator.lua</source>
+        <dependency name="AI Music Lab" type="script"/>
+      </version>
+    </reapack>
+
+    <!-- ── reaper-ai-plugins-shared (deprecated — merged into "AI Music Lab") ── -->
+    <reapack name="reaper-ai-plugins-shared" type="script"
+             desc="DEPRECATED — merged into 'AI Music Lab' (Setup tab)">
+      <metadata>
+        <description><![CDATA[DEPRECATED: the global setup wizard is now the "Setup" tab inside the
+unified "AI Music Lab" plugin, and the shared UI library ships bundled
+inside that package. This package only installs a small stub that opens
+the unified plugin directly on the Setup tab, so any keyboard shortcut or
+toolbar button you already assigned keeps working.
+
+Install/update "AI Music Lab" instead for new setups.]]></description>
+        <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
+      </metadata>
+      <version name="2.0.0" author="AI Music Lab" time="2026-08-11T00:00:00Z">
+        <changelog><![CDATA[Deprecated: replaced with a stub that opens the unified "AI Music Lab" plugin
+on the Setup tab. The shared UI library now ships bundled inside the
+"AI Music Lab" package instead of as a separate dependency.]]></changelog>
+        <source file="shared/ai-music-lab-Setup.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/ai-music-lab-Setup.lua</source>
+        <dependency name="AI Music Lab" type="script"/>
       </version>
     </reapack>
 
