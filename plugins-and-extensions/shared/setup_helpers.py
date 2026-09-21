@@ -23,13 +23,16 @@ Core checks (always): python, uv, modal-cli, modal-auth
 Plugin-specific extra checks (if the folder exists next to shared/):
   StemsSeparator  → demucs (local pip), hf-secret (Modal secret)
   Audio2Midi      → (no extras — weights in Modal Volumes)
-  MidiGenerator   → (no extras — weights in Modal Volumes)
+  MidiGenerator   → abcmidi (midi2abc/abc2midi, local binary — ChatMusician
+                    seed harmonization does MIDI<->ABC conversion locally,
+                    before the Modal call)
 
 Subcommands:
   check                                  Detect environment, write CHECK lines.
   install-uv                             Download and install uv.
   sync-deps                              uv sync (install modal CLI in shared/ venv).
   install-demucs   --python <path>       pip install demucs in the given Python.
+  install-abcmidi                        Install midi2abc/abc2midi (brew on macOS).
   modal-login                            Open browser for Modal token new.
   modal-secret-list                      Report whether huggingface-secret exists.
   modal-secret-create --token <tok>      Create/update huggingface-secret.
@@ -189,7 +192,37 @@ def _chk_demucs() -> tuple[str, str]:
     return "missing", last
 
 
-def _chk_hf_secret() -> tuple[str, str]:
+# Mirrors MidiGenerator/research/tools/midi_abc.py's _COMMON_TOOL_DIRS —
+# REAPER launched from Finder/Dock (not a terminal) inherits macOS's minimal
+# launchd PATH, not the user's shell PATH, so a `brew install abcmidi` binary
+# can be on disk yet invisible to a plain PATH lookup from inside REAPER.
+_ABCMIDI_COMMON_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"]
+
+
+def _find_tool(name: str) -> str | None:
+    found = shutil.which(name)
+    if found:
+        return found
+    for d in _ABCMIDI_COMMON_DIRS:
+        candidate = Path(d) / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def _chk_abcmidi() -> tuple[str, str]:
+    """midi2abc/abc2midi (abcmidi package) — used locally (not in Modal) by
+    MidiGenerator's ChatMusician seed harmonization to convert an in-project
+    MIDI seed to ABC notation before sending the prompt to Modal."""
+    midi2abc = _find_tool("midi2abc")
+    abc2midi = _find_tool("abc2midi")
+    if midi2abc and abc2midi:
+        return "ok", midi2abc
+    missing = [n for n, p in (("midi2abc", midi2abc), ("abc2midi", abc2midi)) if not p]
+    return "missing", f"{', '.join(missing)} not found"
+
+
+def _chk_modal_secret(name: str) -> tuple[str, str]:
     uv = _find_uv()
     if uv is None:
         return "missing", "uv required"
@@ -197,9 +230,12 @@ def _chk_hf_secret() -> tuple[str, str]:
                          "modal", "secret", "list"])
     if rc != 0:
         return "missing", "modal secret list failed (auth?)"
-    return ("ok", f"'{HF_SECRET_NAME}' found") \
-        if HF_SECRET_NAME in out \
-        else ("missing", f"'{HF_SECRET_NAME}' does not exist")
+    return ("ok", f"'{name}' found") if name in out \
+        else ("missing", f"'{name}' does not exist")
+
+
+def _chk_hf_secret() -> tuple[str, str]:
+    return _chk_modal_secret(HF_SECRET_NAME)
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +268,11 @@ def cmd_check(args) -> None:
     # audio2midi_dir = PLUGINS_DIR / "Audio2Midi"
     # if audio2midi_dir.is_dir():
     #     pass  # modal volumes used; no local install needed
+
+    # MidiGenerator extras — if plugin folder exists
+    midigen_dir = PLUGINS_DIR / "MidiGenerator"
+    if midigen_dir.is_dir():
+        checks += [("abcmidi", _chk_abcmidi())]
 
     extra = [f"CHECK|{n}|{s}|{d}" for n, (s, d) in checks]
     write(pf, "done", 1.0, "done", extra)
@@ -284,8 +325,52 @@ def cmd_install_demucs(args) -> None:
     pf = Path(args.progress) if args.progress else None
     python = args.python or sys.executable
     write(pf, "running", 0.05, "Installing demucs...")
-    _stream(pf, [python, "-m", "pip", "install", "--user", "demucs"],
+    # Install torch/torchaudio together with demucs so pip's resolver picks
+    # a single ABI-compatible pair instead of drifting apart across separate
+    # installs (mismatched torch/torchaudio crashes at import time).
+    _stream(pf, [python, "-m", "pip", "install", "--user",
+                 "demucs", "torch", "torchaudio"],
             done_msg="demucs installed")
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: install-abcmidi  (MidiGenerator — ChatMusician seed conversion)
+# ---------------------------------------------------------------------------
+
+def cmd_install_abcmidi(args) -> None:
+    pf = Path(args.progress) if args.progress else None
+    system = platform.system()
+
+    if system == "Darwin":
+        brew = shutil.which("brew")
+        if brew is None:
+            write(pf, "error", 0,
+                  "Homebrew not found. Install it from https://brew.sh, "
+                  "then run 'brew install abcmidi', or install manually.")
+            return
+        write(pf, "running", 0.1, "Installing abcmidi via Homebrew...")
+        _stream(pf, [brew, "install", "abcmidi"],
+                done_msg="abcmidi installed (midi2abc/abc2midi)")
+        return
+
+    if system == "Linux":
+        apt = shutil.which("apt-get") or shutil.which("apt")
+        if apt is None:
+            write(pf, "error", 0,
+                  "No supported package manager found. Install abcmidi "
+                  "manually for your distro (package is usually 'abcmidi').")
+            return
+        # apt-get typically needs root; running it unprompted from a
+        # background process would just hang/fail on the sudo password
+        # prompt, so ask the user to run it themselves instead of trying
+        # to sudo silently.
+        write(pf, "error", 0,
+              f"Run manually (requires sudo): sudo {Path(apt).name} install -y abcmidi")
+        return
+
+    write(pf, "error", 0,
+          f"No automated installer for {system}. Install abcmidi manually "
+          "(https://ifdo.ca/~seymour/runabc/top.html).")
 
 
 # ---------------------------------------------------------------------------
@@ -429,12 +514,13 @@ def cmd_prewarm_yourmt3(args) -> None:
 # ---------------------------------------------------------------------------
 
 _MG_MODELS = {
-    "amadeus":      ("research_amadeus_modal.py",      "setup"),
-    "midi-llm":     ("research_midi_llm_modal.py",     "setup"),
-    "text2midi":    ("research_text2midi_modal.py",     "setup"),
-    "chatmusician": ("research_chatmusician_modal.py",  "setup"),
-    "musecoco":     ("research_musecoco_modal.py",      "setup_weights"),
-    "anticipatory": ("research_anticipatory_modal.py",  "setup"),
+    "amadeus":             ("research_amadeus_modal.py",      "setup"),
+    "midi-llm":            ("research_midi_llm_modal.py",     "setup"),
+    "text2midi":           ("research_text2midi_modal.py",     "setup"),
+    "chatmusician":        ("research_chatmusician_modal.py",  "setup"),
+    "chatmusician-adapter": ("research_chatmusician_modal.py", "setup_adapter"),
+    "musecoco":            ("research_musecoco_modal.py",      "setup_weights"),
+    "anticipatory":        ("research_anticipatory_modal.py",  "setup"),
 }
 
 _MG_RESEARCH = PLUGINS_DIR / "MidiGenerator" / "research"
@@ -474,6 +560,9 @@ def cmd_prewarm_midigen_text2midi(args) -> None:
 def cmd_prewarm_midigen_chatmusician(args) -> None:
     _prewarm_midigen_model("chatmusician", Path(args.progress) if args.progress else None)
 
+def cmd_prewarm_midigen_chatmusician_adapter(args) -> None:
+    _prewarm_midigen_model("chatmusician-adapter", Path(args.progress) if args.progress else None)
+
 def cmd_prewarm_midigen_musecoco(args) -> None:
     _prewarm_midigen_model("musecoco", Path(args.progress) if args.progress else None)
 
@@ -503,6 +592,9 @@ def main() -> None:
     p_dem.add_argument("--python", default="")
     p_dem.add_argument("--progress", default="")
 
+    p_abc = sub.add_parser("install-abcmidi")
+    p_abc.add_argument("--progress", default="")
+
     p_log = sub.add_parser("modal-login")
     p_log.add_argument("--progress", default="")
 
@@ -520,7 +612,8 @@ def main() -> None:
     p_pw_yt3 = sub.add_parser("prewarm-yourmt3")
     p_pw_yt3.add_argument("--progress", default="")
 
-    for mg_model in ["amadeus", "midi-llm", "text2midi", "chatmusician", "musecoco", "anticipatory"]:
+    for mg_model in ["amadeus", "midi-llm", "text2midi", "chatmusician",
+                      "chatmusician-adapter", "musecoco", "anticipatory"]:
         p_mg = sub.add_parser(f"prewarm-midigen-{mg_model}")
         p_mg.add_argument("--progress", default="")
 
@@ -530,6 +623,7 @@ def main() -> None:
         "install-uv":           cmd_install_uv,
         "sync-deps":            cmd_sync_deps,
         "install-demucs":       cmd_install_demucs,
+        "install-abcmidi":      cmd_install_abcmidi,
         "modal-login":          cmd_modal_login,
         "modal-secret-create":  cmd_modal_secret_create,
         "prewarm-sam":          cmd_prewarm_sam,
@@ -539,6 +633,7 @@ def main() -> None:
         "prewarm-midigen-midi-llm":     cmd_prewarm_midigen_midi_llm,
         "prewarm-midigen-text2midi":    cmd_prewarm_midigen_text2midi,
         "prewarm-midigen-chatmusician": cmd_prewarm_midigen_chatmusician,
+        "prewarm-midigen-chatmusician-adapter": cmd_prewarm_midigen_chatmusician_adapter,
         "prewarm-midigen-musecoco":     cmd_prewarm_midigen_musecoco,
         "prewarm-midigen-anticipatory": cmd_prewarm_midigen_anticipatory,
     }[args.cmd](args)
