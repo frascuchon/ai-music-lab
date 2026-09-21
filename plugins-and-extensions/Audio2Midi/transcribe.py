@@ -14,10 +14,14 @@ The script:
               --audio-path <audio> --out-dir <out-dir> --force
              (adds --no-beat-tracking if the model supports it and it was requested)
   3. Renames the output  transcribed_cuda.mid  →  <src_stem>__<model>.mid
-  4. Counts non-empty instruments (pretty_midi) and reports:
+  4. Counts non-empty instruments (pretty_midi) and reads back the file's
+     embedded tempo (see get_midi_tempo — REAPER's MIDI import does not
+     reliably honor it, so Audio2Midi.lua must force it explicitly), then
+     reports:
        done|1.0|... <midi-path>
        <midi-path>
        INSTRUMENTS|<n>
+       TEMPO|<bpm>
 
 Progress protocol (written to --progress):
     state|pct|msg\n          state = running | done | error
@@ -96,6 +100,38 @@ def count_instruments(mid_path: Path) -> int:
         return sum(1 for inst in pm.instruments if inst.notes)
     except Exception:
         return -1
+
+
+def get_midi_tempo(mid_path: Path) -> float:
+    """Return the (first) tempo embedded in the MIDI file, in BPM.
+
+    Standard MIDI files with no explicit ``set_tempo`` meta message default
+    to 120 BPM per the SMF spec — that is also mido's/pretty_midi's default,
+    so returning 120.0 on a missing tempo event is correct, not a fallback
+    hack.
+
+    Why this matters: the transcription scripts pick a *musically accurate*
+    tempo (e.g. from librosa beat tracking) and encode note ticks against
+    it. REAPER's ``InsertMedia``, however, does not reliably adopt an
+    imported MIDI file's tempo map into the project — it can interpret the
+    file's ticks using whatever tempo the project already has. When that
+    differs from the file's embedded tempo, every note ends up positioned
+    at the wrong QN, which plays back faster/slower and makes items look
+    shorter/longer than the original audio despite correct pitches. Reading
+    the tempo back here lets the caller (Audio2Midi.lua) force the project
+    tempo to match before importing, so REAPER has no ambiguous tempo to
+    guess at. Returns -1.0 if it cannot be determined.
+    """
+    try:
+        import mido
+        mid = mido.MidiFile(str(mid_path))
+        for track in mid.tracks:
+            for msg in track:
+                if msg.is_meta and msg.type == "set_tempo":
+                    return mido.tempo2bpm(msg.tempo)
+        return 120.0  # SMF default when no set_tempo event is present
+    except Exception:
+        return -1.0
 
 
 # ---------------------------------------------------------------------------
@@ -272,12 +308,18 @@ def main() -> int:
     n_instruments = count_instruments(final_mid)
     instr_str = str(n_instruments) if n_instruments >= 0 else "?"
 
+    # Read back the embedded tempo so the caller can force the REAPER
+    # project tempo to match before importing (see get_midi_tempo).
+    tempo_bpm = get_midi_tempo(final_mid)
+    tempo_str = f"{tempo_bpm:.3f}" if tempo_bpm > 0 else "?"
+
     n_label = (f"{n_instruments} instrument{'s' if n_instruments != 1 else ''}"
                if n_instruments >= 0 else "MIDI generated")
     done_msg = f"Completed — {n_label}"
     write_progress(pf, "done", 1.0, done_msg, [
         str(final_mid),
         f"INSTRUMENTS|{instr_str}",
+        f"TEMPO|{tempo_str}",
     ])
     print(f"[transcribe] {done_msg}: {final_mid}", flush=True)
     return 0
