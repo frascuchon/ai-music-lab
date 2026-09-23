@@ -395,6 +395,16 @@ function M.draw()
   local g = gui
   local t = theme
 
+  -- ── SCROLL REGION: entire page (source/model/params/button/log) ──
+  -- Single, non-nested scroll_region for everything. widgets_extra.lua's
+  -- scroll_region does not support nesting (its clip/scroll math doesn't
+  -- compound an outer scroll offset into an inner one), so the log below
+  -- prints its lines directly into THIS region instead of opening its own
+  -- nested scroll_region — new lines call
+  -- widgets.scroll_to_bottom("##a2m_page") to bring the log into view.
+  local scroll_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y)
+  widgets.scroll_region("##a2m_page", 0, scroll_h, function()
+
   -- Source
   g.row_label("Source:", t.sc(54))
   local display_src = (S.src_track_name ~= "")
@@ -504,25 +514,25 @@ function M.draw()
     if g.button("Clear", t.sc(70), t.ITEM_H) then S.log = {} end
     g.spacing()
 
-    if S.log_scroll_to_bottom then
-      widgets.scroll_to_bottom("##logscroll")
-      S.log_scroll_to_bottom = false
-    end
+    -- No auto-scroll-to-bottom here: the log now shares the page-level
+    -- scroll_region with everything else, so forcing it to the bottom on
+    -- every new line would yank the whole page out from under the user
+    -- while they're scrolled up looking at something else.
+    S.log_scroll_to_bottom = false
 
     g.push_font(t.F.MONO)
-    local log_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y - t.sc(10))
-    widgets.scroll_region("##logscroll", 0, log_h, function()
-      for i = 1, #S.log do
-        local ln = S.log[i]
-        if ln:find("^ERROR") then
-          g.text_colored(ln, "RED")
-        else
-          g.text_colored(ln, "LOG_FG")
-        end
+    for i = 1, #S.log do
+      local ln = S.log[i]
+      if ln:find("^ERROR") then
+        g.text_colored(ln, "RED")
+      else
+        g.text_colored(ln, "LOG_FG")
       end
-    end, { hscroll = true })
+    end
     g.pop_font()
   end
+
+  end)  -- end scroll_region ##a2m_page
 end
 
 return M

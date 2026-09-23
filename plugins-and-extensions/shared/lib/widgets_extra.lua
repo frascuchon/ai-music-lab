@@ -145,6 +145,7 @@ function M.tab_bar(id, active_idx, tabs)
   local t = theme
   local tab_h = t.ITEM_H + 6
   local x, y = ctx.x, ctx.y
+  local gy = y + (ctx.clip_y_off or 0)  -- screen Y (y is logical inside scroll_region)
 
   gfx.setfont(t.F.UI)
   local tab_widths = {}
@@ -158,7 +159,7 @@ function M.tab_bar(id, active_idx, tabs)
     local tx = x + off_x
     local tw = tab_widths[i]
     local is_active = (i == active_idx)
-    local scy_tab = y + ctx.clip_y_off
+    local scy_tab = gy
     local hover = ctx.mx >= tx and ctx.mx < tx + tw
                and ctx.my >= scy_tab and ctx.my < scy_tab + tab_h
                and ctx.disabled_depth == 0 and not ctx.popup
@@ -167,26 +168,31 @@ function M.tab_bar(id, active_idx, tabs)
       new_idx = i
     end
 
-    if is_active then
-      local c = t.C.FRAME_ACT; gfx.set(c[1], c[2], c[3], 1)
-    elseif hover then
-      local c = t.C.FRAME_HOV; gfx.set(c[1], c[2], c[3], 1)
-    else
-      local c = t.C.FRAME; gfx.set(c[1], c[2], c[3], 0.6)
-    end
-    gfx.rect(tx, y, tw, tab_h, 1)
+    -- Skip draw if clipped by an outer scroll_region — without this, a tab
+    -- bar scrolled above/below the visible area still rendered at its
+    -- (correctly computed) screen position, bleeding into unrelated UI.
+    if not (ctx.clip_y1 and (gy + tab_h < ctx.clip_y1 or gy > ctx.clip_y2)) then
+      if is_active then
+        local c = t.C.FRAME_ACT; gfx.set(c[1], c[2], c[3], 1)
+      elseif hover then
+        local c = t.C.FRAME_HOV; gfx.set(c[1], c[2], c[3], 1)
+      else
+        local c = t.C.FRAME; gfx.set(c[1], c[2], c[3], 0.6)
+      end
+      gfx.rect(tx, gy, tw, tab_h, 1)
 
-    if is_active then
-      local ac = t.C.ACCENT; gfx.set(ac[1], ac[2], ac[3], 1)
-      gfx.rect(tx, y + tab_h - 2, tw, 2, 1)
-    end
+      if is_active then
+        local ac = t.C.ACCENT; gfx.set(ac[1], ac[2], ac[3], 1)
+        gfx.rect(tx, gy + tab_h - 2, tw, 2, 1)
+      end
 
-    local tlw, tlh = gfx.measurestr(name)
-    local fc = is_active and t.C.FG or t.C.FG_DIM
-    gfx.set(fc[1], fc[2], fc[3], 1)
-    gfx.x = tx + math.floor((tw - tlw) / 2)
-    gfx.y = y  + math.floor((tab_h - tlh) / 2)
-    gfx.drawstr(name)
+      local tlw, tlh = gfx.measurestr(name)
+      local fc = is_active and t.C.FG or t.C.FG_DIM
+      gfx.set(fc[1], fc[2], fc[3], 1)
+      gfx.x = tx + math.floor((tw - tlw) / 2)
+      gfx.y = gy + math.floor((tab_h - tlh) / 2)
+      gfx.drawstr(name)
+    end
 
     off_x = off_x + tw + 1
   end
@@ -222,30 +228,35 @@ function M.collapsing_header(label, default_open)
     ctx.state[sid] = is_open
   end
 
-  local bg = hover and t.C.FRAME_HOV or t.C.FRAME
-  gfx.set(bg[1], bg[2], bg[3], 0.7)
-  gfx.rect(x, y, w, h, 1)
+  -- Skip draw if clipped by an outer scroll_region — without this, a
+  -- header scrolled above/below the visible area still rendered at its
+  -- (correctly computed) screen position, bleeding into unrelated UI.
+  if not (ctx.clip_y1 and (scy_hdr + h < ctx.clip_y1 or scy_hdr > ctx.clip_y2)) then
+    local bg = hover and t.C.FRAME_HOV or t.C.FRAME
+    gfx.set(bg[1], bg[2], bg[3], 0.7)
+    gfx.rect(x, scy_hdr, w, h, 1)
 
-  -- Triangle arrow
-  local tri_x = x + 8
-  local tri_cy = y + math.floor(h / 2)
-  local dc = t.C.FG_DIM; gfx.set(dc[1], dc[2], dc[3], 1)
-  if is_open then
-    gfx.line(tri_x,     tri_cy-3, tri_x+6,  tri_cy-3)
-    gfx.line(tri_x,     tri_cy-3, tri_x+3,  tri_cy+2)
-    gfx.line(tri_x+6,   tri_cy-3, tri_x+3,  tri_cy+2)
-  else
-    gfx.line(tri_x,     tri_cy-5, tri_x,    tri_cy+5)
-    gfx.line(tri_x,     tri_cy-5, tri_x+5,  tri_cy)
-    gfx.line(tri_x,     tri_cy+5, tri_x+5,  tri_cy)
+    -- Triangle arrow
+    local tri_x = x + 8
+    local tri_cy = scy_hdr + math.floor(h / 2)
+    local dc = t.C.FG_DIM; gfx.set(dc[1], dc[2], dc[3], 1)
+    if is_open then
+      gfx.line(tri_x,     tri_cy-3, tri_x+6,  tri_cy-3)
+      gfx.line(tri_x,     tri_cy-3, tri_x+3,  tri_cy+2)
+      gfx.line(tri_x+6,   tri_cy-3, tri_x+3,  tri_cy+2)
+    else
+      gfx.line(tri_x,     tri_cy-5, tri_x,    tri_cy+5)
+      gfx.line(tri_x,     tri_cy-5, tri_x+5,  tri_cy)
+      gfx.line(tri_x,     tri_cy+5, tri_x+5,  tri_cy)
+    end
+
+    gfx.setfont(t.F.UI)
+    local _, lh = gfx.measurestr(label)
+    local fc = t.C.FG; gfx.set(fc[1], fc[2], fc[3], 1)
+    gfx.x = x + 22
+    gfx.y = scy_hdr + math.floor((h - lh) / 2)
+    gfx.drawstr(label)
   end
-
-  gfx.setfont(t.F.UI)
-  local _, lh = gfx.measurestr(label)
-  local fc = t.C.FG; gfx.set(fc[1], fc[2], fc[3], 1)
-  gfx.x = x + 22
-  gfx.y = y + math.floor((h - lh) / 2)
-  gfx.drawstr(label)
 
   ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
   ctx.x = theme.PAD_X
@@ -278,27 +289,32 @@ function M.combo(id, idx, items)
              and ctx.my >= scy and ctx.my < scy+h
              and ctx.disabled_depth == 0
 
-  -- Background
-  local bg = (popup_mine or hover) and t.C.FRAME_HOV or t.C.FRAME
-  gfx.set(bg[1], bg[2], bg[3], a)
-  gfx.rect(x, y, w, h, 1)
+  -- Skip draw if clipped by an outer scroll_region — without this, a combo
+  -- scrolled above/below the visible area still rendered at its (correctly
+  -- computed) screen position, bleeding into unrelated UI.
+  if not (ctx.clip_y1 and (scy + h < ctx.clip_y1 or scy > ctx.clip_y2)) then
+    -- Background
+    local bg = (popup_mine or hover) and t.C.FRAME_HOV or t.C.FRAME
+    gfx.set(bg[1], bg[2], bg[3], a)
+    gfx.rect(x, scy, w, h, 1)
 
-  -- Selected label
-  gfx.setfont(t.F.UI)
-  local label = items[idx] or ""
-  local _, lh = gfx.measurestr(label)
-  local fc = t.C.FG; gfx.set(fc[1], fc[2], fc[3], a)
-  gfx.x = x + 6
-  gfx.y = y + math.floor((h - lh) / 2)
-  gfx.drawstr(label)
+    -- Selected label
+    gfx.setfont(t.F.UI)
+    local label = items[idx] or ""
+    local _, lh = gfx.measurestr(label)
+    local fc = t.C.FG; gfx.set(fc[1], fc[2], fc[3], a)
+    gfx.x = x + 6
+    gfx.y = scy + math.floor((h - lh) / 2)
+    gfx.drawstr(label)
 
-  -- Down arrow
-  local ax = x + w - 14
-  local ay = y + math.floor(h / 2)
-  local dc = t.C.FG_DIM; gfx.set(dc[1], dc[2], dc[3], a)
-  gfx.line(ax, ay-3, ax+6, ay-3)
-  gfx.line(ax, ay-3, ax+3, ay+2)
-  gfx.line(ax+6, ay-3, ax+3, ay+2)
+    -- Down arrow
+    local ax = x + w - 14
+    local ay = scy + math.floor(h / 2)
+    local dc = t.C.FG_DIM; gfx.set(dc[1], dc[2], dc[3], a)
+    gfx.line(ax, ay-3, ax+6, ay-3)
+    gfx.line(ax, ay-3, ax+3, ay+2)
+    gfx.line(ax+6, ay-3, ax+3, ay+2)
+  end
 
   -- Open popup on click (only if no OTHER popup open and not just closed this one)
   if hover and just_clicked() and not ctx.popup
