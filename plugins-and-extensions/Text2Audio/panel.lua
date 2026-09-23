@@ -77,6 +77,40 @@ local GPUS        = { "A10G", "A100", "T4" }
 local INTENSITIES = { "subtle", "moderate", "strong" }
 local INTENSITY_LABELS = { "Subtle", "Moderate", "Strong" }
 
+-- ACE-Step 1.5 (acestep_gen) advanced inference parameters — ranges mirror
+-- the official ACE-Step Gradio UI per checkpoint type
+-- (acestep/ui/gradio/events/generation/model_config.py::get_ui_control_config,
+-- is_turbo branch vs. else; and generation_advanced_dit_controls.py's slider
+-- bounds). Sliders below already keep values inside these ranges; clamp()
+-- is still applied when building the command as a defensive second layer,
+-- and the Modal script (research_acestep_gen_modal.py) clamps again
+-- server-side.
+--
+-- CFG (guidance_scale/use_adg/cfg_interval_start-end) only has an effect on
+-- the base checkpoint — turbo is CFG-distilled and generate_music() itself
+-- hard-overrides guidance_scale to 1.0 for it (verified empirically: a real
+-- Modal run with guidance_scale=8.0 on turbo logged "overriding
+-- guidance_scale 8.0 -> 1.0"). Those controls are hidden entirely for
+-- turbo below rather than just grayed out, since setting them there is a
+-- no-op.
+local ACESTEP_VARIANTS        = { "turbo", "base" }
+local ACESTEP_VARIANT_LABELS  = {
+  "Turbo  (fast, 8-20 steps, no CFG)",
+  "Base  (32-200 steps, CFG-capable — larger download)",
+}
+local ACESTEP_STEPS_RANGE_BY_VARIANT = {
+  turbo = { 1, 20  },
+  base  = { 1, 200 },
+}
+local ACESTEP_STEPS_DEFAULT_BY_VARIANT = { turbo = 8, base = 32 }
+local ACESTEP_GUIDANCE_RANGE   = { 1.0, 15.0 }  -- base only
+local ACESTEP_SHIFT_RANGE      = { 1.0, 5.0  }
+local ACESTEP_CFG_RANGE        = { 0.0, 1.0  }  -- base only
+local ACESTEP_LM_TEMP_RANGE    = { 0.0, 2.0  }
+local ACESTEP_LORA_SCALE_RANGE = { 0.0, 1.0  }
+
+local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
+
 local TEXT2AUDIO_PY = SCRIPT_DIR .. "text2audio.py"
 local PROGRESS_F    = TMPDIR .. "t2a_progress.txt"
 local LOG_F         = TMPDIR .. "t2a.log"
@@ -89,6 +123,19 @@ local S = {
   prompt            = "",
   duration          = 8.0,
   gen_model_idx     = 1,
+  -- ACE-Step 1.5 advanced inference parameters (acestep_gen only)
+  acestep_variant_idx = 1,   -- 1=turbo, 2=base
+  acestep_steps       = 8,
+  acestep_guidance    = 7.0,
+  acestep_shift       = 3.0,
+  acestep_seed        = -1,     -- -1 = random
+  acestep_use_adg     = false,
+  acestep_cfg_start   = 0.0,
+  acestep_cfg_end     = 1.0,
+  acestep_thinking    = false,
+  acestep_lm_temp     = 0.85,
+  acestep_lora_path   = "",
+  acestep_lora_scale  = 1.0,
   -- Edit mode
   src               = "",
   src_track_name    = "",
@@ -319,15 +366,55 @@ local function launch_t2a()
     add_log(string.format("Duration: %.1fs", S.duration))
     add_log("Prompt: " .. prompt:sub(1, 80))
 
+    local extra = ""
+    if model_key == "acestep_gen" then
+      local variant = ACESTEP_VARIANTS[S.acestep_variant_idx] or "turbo"
+      local steps_range = ACESTEP_STEPS_RANGE_BY_VARIANT[variant]
+      local steps    = clamp(math.floor(S.acestep_steps + 0.5), steps_range[1], steps_range[2])
+      local shift    = clamp(S.acestep_shift, ACESTEP_SHIFT_RANGE[1], ACESTEP_SHIFT_RANGE[2])
+      local lm_temp  = clamp(S.acestep_lm_temp, ACESTEP_LM_TEMP_RANGE[1], ACESTEP_LM_TEMP_RANGE[2])
+
+      extra = extra .. " --dit-variant " .. q(variant)
+      extra = extra .. string.format(" --steps %d --shift %.2f", steps, shift)
+      extra = extra .. string.format(" --seed %d", math.floor(S.acestep_seed + 0.5))
+
+      -- CFG params only meaningful for "base" — omit entirely for turbo
+      -- rather than send values the model would silently ignore.
+      if variant == "base" then
+        local guidance = clamp(S.acestep_guidance, ACESTEP_GUIDANCE_RANGE[1], ACESTEP_GUIDANCE_RANGE[2])
+        local cfg_s    = clamp(S.acestep_cfg_start, ACESTEP_CFG_RANGE[1], ACESTEP_CFG_RANGE[2])
+        local cfg_e    = clamp(S.acestep_cfg_end, ACESTEP_CFG_RANGE[1], ACESTEP_CFG_RANGE[2])
+        if cfg_s > cfg_e then cfg_s, cfg_e = cfg_e, cfg_s end
+        extra = extra .. string.format(" --guidance-scale %.2f", guidance)
+        if S.acestep_use_adg then extra = extra .. " --use-adg" end
+        extra = extra .. string.format(" --cfg-start %.2f --cfg-end %.2f", cfg_s, cfg_e)
+      end
+
+      if S.acestep_thinking then
+        extra = extra .. " --thinking"
+        extra = extra .. string.format(" --lm-temperature %.2f", lm_temp)
+      end
+      if S.acestep_lora_path:match("%S") then
+        local lora_scale = clamp(S.acestep_lora_scale, ACESTEP_LORA_SCALE_RANGE[1], ACESTEP_LORA_SCALE_RANGE[2])
+        extra = extra .. " --lora-path " .. q(S.acestep_lora_path)
+        extra = extra .. string.format(" --lora-scale %.2f", lora_scale)
+        add_log("LoRA adapter: " .. (S.acestep_lora_path:match("[^/\\]+$") or S.acestep_lora_path)
+          .. string.format(" (scale %.2f)", lora_scale))
+      end
+      add_log(string.format(
+        "ACE-Step params: variant=%s steps=%d shift=%.1f seed=%d thinking=%s",
+        variant, steps, shift, math.floor(S.acestep_seed + 0.5), tostring(S.acestep_thinking)))
+    end
+
     local cmd = string.format(
       '%s %s --shared-dir %s --script %s --model %s --mode generate'
       .. ' --prompt %s --seconds %.2f --gpu %s'
-      .. ' --out-dir %s --progress %s >>%s 2>&1 &',
+      .. ' --out-dir %s%s --progress %s >>%s 2>&1 &',
       q(PYTHON), q(TEXT2AUDIO_PY),
       q(SHARED_DIR), q(script),
       q(model_key),
       q(prompt), S.duration, q(GPUS[S.gpu_idx]),
-      q(run_dir), q(PROGRESS_F), q(LOG_F))
+      q(run_dir), extra, q(PROGRESS_F), q(LOG_F))
 
     add_log("Launching Modal process...")
     os.execute(cmd)
@@ -437,6 +524,17 @@ function M.draw()
   end
   g.spacing()
   g.separator()
+
+  -- ── SCROLL REGION: entire page (prompt/model/params/button/log) ──
+  -- Single, non-nested scroll_region for everything below the mode tabs.
+  -- widgets_extra.lua's scroll_region does not support nesting (its clip/
+  -- scroll math doesn't compound an outer scroll offset into an inner
+  -- one), so the log below prints its lines directly into THIS region
+  -- instead of opening its own nested scroll_region — new lines call
+  -- widgets.scroll_to_bottom("##t2a_page") to bring the log into view.
+  local scroll_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y)
+  widgets.scroll_region("##t2a_page", 0, scroll_h, function()
+
   g.spacing()
 
   -- ════════════════════════════════════════════
@@ -478,6 +576,120 @@ function M.draw()
     g.next_width(t.sc(90))
     S.gpu_idx = widgets.combo("##gen_gpu", S.gpu_idx, GPUS)
     g.spacing()
+
+    -- ACE-Step 1.5 advanced inference parameters + LoRA adapter
+    if GEN_MODELS[S.gen_model_idx] == "acestep_gen" then
+      if widgets.collapsing_header("ACE-Step advanced parameters", false) then
+        local lw = t.sc(90)
+        local rv, nv
+
+        -- Checkpoint variant — decides which params below are shown/active.
+        -- Switching resets Steps to that variant's own default (matches the
+        -- official Gradio UI's own model-type-change behavior) since 8
+        -- steps (turbo's default) is a poor default for base, and vice versa.
+        g.row_label("Checkpoint:", lw)
+        g.next_width(-1)
+        local old_variant_idx = S.acestep_variant_idx
+        S.acestep_variant_idx = widgets.combo("##ace_variant", S.acestep_variant_idx, ACESTEP_VARIANT_LABELS)
+        if S.acestep_variant_idx ~= old_variant_idx then
+          local variant = ACESTEP_VARIANTS[S.acestep_variant_idx] or "turbo"
+          S.acestep_steps = ACESTEP_STEPS_DEFAULT_BY_VARIANT[variant]
+        end
+        local variant = ACESTEP_VARIANTS[S.acestep_variant_idx] or "turbo"
+        local steps_range = ACESTEP_STEPS_RANGE_BY_VARIANT[variant]
+        if variant == "base" then
+          g.text_disabled("Base checkpoint downloads separately on first use (larger than turbo).")
+        end
+        g.spacing()
+
+        g.row_label("Steps:", lw)
+        g.next_width(t.sc(120))
+        rv, nv = g.slider_int("##ace_steps", S.acestep_steps,
+          steps_range[1], steps_range[2])
+        if rv then S.acestep_steps = nv end
+        g.same_line(t.sc(14)); g.inline_text("Shift:")
+        g.same_line(t.sc(6)); g.next_width(t.sc(120))
+        rv, nv = g.slider_float("##ace_shift", S.acestep_shift,
+          ACESTEP_SHIFT_RANGE[1], ACESTEP_SHIFT_RANGE[2], "%.2f")
+        if rv then S.acestep_shift = nv end
+
+        g.row_label("Seed:", lw)
+        g.next_width(t.sc(120))
+        local seed_changed, seed_new = widgets.input_text("##ace_seed", tostring(S.acestep_seed))
+        if seed_changed then
+          local n = tonumber(seed_new)
+          if n then S.acestep_seed = math.floor(n) end
+        end
+        g.same_line(t.sc(10)); g.text_disabled("(-1 = random)")
+
+        -- CFG controls — base checkpoint only; turbo is CFG-distilled and
+        -- generate_music() hard-overrides guidance_scale to 1.0 for it, so
+        -- these are hidden entirely for turbo rather than shown-but-inert.
+        if variant == "base" then
+          g.spacing()
+          g.row_label("Guidance:", lw)
+          g.next_width(t.sc(120))
+          rv, nv = g.slider_float("##ace_guidance", S.acestep_guidance,
+            ACESTEP_GUIDANCE_RANGE[1], ACESTEP_GUIDANCE_RANGE[2], "%.2f")
+          if rv then S.acestep_guidance = nv end
+
+          local chg, nv2 = g.checkbox("Use ADG##ace_adg", S.acestep_use_adg)
+          if chg then S.acestep_use_adg = nv2 end
+
+          g.row_label("CFG start:", lw)
+          g.next_width(t.sc(120))
+          rv, nv = g.slider_float("##ace_cfg_s", S.acestep_cfg_start,
+            ACESTEP_CFG_RANGE[1], ACESTEP_CFG_RANGE[2], "%.2f")
+          if rv then S.acestep_cfg_start = nv end
+          g.same_line(t.sc(14)); g.inline_text("CFG end:")
+          g.same_line(t.sc(6)); g.next_width(t.sc(120))
+          rv, nv = g.slider_float("##ace_cfg_e", S.acestep_cfg_end,
+            ACESTEP_CFG_RANGE[1], ACESTEP_CFG_RANGE[2], "%.2f")
+          if rv then S.acestep_cfg_end = nv end
+        end
+
+        g.spacing()
+        local tchg, tnv = g.checkbox("Thinking (5Hz LM planner)##ace_think", S.acestep_thinking)
+        if tchg then S.acestep_thinking = tnv end
+        if S.acestep_thinking then
+          g.row_label("LM temp.:", lw)
+          g.next_width(t.sc(120))
+          rv, nv = g.slider_float("##ace_lmtemp", S.acestep_lm_temp,
+            ACESTEP_LM_TEMP_RANGE[1], ACESTEP_LM_TEMP_RANGE[2], "%.2f")
+          if rv then S.acestep_lm_temp = nv end
+        end
+
+        g.spacing()
+        g.text("LoRA / LoKr adapter (optional):")
+        g.row_label("Folder:", lw)
+        g.next_width(-(2 * t.SPACING_X + t.sc(44)))
+        local pchg, pnv = widgets.input_text("##ace_lora_path", S.acestep_lora_path)
+        if pchg then S.acestep_lora_path = pnv end
+        g.same_line()
+        if g.button("...", t.sc(44), t.ITEM_H) then
+          if reaper.APIExists("JS_Dialog_BrowseForFolder") then
+            local ok, folder = reaper.JS_Dialog_BrowseForFolder("LoRA/LoKr adapter folder", "")
+            if ok and folder and folder ~= "" then S.acestep_lora_path = folder end
+          else
+            reaper.MB(
+              "Folder browsing requires the js_ReaScriptAPI extension "
+              .. "(install via ReaPack).\nYou can also paste the adapter "
+              .. "folder path directly into the text field.",
+              "ACE-Step LoRA adapter", 0)
+          end
+        end
+        if S.acestep_lora_path:match("%S") then
+          g.row_label("Scale:", lw)
+          g.next_width(t.sc(120))
+          rv, nv = g.slider_float("##ace_lora_scale", S.acestep_lora_scale,
+            ACESTEP_LORA_SCALE_RANGE[1], ACESTEP_LORA_SCALE_RANGE[2], "%.2f")
+          if rv then S.acestep_lora_scale = nv end
+          g.text_disabled("Folder must contain adapter_config.json + adapter_model.safetensors, "
+            .. "or a lokr_weights.safetensors (Side-Step / PEFT output).")
+        end
+      end
+      g.spacing()
+    end
 
     -- Mustango fixed duration hint
     if GEN_MODELS[S.gen_model_idx] == "mustango" then
@@ -635,25 +847,25 @@ function M.draw()
     if g.button("Clear", t.sc(70), t.ITEM_H) then S.log = {} end
     g.spacing()
 
-    if S.log_scroll_to_bottom then
-      widgets.scroll_to_bottom("##logscroll")
-      S.log_scroll_to_bottom = false
-    end
+    -- No auto-scroll-to-bottom here: the log now shares the page-level
+    -- scroll_region with everything else, so forcing it to the bottom on
+    -- every new line would yank the whole page out from under the user
+    -- while they're scrolled up looking at something else.
+    S.log_scroll_to_bottom = false
 
     g.push_font(t.F.MONO)
-    local log_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y - t.sc(10))
-    widgets.scroll_region("##logscroll", 0, log_h, function()
-      for i = 1, #S.log do
-        local ln = S.log[i]
-        if ln:find("^ERROR") then
-          g.text_colored(ln, "RED")
-        else
-          g.text_colored(ln, "LOG_FG")
-        end
+    for i = 1, #S.log do
+      local ln = S.log[i]
+      if ln:find("^ERROR") then
+        g.text_colored(ln, "RED")
+      else
+        g.text_colored(ln, "LOG_FG")
       end
-    end, { hscroll = true })
+    end
     g.pop_font()
   end
+
+  end)  -- end scroll_region ##t2a_page
 end
 
 return M

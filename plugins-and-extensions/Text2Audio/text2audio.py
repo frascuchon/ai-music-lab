@@ -14,11 +14,20 @@ Called by Text2Audio.lua as a background process:
         [--start <float>] [--duration <float>]     # section of source
         [--intensity <subtle|moderate|strong>]     # edit mode
         [--gpu <A10G|A100|T4>]
+        # ACE-Step generation (acestep_gen) only — advanced inference params:
+        [--steps <int>] [--guidance-scale <float>] [--shift <float>]
+        [--seed <int>] [--use-adg] [--cfg-start <float>] [--cfg-end <float>]
+        [--thinking] [--lm-temperature <float>]
+        [--lora-path <folder>] [--lora-scale <float>]
 
 Model entrypoint contracts (modal run <script>::main):
   text2audio (sao, foundation1, acestep_gen, inspiremusic_gen,
               mustango, audiogen, musicgen_gen, magnet):
       --prompt  --seconds  --out-dir  --force
+      acestep_gen additionally forwards --steps --guidance-scale --shift
+      --seed --use-adg --cfg-interval-start --cfg-interval-end --thinking
+      --lm-temperature --lora-path --lora-scale when given (all optional;
+      research_acestep_gen_modal.py clamps everything to valid ranges).
   audio_edit_noise (sao_edit):
       --source-audio  --prompt  --noise-level  --out-dir  --force
   audio_edit_strength (acestep):
@@ -162,6 +171,22 @@ def main() -> int:
                    help="Transformation intensity (edit mode).")
     p.add_argument("--gpu",         default="A10G",
                    help="GPU for Modal (A10G|A100|T4).")
+
+    # ACE-Step generation (acestep_gen) only — advanced inference params.
+    # All optional; the Modal script clamps to valid ranges regardless.
+    p.add_argument("--dit-variant",     default="turbo", choices=["turbo", "base"],
+                   dest="dit_variant")
+    p.add_argument("--steps",           type=int,   default=None)
+    p.add_argument("--guidance-scale",  type=float, default=None, dest="guidance_scale")
+    p.add_argument("--shift",           type=float, default=None)
+    p.add_argument("--seed",            type=int,   default=None)
+    p.add_argument("--use-adg",         action="store_true", dest="use_adg")
+    p.add_argument("--cfg-start",       type=float, default=None, dest="cfg_start")
+    p.add_argument("--cfg-end",         type=float, default=None, dest="cfg_end")
+    p.add_argument("--thinking",        action="store_true")
+    p.add_argument("--lm-temperature",  type=float, default=None, dest="lm_temperature")
+    p.add_argument("--lora-path",       default="", dest="lora_path")
+    p.add_argument("--lora-scale",      type=float, default=None, dest="lora_scale")
     args = p.parse_args()
 
     pf = args.progress
@@ -238,6 +263,34 @@ def main() -> int:
             "--out-dir", str(out_dir),
             "--force",
         ]
+        if args.model == "acestep_gen":
+            cmd += ["--dit-variant", args.dit_variant]
+            if args.steps is not None:
+                cmd += ["--steps", str(args.steps)]
+            if args.guidance_scale is not None:
+                cmd += ["--guidance-scale", str(args.guidance_scale)]
+            if args.shift is not None:
+                cmd += ["--shift", str(args.shift)]
+            if args.seed is not None:
+                cmd += ["--seed", str(args.seed)]
+            if args.use_adg:
+                cmd += ["--use-adg"]
+            if args.cfg_start is not None:
+                cmd += ["--cfg-interval-start", str(args.cfg_start)]
+            if args.cfg_end is not None:
+                cmd += ["--cfg-interval-end", str(args.cfg_end)]
+            if args.thinking:
+                cmd += ["--thinking"]
+            if args.lm_temperature is not None:
+                cmd += ["--lm-temperature", str(args.lm_temperature)]
+            if args.lora_path.strip():
+                if not Path(args.lora_path).expanduser().is_dir():
+                    write_progress(pf, "error", 0,
+                                   f"LoRA adapter folder not found: {args.lora_path}")
+                    return 1
+                cmd += ["--lora-path", args.lora_path]
+                if args.lora_scale is not None:
+                    cmd += ["--lora-scale", str(args.lora_scale)]
     elif kind == "audio_edit_noise":
         noise_level = INTENSITY_MAP["sao_edit"].get(args.intensity, 1.0)
         cmd += [
