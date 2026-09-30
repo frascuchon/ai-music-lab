@@ -51,6 +51,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+from collections import deque
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent          # shared/
@@ -92,22 +93,45 @@ def _run(cmd: list[str], **kwargs) -> tuple[int, str, str]:
     return r.returncode, r.stdout.strip(), r.stderr.strip()
 
 
+def _tail_error_message(cmd: list[str], returncode: int,
+                        tail_lines: list[str]) -> str:
+    """Build a descriptive error message from a failed subprocess's own
+    output instead of a bare exit code — a bare 'Error (code 1)' gives the
+    user nothing to act on, especially for commands (brew, pip, uv, modal)
+    whose real failure reason is only visible in their own stdout/stderr."""
+    cmd_name = Path(cmd[0]).name if cmd else "Command"
+    last = next((ln for ln in reversed(tail_lines) if ln.strip()), "")
+    if last:
+        return f"{cmd_name} failed (code {returncode}): {last[:160]}"
+    return (f"{cmd_name} failed (code {returncode}) with no output — "
+            "see reaperai_setup.log for details.")
+
+
 def _stream(pf: Path | None, cmd: list[str], *, done_msg: str = "Completed",
             env: dict | None = None) -> int:
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, env=env)
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, env=env)
+    except OSError as exc:
+        write(pf, "error", 0, f"Failed to launch {Path(cmd[0]).name if cmd else cmd}: {exc}")
+        return 1
     assert proc.stdout
     pct = 0.1
+    tail: deque[str] = deque(maxlen=40)
     for line in proc.stdout:
         line = line.rstrip()
         if line:
+            tail.append(line)
             write(pf, "running", min(pct, 0.95), line[:120])
             pct = min(pct + 0.04, 0.95)
+    proc.stdout.close()
     proc.wait()
     if proc.returncode == 0:
         write(pf, "done", 1.0, done_msg)
     else:
-        write(pf, "error", pct, f"Error (code {proc.returncode})")
+        tail_lines = list(tail)
+        write(pf, "error", pct, _tail_error_message(cmd, proc.returncode, tail_lines),
+              ["--- last output lines ---"] + tail_lines if tail_lines else None)
     return proc.returncode
 
 
@@ -393,15 +417,20 @@ def cmd_modal_login(args) -> None:
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     assert proc.stdout
+    tail: deque[str] = deque(maxlen=40)
     start, timeout, pct = time.monotonic(), 300, 0.1
     while True:
         if time.monotonic() - start > timeout:
             proc.terminate()
-            write(pf, "error", pct, "Timeout waiting for login (5 min)")
+            write(pf, "error", pct, "Timeout waiting for login (5 min) — "
+                  "the browser tab may not have completed the auth flow")
             return
         line = proc.stdout.readline()
         if line:
-            write(pf, "running", min(pct, 0.5), line.rstrip()[:120])
+            clean = line.rstrip()
+            if clean:
+                tail.append(clean)
+            write(pf, "running", min(pct, 0.5), clean[:120])
             pct = min(pct + 0.03, 0.5)
         if toml.exists() and toml.stat().st_mtime != old_mtime:
             proc.terminate()
@@ -414,7 +443,10 @@ def cmd_modal_login(args) -> None:
             elif rc == 0:
                 write(pf, "done", 1.0, "modal token new completed")
             else:
-                write(pf, "error", pct, f"modal token new failed (code {rc})")
+                tail_lines = list(tail)
+                write(pf, "error", pct,
+                      _tail_error_message(["modal token new"], rc, tail_lines),
+                      ["--- last output lines ---"] + tail_lines if tail_lines else None)
             return
         time.sleep(0.5)
 
@@ -431,7 +463,7 @@ def cmd_modal_secret_create(args) -> None:
         return
     uv = _find_uv()
     if uv is None:
-        write(pf, "error", 0, "uv not found")
+        write(pf, "error", 0, "uv not found — install it first (Setup tab, 'Install uv')")
         return
     write(pf, "running", 0.3, f"Saving secret '{HF_SECRET_NAME}'...")
     rc, out, err = _run([str(uv), "run", "--project", str(SCRIPT_DIR),
@@ -456,7 +488,7 @@ def cmd_prewarm_sam(args) -> None:
         return
     uv = _find_uv()
     if uv is None:
-        write(pf, "error", 0, "uv not found")
+        write(pf, "error", 0, "uv not found — install it first (Setup tab, 'Install uv')")
         return
     write(pf, "running", 0.05, f"Downloading {model} (may take 10-20 min)...")
     _stream(pf,
@@ -477,7 +509,7 @@ def cmd_prewarm_miros(args) -> None:
         return
     uv = _find_uv()
     if uv is None:
-        write(pf, "error", 0, "uv not found")
+        write(pf, "error", 0, "uv not found — install it first (Setup tab, 'Install uv')")
         return
     write(pf, "running", 0.05,
           "Downloading MIROS weights to Modal Volume (may take 10-15 min)...")
@@ -499,7 +531,7 @@ def cmd_prewarm_yourmt3(args) -> None:
         return
     uv = _find_uv()
     if uv is None:
-        write(pf, "error", 0, "uv not found")
+        write(pf, "error", 0, "uv not found — install it first (Setup tab, 'Install uv')")
         return
     write(pf, "running", 0.05,
           "Downloading YourMT3+ weights to Modal Volume (may take 5-10 min)...")
@@ -538,7 +570,7 @@ def _prewarm_midigen_model(model_name: str, pf) -> None:
         return
     uv = _find_uv()
     if uv is None:
-        write(pf, "error", 0, "uv not found")
+        write(pf, "error", 0, "uv not found — install it first (Setup tab, 'Install uv')")
         return
     msg = f"Downloading {model_name} weights to Modal Volume..."
     write(pf, "running", 0.05, msg)

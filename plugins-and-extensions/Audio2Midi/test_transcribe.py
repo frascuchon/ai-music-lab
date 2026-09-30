@@ -240,5 +240,81 @@ class TestTempoReportedEndToEnd(TestCase):
         self.assertEqual(len(instr_lines), 1)
 
 
+class TestErrorReporting(TestCase):
+    """Covers the reported bug: when the Modal subprocess fails, the
+    progress file used to only get "Modal failed with code 1. Check the
+    log for details." — no hint of WHY. transcribe.py now keeps a rolling
+    tail of the subprocess's own output and surfaces the real cause."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="a2m_err_"))
+        self.progress_file = self.tmpdir / "progress.txt"
+        self.input_wav = self.tmpdir / "input.wav"
+        self.input_wav.write_bytes(b"\x00" * 8000)
+        self.outdir = self.tmpdir / "out"
+        self.outdir.mkdir()
+        self.shared_dir = self.tmpdir / "shared"
+        self.shared_dir.mkdir()
+        (self.shared_dir / "pyproject.toml").write_text("[project]\nname='shared'\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write_failing_stub(self, error_line):
+        script = self.tmpdir / "research_failing_modal.py"
+        script.write_text(textwrap.dedent(f"""\
+        import sys
+        print("Loading model weights from Modal Volume...")
+        print({error_line!r})
+        sys.exit(1)
+        """))
+        return script
+
+    def _run(self, script, model="miros"):
+        args = [
+            sys.executable, str(SCRIPT),
+            "--shared-dir", str(self.shared_dir),
+            "--script", str(script),
+            "--input", str(self.input_wav),
+            "--out-dir", str(self.outdir),
+            "--model", model,
+            "--progress", str(self.progress_file),
+        ]
+        return subprocess.run(args, capture_output=True, text=True, timeout=30)
+
+    def test_error_message_includes_real_cause_not_just_exit_code(self):
+        script = self._write_failing_stub(
+            "RuntimeError: CUDA out of memory on device A10G")
+        proc = self._run(script)
+        self.assertEqual(proc.returncode, 1)
+        state, _, msg, extra = parse_progress(self.progress_file)
+        self.assertEqual(state, "error")
+        self.assertIn("code 1", msg)
+        self.assertIn("CUDA out of memory on device A10G", msg)
+        self.assertNotEqual(
+            msg.strip(),
+            "Modal failed with code 1. Check the log for details.",
+            "regression: error message must not collapse back to a bare "
+            "exit-code-only message",
+        )
+
+    def test_extra_lines_contain_full_tail_for_full_log_view(self):
+        script = self._write_failing_stub("ImportError: no module named foo")
+        self._run(script)
+        _, _, _, extra = parse_progress(self.progress_file)
+        self.assertIn("--- last output lines ---", extra)
+        self.assertTrue(any("ImportError: no module named foo" in l for l in extra))
+        self.assertTrue(any("Loading model weights" in l for l in extra))
+
+    def test_no_output_failure_still_gives_actionable_message(self):
+        script = self.tmpdir / "research_silent_fail_modal.py"
+        script.write_text("import sys; sys.exit(1)\n")
+        proc = self._run(script)
+        self.assertEqual(proc.returncode, 1)
+        state, _, msg, _ = parse_progress(self.progress_file)
+        self.assertEqual(state, "error")
+        self.assertIn("code 1", msg)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

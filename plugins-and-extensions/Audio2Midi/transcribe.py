@@ -34,6 +34,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections import deque
 from pathlib import Path
 
 
@@ -251,11 +252,13 @@ def main() -> int:
         return 1
 
     # --- Parse stdout for progress -------------------------------------------
+    tail: deque[str] = deque(maxlen=40)  # last output lines, surfaced on failure
     for line in iter(proc.stdout.readline, ""):
         line = line.rstrip()
         if not line:
             continue
         print(line, flush=True)
+        tail.append(line)
 
         pct = 0.1
         # Pattern "[n/m]" in research_*_modal.py
@@ -282,9 +285,12 @@ def main() -> int:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
     if proc.returncode != 0:
+        tail_lines = list(tail)
+        last = next((ln for ln in reversed(tail_lines) if ln.strip()), "")
+        detail = f" Last: {last[:160]}" if last else " Check the log for details."
         write_progress(pf, "error", 0,
-                       f"Modal failed with code {proc.returncode}. "
-                       "Check the log for details.")
+                       f"Modal failed with code {proc.returncode}.{detail}",
+                       ["--- last output lines ---"] + tail_lines)
         return 1
 
     # --- Locate generated MIDI -----------------------------------------------

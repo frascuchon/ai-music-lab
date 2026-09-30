@@ -210,6 +210,10 @@ local function read_progress()
     S.running = false
     S.done    = true
     add_log("ERROR: " .. (r.msg or "?"))
+    for _, line in ipairs(r.extra or {}) do
+      local p = line:match("^%s*(.-)%s*$")
+      if p ~= "" then add_log("  " .. p) end
+    end
   end
 end
 
