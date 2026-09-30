@@ -105,6 +105,7 @@ local S = {
   temperature = MG_TEMP_DEFAULT[MG_MODELS[1]] or 1.0,
   -- Runtime
   running    = false,
+  pid        = nil,
   done       = false,
   progress   = 0.0,
   status     = "Ready.",
@@ -157,7 +158,7 @@ local function read_progress()
   end
 
   if r.state == "done" and not S.done then
-    S.running = false; S.done = true
+    S.running = false; S.pid = nil; S.done = true
     S.out_files = {}; S.n_instruments = -1
     for _, line in ipairs(r.extra) do
       local p = line:match("^%s*(.-)%s*$")
@@ -175,7 +176,7 @@ local function read_progress()
       import_midi_all()
     end
   elseif r.state == "error" and not S.done then
-    S.running = false; S.done = true
+    S.running = false; S.pid = nil; S.done = true
     add_log("ERROR: " .. (r.msg or "?"))
     -- Trailing raw output from the Modal/Python subprocess (see midigen.py's
     -- tail_lines) — the single summarized message above is a best-effort
@@ -452,10 +453,21 @@ local function clear_run(label)
   local f = io.open(PROGRESS_F, "w")
   if f then f:write("running|0.00|" .. label); f:close() end
   local lf = io.open(LOG_F, "w"); if lf then lf:close() end
-  S.running = true; S.done = false
+  S.running = true; S.pid = nil; S.done = false
   S.progress = 0; S.out_files = {}
   S.log = {}; S.status = label
   S.log_scroll_to_bottom = false
+end
+
+-- Stops the in-flight generation (best-effort: signals the local Modal
+-- client process; a remote Modal job already dispatched may keep running).
+local function stop_generate()
+  local signaled = common.stop_process(S.pid)
+  add_log(signaled and "Stopped by user."
+    or "Stopped by user (process already finished).")
+  S.running = false
+  S.pid     = nil
+  S.done    = true
 end
 
 local function launch_generate()
@@ -534,7 +546,7 @@ local function launch_generate()
     local ok_s, err_s = write_combined_midi(S.amt_melody_take, S.amt_seed_takes, seed_path)
     if not ok_s then
       reaper.MB("Error building seed MIDI: " .. (err_s or "?"), "MidiGenerator", 0)
-      S.running = false
+      S.running = false; S.pid = nil
       return
     end
     local mode = AMT_MODES[S.amt_mode_idx]
@@ -552,7 +564,7 @@ local function launch_generate()
 
   local cmd = base .. extra .. " >>" .. q(LOG_F) .. " 2>&1 &"
   add_log("Launching Modal...")
-  os.execute(cmd)
+  S.pid = common.launch_tracked(cmd)
 end
 
 -- ── MODULE ───────────────────────────────────────────────────────
@@ -790,18 +802,22 @@ function M.draw()
   g.spacing(); g.separator(); g.spacing()
 
   -- ── GENERATE BUTTON ─────────────────────────────────────────────
+  -- (doubles as STOP while a generation is running)
   local btn_color = {
     norm   = { 0x1A/255, 0x7A/255, 0x3C/255 },
     hover  = { 0x22/255, 0x99/255, 0x4D/255 },
     active = { 0x2A/255, 0xB5/255, 0x5C/255 },
   }
-  local btn_lbl = S.running and "[ Generating... ]" or "GENERATE MIDI"
-  g.begin_disabled(S.running)
+  local stop_color = {
+    norm   = t.C.RED,
+    hover  = { 0xE8/255, 0x5A/255, 0x50/255 },
+    active = { 0xF2/255, 0x70/255, 0x66/255 },
+  }
+  local btn_lbl = S.running and "STOP  (Generating...)" or "GENERATE MIDI"
   g.next_width(-1)
-  if g.button(btn_lbl, nil, t.sc(36), { solid = btn_color }) then
-    launch_generate()
+  if g.button(btn_lbl, nil, t.sc(36), { solid = S.running and stop_color or btn_color }) then
+    if S.running then stop_generate() else launch_generate() end
   end
-  g.end_disabled()
   g.spacing()
 
   -- ── PROGRESS ────────────────────────────────────────────────────

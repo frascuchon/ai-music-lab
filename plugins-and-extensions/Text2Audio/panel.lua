@@ -152,6 +152,7 @@ local S = {
   gpu_idx           = 1,
   -- Runtime
   running           = false,
+  pid               = nil,
   done              = false,
   progress          = 0.0,
   status            = "Ready.",
@@ -193,6 +194,7 @@ local function read_progress()
 
   if r.state == "done" and not S.done then
     S.running   = false
+    S.pid       = nil
     S.done      = true
     S.out_files = {}
     for _, line in ipairs(r.extra) do
@@ -208,6 +210,7 @@ local function read_progress()
 
   elseif r.state == "error" and not S.done then
     S.running = false
+    S.pid     = nil
     S.done    = true
     add_log("ERROR: " .. (r.msg or "?"))
     for _, line in ipairs(r.extra or {}) do
@@ -335,12 +338,24 @@ local function clear_run(label)
   if f then f:write("running|0.00|" .. label); f:close() end
   local lf = io.open(LOG_F, "w"); if lf then lf:close() end
   S.running   = true
+  S.pid       = nil
   S.done      = false
   S.progress  = 0
   S.out_files = {}
   S.log       = {}
   S.status    = label
   S.log_scroll_to_bottom = false
+end
+
+-- Stops the in-flight generation/edit (best-effort: signals the local Modal
+-- client process; a remote Modal job already dispatched may keep running).
+local function stop_t2a()
+  local signaled = common.stop_process(S.pid)
+  add_log(signaled and "Stopped by user."
+    or "Stopped by user (process already finished).")
+  S.running = false
+  S.pid     = nil
+  S.done    = true
 end
 
 local function launch_t2a()
@@ -421,7 +436,7 @@ local function launch_t2a()
       q(run_dir), extra, q(PROGRESS_F), q(LOG_F))
 
     add_log("Launching Modal process...")
-    os.execute(cmd)
+    S.pid = common.launch_tracked(cmd)
 
   -- ── EDIT mode ──
   else
@@ -479,7 +494,7 @@ local function launch_t2a()
       q(PROGRESS_F), q(LOG_F))
 
     add_log("Launching Modal process...")
-    os.execute(cmd)
+    S.pid = common.launch_tracked(cmd)
   end
 end
 
@@ -808,22 +823,25 @@ function M.draw()
   g.separator()
   g.spacing()
 
-  -- Main button
+  -- Main button (doubles as STOP while running)
   local btn_colors = {
     norm   = S.mode == 1 and {0x14/255, 0x6A/255, 0x3C/255} or {0x3C/255, 0x14/255, 0x6A/255},
     hover  = S.mode == 1 and {0x1A/255, 0x88/255, 0x4D/255} or {0x4D/255, 0x1A/255, 0x88/255},
     active = S.mode == 1 and {0x22/255, 0xA5/255, 0x5E/255} or {0x5E/255, 0x22/255, 0xA5/255},
   }
+  local stop_colors = {
+    norm   = t.C.RED,
+    hover  = { 0xE8/255, 0x5A/255, 0x50/255 },
+    active = { 0xF2/255, 0x70/255, 0x66/255 },
+  }
   local btn_lbl = S.running
-    and (S.mode == 1 and "[ Generating... ]" or "[ Editing... ]")
-    or  (S.mode == 1 and "GENERATE AUDIO"    or "EDIT AUDIO")
+    and (S.mode == 1 and "STOP  (Generating...)" or "STOP  (Editing...)")
+    or  (S.mode == 1 and "GENERATE AUDIO"        or "EDIT AUDIO")
 
-  g.begin_disabled(S.running)
   g.next_width(-1)
-  if g.button(btn_lbl, nil, t.sc(36), { solid = btn_colors }) then
-    launch_t2a()
+  if g.button(btn_lbl, nil, t.sc(36), { solid = S.running and stop_colors or btn_colors }) then
+    if S.running then stop_t2a() else launch_t2a() end
   end
-  g.end_disabled()
   g.spacing()
 
   -- Progress bar

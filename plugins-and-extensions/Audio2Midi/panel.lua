@@ -54,6 +54,7 @@ local S = {
   beat_tracking   = true,
   -- runtime
   running         = false,
+  pid             = nil,
   done            = false,
   progress        = 0.0,
   status          = "Ready.",
@@ -99,6 +100,7 @@ local function read_progress()
 
   if r.state == "done" and not S.done then
     S.running   = false
+    S.pid       = nil
     S.done      = true
     S.out_files = {}
     S.n_instruments = -1
@@ -126,6 +128,7 @@ local function read_progress()
 
   elseif r.state == "error" and not S.done then
     S.running = false
+    S.pid     = nil
     S.done    = true
     add_log("ERROR: " .. (r.msg or "?"))
     for _, line in ipairs(r.extra or {}) do
@@ -317,12 +320,24 @@ local function clear_run(label)
   if f then f:write("running|0.00|" .. label); f:close() end
   local lf = io.open(LOG_F, "w"); if lf then lf:close() end
   S.running   = true
+  S.pid       = nil
   S.done      = false
   S.progress  = 0
   S.out_files = {}
   S.log       = {}
   S.status    = label
   S.log_scroll_to_bottom = false
+end
+
+-- Stops the in-flight transcription (best-effort: signals the local Modal
+-- client process; a remote Modal job already dispatched may keep running).
+local function stop_transcribe()
+  local signaled = common.stop_process(S.pid)
+  add_log(signaled and "Stopped by user."
+    or "Stopped by user (process already finished).")
+  S.running = false
+  S.pid     = nil
+  S.done    = true
 end
 
 local function launch_transcribe()
@@ -375,7 +390,7 @@ local function launch_transcribe()
     q(PROGRESS_F), q(LOG_F))
 
   add_log("Launching Modal process...")
-  os.execute(cmd)
+  S.pid = common.launch_tracked(cmd)
 end
 
 -- ── MODULE ───────────────────────────────────────────────────────
@@ -478,19 +493,22 @@ function M.draw()
   g.separator()
   g.spacing()
 
-  -- GENERATE MIDI button
+  -- GENERATE MIDI button (doubles as STOP while a transcription is running)
   local btn_color = {
     norm   = { 0x1A/255, 0x7A/255, 0x3C/255 },
     hover  = { 0x22/255, 0x99/255, 0x4D/255 },
     active = { 0x2A/255, 0xB5/255, 0x5C/255 },
   }
-  local btn_lbl = S.running and "[ Transcribing... ]" or "GENERATE MIDI"
-  g.begin_disabled(S.running)
+  local stop_color = {
+    norm   = t.C.RED,
+    hover  = { 0xE8/255, 0x5A/255, 0x50/255 },
+    active = { 0xF2/255, 0x70/255, 0x66/255 },
+  }
+  local btn_lbl = S.running and "STOP  (Transcribing...)" or "GENERATE MIDI"
   g.next_width(-1)
-  if g.button(btn_lbl, nil, t.sc(36), { solid = btn_color }) then
-    launch_transcribe()
+  if g.button(btn_lbl, nil, t.sc(36), { solid = S.running and stop_color or btn_color }) then
+    if S.running then stop_transcribe() else launch_transcribe() end
   end
-  g.end_disabled()
   g.spacing()
 
   -- Progress bar

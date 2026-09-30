@@ -69,6 +69,7 @@ local S = {
   sam_cands      = 1,
   -- runtime
   running        = false,
+  pid            = nil,
   done           = false,
   progress       = 0.0,
   status         = "Ready.",
@@ -103,6 +104,7 @@ local function read_progress()
 
   if r.state == "done" and not S.done then
     S.running   = false
+    S.pid       = nil
     S.done      = true
     S.out_files = {}
     for _, line in ipairs(r.extra) do
@@ -115,6 +117,7 @@ local function read_progress()
     end
   elseif r.state == "error" and not S.done then
     S.running = false
+    S.pid     = nil
     S.done    = true
     add_log("ERROR: " .. (r.msg or "?"))
     for _, line in ipairs(r.extra or {}) do
@@ -268,12 +271,24 @@ local function clear_run(label)
   if f then f:write("running|0.00|" .. label); f:close() end
   local lf = io.open(LOG_F, "w"); if lf then lf:close() end
   S.running   = true
+  S.pid       = nil
   S.done      = false
   S.progress  = 0
   S.out_files = {}
   S.log       = {}
   S.status    = label
   S.log_scroll_to_bottom = false
+end
+
+-- Stops the in-flight separation (best-effort: signals the local process;
+-- a remote Modal job already dispatched by SAM Audio may keep running).
+local function stop_run()
+  local signaled = common.stop_process(S.pid)
+  add_log(signaled and "Stopped by user."
+    or "Stopped by user (process already finished).")
+  S.running = false
+  S.pid     = nil
+  S.done    = true
 end
 
 local function launch_demucs()
@@ -303,7 +318,7 @@ local function launch_demucs()
     q(S.src), q(model), table.concat(stems, ","),
     q(S.outdir), q(PYTHON), section_args, q(PROGRESS_F), q(LOG_F))
   add_log("Launching process...")
-  os.execute(cmd)
+  S.pid = common.launch_tracked(cmd)
 end
 
 local function launch_sam()
@@ -344,7 +359,7 @@ local function launch_sam()
     S.sam_chunk, S.sam_overlap, S.sam_conf, S.sam_cands,
     section_args, q(S.outdir), q(PROGRESS_F), q(LOG_F))
   add_log("Launching Modal process...")
-  os.execute(cmd)
+  S.pid = common.launch_tracked(cmd)
 end
 
 -- ── DEMUCS TAB ───────────────────────────────────────────────────
@@ -521,7 +536,7 @@ function M.draw()
   g.separator()
   g.spacing()
 
-  -- SEPARATE button — colors change per tab
+  -- SEPARATE button — colors change per tab; doubles as STOP while running
   local sep_colors
   if S.tab == 1 then
     sep_colors = {
@@ -536,14 +551,19 @@ function M.draw()
       active = { 0x80/255, 0x33/255, 0xD1/255 },
     }
   end
-  local sep_lbl = S.running and "[ Processing... ]"
+  local stop_colors = {
+    norm   = t.C.RED,
+    hover  = { 0xE8/255, 0x5A/255, 0x50/255 },
+    active = { 0xF2/255, 0x70/255, 0x66/255 },
+  }
+  local sep_lbl = S.running and "STOP  (Processing...)"
     or (S.tab == 1 and "SEPARATE  (Demucs)" or "SEPARATE  (SAM Audio)")
-  g.begin_disabled(S.running)
   g.next_width(-1)
-  if g.button(sep_lbl, nil, t.sc(36), { solid = sep_colors }) then
-    if S.tab == 1 then launch_demucs() else launch_sam() end
+  if g.button(sep_lbl, nil, t.sc(36), { solid = S.running and stop_colors or sep_colors }) then
+    if S.running then
+      stop_run()
+    elseif S.tab == 1 then launch_demucs() else launch_sam() end
   end
-  g.end_disabled()
   g.spacing()
 
   -- Progress bar

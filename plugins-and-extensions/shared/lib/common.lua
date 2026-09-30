@@ -1,6 +1,9 @@
 -- lib/common.lua  Non-UI helpers shared between StemSeparator.lua and Setup.lua.
 
+local process_control = require("process_control")
+
 local M = {}
+M.process_control = process_control
 
 M.TMPDIR = os.getenv("TMPDIR") or "/tmp/"
 M.HOME   = os.getenv("HOME")   or ""
@@ -77,6 +80,37 @@ function M.launch_async(python, script_path, extra_args, progress_path, log_path
       q(python), q(script_path), extra_args, q(progress_path), q(log_path))
   end
   os.execute(cmd)
+end
+
+-- Launches a Unix background command (one already ending in "&", the
+-- convention every panel's launch_xxx() builds) while capturing the PID of
+-- the backgrounded process, so it can later be stopped with M.stop_process.
+-- Returns the pid (number), or nil if capture wasn't possible (e.g. on
+-- Windows, or if io.popen isn't available) — callers must treat a nil pid
+-- as "can't be stopped, but is still running".
+function M.launch_tracked(cmd)
+  if reaper.GetOS():find("^Win") then
+    os.execute(cmd)
+    return nil
+  end
+  local pipe = io.popen(process_control.wrap_for_pid_capture(cmd))
+  if not pipe then
+    os.execute(cmd)
+    return nil
+  end
+  local out = pipe:read("*l")
+  pipe:close()
+  return process_control.parse_pid(out)
+end
+
+-- Best-effort stop of a process previously launched via M.launch_tracked.
+-- Returns true if a kill signal was actually sent, false if `pid` was nil/
+-- invalid (nothing to signal).
+function M.stop_process(pid)
+  local kill_cmd = process_control.build_kill_command(pid)
+  if not kill_cmd then return false end
+  os.execute(kill_cmd)
+  return true
 end
 
 return M
