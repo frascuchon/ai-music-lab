@@ -1,8 +1,8 @@
--- @description AI Music Lab - unified plugin (Audio2Midi, MidiGenerator, Text2Audio, StemsSeparator, Setup)
+-- @description AI Music Lab - unified plugin (Text2Audio, StemsSeparator, Audio2Midi, MidiGenerator, Setup)
 -- @version 1.0
 -- @author AI Music Lab
--- @about Single REAPER window with a tab per tool: Audio2Midi, MidiGenerator,
---        Text2Audio, StemsSeparator and Setup. Replaces the 4 previous
+-- @about Single REAPER window with a tab per tool: Text2Audio, StemsSeparator,
+--        Audio2Midi, MidiGenerator and Setup. Replaces the 4 previous
 --        standalone plugin actions plus the standalone Setup wizard.
 --        Native gfx UI: no external REAPER extension dependencies.
 
@@ -28,10 +28,14 @@ local text2audio   = dofile(SCRIPT_DIR .. "Text2Audio/panel.lua")
 local stemssep     = dofile(SCRIPT_DIR .. "StemsSeparator/panel.lua")
 local setup_panel  = dofile(SHARED_DIR .. "panel_setup.lua")
 
-local PANELS = { audio2midi, midigenerator, text2audio, stemssep, setup_panel }
+-- Setup is intentionally excluded from PANELS/the main tab bar: it isn't a
+-- creative tool like the other four, so it gets its own button on the right
+-- side of the tab row (next to the collapse toggle) instead of a tab.
+local PANELS = { text2audio, stemssep, audio2midi, midigenerator }
 local TAB_LABELS = {}
 for i, p in ipairs(PANELS) do TAB_LABELS[i] = p.title end
-local SETUP_TAB_IDX = #PANELS
+local SETUP_TAB_IDX = #PANELS + 1
+local ALL_PANELS = { text2audio, stemssep, audio2midi, midigenerator, setup_panel }
 
 -- ── STATE ────────────────────────────────────────────────────────
 -- A deprecated per-plugin stub (see Audio2Midi/ai-music-lab-Audio2Midi.lua
@@ -39,8 +43,8 @@ local SETUP_TAB_IDX = #PANELS
 -- right tab instead of always opening on the first one.
 local initial_tab = 1
 if _G.AI_MUSIC_LAB_INITIAL_TAB then
-  for i, label in ipairs(TAB_LABELS) do
-    if label == _G.AI_MUSIC_LAB_INITIAL_TAB then initial_tab = i; break end
+  for i, p in ipairs(ALL_PANELS) do
+    if p.title == _G.AI_MUSIC_LAB_INITIAL_TAB then initial_tab = i; break end
   end
   _G.AI_MUSIC_LAB_INITIAL_TAB = nil
 end
@@ -53,7 +57,7 @@ local EXTSTATE_NS = "AI_MUSIC_LAB"
 S.collapsed  = reaper.GetExtState(EXTSTATE_NS, "collapsed") == "1"
 S.expanded_h = tonumber(reaper.GetExtState(EXTSTATE_NS, "expanded_h")) or 780
 
-for _, p in ipairs(PANELS) do
+for _, p in ipairs(ALL_PANELS) do
   if p.init then p.init() end
 end
 
@@ -155,7 +159,7 @@ local function loop()
     -- (normally frame_end's job) so next frame doesn't see a stale
     -- mb_prev=0 and misread a still-held mouse button as a brand-new click.
     gui.ctx.mb_prev = gui.ctx.mb
-    for _, p in ipairs(PANELS) do
+    for _, p in ipairs(ALL_PANELS) do
       if p.poll then p.poll() end
     end
     reaper.defer(loop)
@@ -166,11 +170,28 @@ local function loop()
     g.separator()
     g.spacing()
 
-    -- Tab bar
+    -- Tab bar (main tools only). Setup gets its own button, right-aligned
+    -- on the same row — same styling/positioning pattern as the collapse
+    -- toggle above — to set it visually apart from the creative-tool tabs.
     S.tab = widgets.tab_bar("##maintabs", S.tab, TAB_LABELS)
+
+    local row_y, row_h = gui.ctx.last_y, gui.ctx.last_h
+    local setup_label = setup_panel.title
+    local setup_w = math.max(80, gfx.measurestr(setup_label) + 24)
+    gui.ctx.x = t.PAD_X + gui.ctx.content_w - setup_w
+    gui.ctx.y = row_y
+    local setup_active = (S.tab == SETUP_TAB_IDX)
+    if g.button(setup_label, setup_w, row_h) then
+      S.tab = SETUP_TAB_IDX
+    end
+    if setup_active then
+      local ac = t.C.ACCENT
+      gfx.set(ac[1], ac[2], ac[3], 1)
+      gfx.rect(gui.ctx.last_x, gui.ctx.last_y + gui.ctx.last_h - 2, gui.ctx.last_w, 2, 1)
+    end
     g.spacing()
 
-    PANELS[S.tab].draw()
+    ALL_PANELS[S.tab].draw()
 
     -- Remember the current window height so it can be restored on expand,
     -- even if the user resized the window manually while expanded.
@@ -181,7 +202,7 @@ local function loop()
 
   -- Poll every panel every frame (not just the active one) so background
   -- jobs keep progressing while the user is on a different tab.
-  for _, p in ipairs(PANELS) do
+  for _, p in ipairs(ALL_PANELS) do
     if p.poll then p.poll() end
   end
 
