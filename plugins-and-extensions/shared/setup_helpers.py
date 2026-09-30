@@ -370,7 +370,8 @@ def cmd_install_abcmidi(args) -> None:
         if brew is None:
             write(pf, "error", 0,
                   "Homebrew not found. Install it from https://brew.sh, "
-                  "then run 'brew install abcmidi', or install manually.")
+                  "then run 'brew install abcmidi' — or install manually: "
+                  "https://ifdo.ca/~seymour/runabc/top.html")
             return
         write(pf, "running", 0.1, "Installing abcmidi via Homebrew...")
         _stream(pf, [brew, "install", "abcmidi"],
