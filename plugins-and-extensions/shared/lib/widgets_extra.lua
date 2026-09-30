@@ -198,7 +198,7 @@ function M.tab_bar(id, active_idx, tabs)
   end
 
   ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, ctx.content_w, tab_h
-  ctx.x = theme.PAD_X
+  ctx.x = ctx.row_x0
   ctx.y = y + tab_h + theme.SPACING_Y
   return new_idx
 end
@@ -259,7 +259,7 @@ function M.collapsing_header(label, default_open)
   end
 
   ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
-  ctx.x = theme.PAD_X
+  ctx.x = ctx.row_x0
   ctx.y = y + h + (is_open and theme.SPACING_Y or 0)
   return is_open
 end
@@ -271,7 +271,7 @@ function M.combo(id, idx, items)
   local t = theme
   local h = t.ITEM_H
   local nw = ctx.next_width; ctx.next_width = nil
-  local rem = ctx.content_w - (ctx.x - t.PAD_X)
+  local rem = ctx.content_w - (ctx.x - ctx.row_x0)
   local w = nw and (nw >= 0 and nw or math.max(1, rem + nw)) or rem
   local x, y = ctx.x, ctx.y
 
@@ -342,7 +342,7 @@ function M.combo(id, idx, items)
   end
 
   ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
-  ctx.x = t.PAD_X
+  ctx.x = ctx.row_x0
   ctx.y = y + h + t.SPACING_Y
   return idx
 end
@@ -399,7 +399,7 @@ function M.input_text(id, text, opts)
   local t = theme
   local h = t.ITEM_H
   local nw = ctx.next_width; ctx.next_width = nil
-  local rem = ctx.content_w - (ctx.x - t.PAD_X)
+  local rem = ctx.content_w - (ctx.x - ctx.row_x0)
   local w
   if opts.width then
     w = opts.width >= 0 and opts.width or math.max(1, rem + opts.width)
@@ -513,7 +513,7 @@ function M.input_text(id, text, opts)
   local focused = (ctx.focused_id == id)
   if ctx.clip_y1 and (gy + h < ctx.clip_y1 or gy > ctx.clip_y2) then
     ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
-    ctx.x = t.PAD_X; ctx.y = y + h + t.SPACING_Y
+    ctx.x = ctx.row_x0; ctx.y = y + h + t.SPACING_Y
     return changed, new_text
   end
   local bg = focused and t.C.FRAME_ACT or (hover_field and t.C.FRAME_HOV or t.C.FRAME)
@@ -577,7 +577,7 @@ function M.input_text(id, text, opts)
   end
 
   ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
-  ctx.x = t.PAD_X
+  ctx.x = ctx.row_x0
   ctx.y = y + h + t.SPACING_Y
   return changed, new_text
 end
@@ -594,7 +594,7 @@ function M.input_textarea(id, text, lines_visible, opts)
   lines_visible = lines_visible or 3
   local t = theme
   local nw = ctx.next_width; ctx.next_width = nil
-  local rem = ctx.content_w - (ctx.x - t.PAD_X)
+  local rem = ctx.content_w - (ctx.x - ctx.row_x0)
   local w = nw and (nw >= 0 and nw or math.max(1, rem + nw)) or rem
   local x, y = ctx.x, ctx.y
   local gy = y + (ctx.clip_y_off or 0)
@@ -745,7 +745,7 @@ function M.input_textarea(id, text, lines_visible, opts)
   -- Skip draw if clipped by outer scroll_region
   if ctx.clip_y1 and (gy + h < ctx.clip_y1 or gy > ctx.clip_y2) then
     ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
-    ctx.x = t.PAD_X; ctx.y = y + h + t.SPACING_Y
+    ctx.x = ctx.row_x0; ctx.y = y + h + t.SPACING_Y
     return changed, new_text
   end
 
@@ -825,7 +825,7 @@ function M.input_textarea(id, text, lines_visible, opts)
   end
 
   ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
-  ctx.x = t.PAD_X
+  ctx.x = ctx.row_x0
   ctx.y = y + h + t.SPACING_Y
   return changed, new_text
 end
@@ -842,9 +842,9 @@ function M.scroll_region(id, w, h, draw_fn, opts)
   local sh = opts.hscroll and (t.SCROLL_W + 2) or 0  -- h-scrollbar strip height
 
   if not w or w == 0 then
-    w = ctx.content_w - (ctx.x - t.PAD_X)
+    w = ctx.content_w - (ctx.x - ctx.row_x0)
   elseif w < 0 then
-    w = math.max(1, (ctx.content_w - (ctx.x - t.PAD_X)) + w)
+    w = math.max(1, (ctx.content_w - (ctx.x - ctx.row_x0)) + w)
   end
   local inner_w = w - sw     -- width of content area (excluding v-scrollbar strip)
   local inner_h = h - sh     -- height of content area (excluding h-scrollbar strip)
@@ -930,13 +930,17 @@ function M.scroll_region(id, w, h, draw_fn, opts)
   s.scroll_y = math.max(0, math.min(math.max(0, (s.content_h or 0) - inner_h), s.scroll_y))
   s.scroll_x = math.max(0, math.min(math.max(0, (s.content_x or 0) - inner_w), s.scroll_x))
 
-  -- Draw background
+  -- Draw background. Spans the full outer width `w` (not just `inner_w`)
+  -- so the panel's right edge lines up with the rest of the UI (buttons,
+  -- tab bar) instead of leaving a dead gap where the reserved scrollbar
+  -- gutter (sw) sits when no scrollbar is actually shown — that gap was
+  -- the source of the left/right margin mismatch inside every tab.
   local bg = t.C.LOG_BG; gfx.set(bg[1], bg[2], bg[3], 1)
-  gfx.rect(x, y, inner_w, inner_h, 1)
+  gfx.rect(x, y, w, inner_h, 1)
 
   -- Save outer layout context
   local sv = {
-    x=ctx.x, y=ctx.y, cw=ctx.content_w,
+    x=ctx.x, y=ctx.y, cw=ctx.content_w, x0=ctx.row_x0,
     lx=ctx.last_x, ly=ctx.last_y, lw=ctx.last_w, lh=ctx.last_h,
     cy1=ctx.clip_y1, cy2=ctx.clip_y2, cyo=ctx.clip_y_off,
     cx1=ctx.clip_x1, cx2=ctx.clip_x2,
@@ -945,21 +949,29 @@ function M.scroll_region(id, w, h, draw_fn, opts)
 
   -- Set up inner coordinate system.
   -- Vertical: logical Y=0 → screen Y = y - scroll_y.
-  -- Horizontal: content starts at screen x = x+4 - scroll_x.
+  -- Horizontal: content starts at screen x = x+sw - scroll_x, i.e. inset by
+  -- `sw` (the vertical scrollbar's reserved gutter width) from both the
+  -- left and right edges of the region — a matching, harmonious margin on
+  -- each side regardless of whether a scrollbar is actually shown. (It
+  -- used to be a smaller ad hoc 4px pad on the left vs. the full gutter on
+  -- the right, which read as "no margin on the left, some on the right".)
+  -- ctx.row_x0 is set alongside ctx.x so nested widgets measure their
+  -- remaining width from this region's own left inset, not theme.PAD_X.
   local sx = math.floor(s.scroll_x)
   s.scroll_y = math.max(0, math.min(math.max(0, (s.content_h or 0) - inner_h), s.scroll_y))
   ctx.clip_y1    = y
   ctx.clip_y2    = y + inner_h
   ctx.clip_y_off = y - math.floor(s.scroll_y)
-  ctx.x          = x + 4 - sx
+  ctx.x          = x + sw - sx
+  ctx.row_x0     = x + sw
   ctx.y          = 4
-  ctx.content_w  = inner_w - 8
+  ctx.content_w  = w - 2 * sw
 
   if opts.hscroll then
     ctx.clip_x1          = x
     ctx.clip_x2          = x + inner_w
     ctx.content_x_max    = 0
-    ctx.content_x_origin = x + 4 - sx
+    ctx.content_x_origin = x + sw - sx
   end
 
   draw_fn()
@@ -970,7 +982,7 @@ function M.scroll_region(id, w, h, draw_fn, opts)
   end
 
   -- Restore outer context
-  ctx.x             = sv.x;  ctx.y         = sv.y;   ctx.content_w = sv.cw
+  ctx.x             = sv.x;  ctx.y         = sv.y;   ctx.content_w = sv.cw; ctx.row_x0 = sv.x0
   ctx.last_x        = sv.lx; ctx.last_y    = sv.ly;  ctx.last_w    = sv.lw; ctx.last_h = sv.lh
   ctx.clip_y1       = sv.cy1; ctx.clip_y2  = sv.cy2; ctx.clip_y_off = sv.cyo
   ctx.clip_x1       = sv.cx1; ctx.clip_x2  = sv.cx2
@@ -980,12 +992,12 @@ function M.scroll_region(id, w, h, draw_fn, opts)
   s.scroll_y = math.max(0, math.min(math.max(0, (s.content_h or 0) - inner_h), s.scroll_y))
   s.scroll_x = math.max(0, math.min(math.max(0, (s.content_x or 0) - inner_w), s.scroll_x))
 
-  -- Border around content area
+  -- Border around content area (full width `w`, see background comment above)
   local bc = t.C.FRAME; gfx.set(bc[1], bc[2], bc[3], 1)
-  gfx.line(x,        y,         x+inner_w, y)
-  gfx.line(x,        y+inner_h, x+inner_w, y+inner_h)
-  gfx.line(x,        y,         x,         y+inner_h)
-  gfx.line(x+inner_w, y,        x+inner_w, y+inner_h)
+  gfx.line(x,   y,         x+w, y)
+  gfx.line(x,   y+inner_h, x+w, y+inner_h)
+  gfx.line(x,   y,         x,   y+inner_h)
+  gfx.line(x+w, y,         x+w, y+inner_h)
 
   -- Vertical scrollbar
   if s.content_h and s.content_h > inner_h then
@@ -1024,7 +1036,7 @@ function M.scroll_region(id, w, h, draw_fn, opts)
   end
 
   ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
-  ctx.x = t.PAD_X
+  ctx.x = ctx.row_x0
   ctx.y = y + h + t.SPACING_Y
 end
 

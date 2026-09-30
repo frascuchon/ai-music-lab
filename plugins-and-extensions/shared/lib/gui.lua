@@ -10,6 +10,14 @@ M.theme = theme
 local ctx = {
   -- Layout cursor
   x = 0, y = 0, content_w = 0,
+  -- Left edge a fresh row resets to, and the reference `resolve_w`/`rem`
+  -- calculations measure "distance travelled this row" from. Defaults to
+  -- theme.PAD_X at the top level; scroll_region() overrides it for the
+  -- duration of its draw_fn so nested rows reset to the region's own left
+  -- inset instead of the outer window's — without this, widgets inside a
+  -- scroll_region under-measure their remaining width by (row_x0 - PAD_X)
+  -- and end up short of the region's right edge (asymmetric margins).
+  row_x0 = 0,
   last_x = 0, last_y = 0, last_w = 0, last_h = 0,
   -- Vertical clip region (used inside scroll_region)
   clip_y1 = nil, clip_y2 = nil,
@@ -86,7 +94,7 @@ end
 
 -- Resolve width: nil→remaining, >=0→literal, <0→remaining+w
 local function resolve_w(w)
-  local rem = ctx.content_w - (ctx.x - theme.PAD_X)
+  local rem = ctx.content_w - (ctx.x - ctx.row_x0)
   if w == nil then return math.max(1, rem) end
   if w >= 0   then return w end
   return math.max(1, rem + w)
@@ -100,7 +108,7 @@ local function advance(x, y, w, h)
     local cr = (x + w) - ctx.content_x_origin
     if cr > ctx.content_x_max then ctx.content_x_max = cr end
   end
-  ctx.x = theme.PAD_X
+  ctx.x = ctx.row_x0
   ctx.y = y + h + theme.SPACING_Y
 end
 
@@ -167,6 +175,7 @@ function M.frame_begin()
 
   -- Reset layout
   ctx.x          = theme.PAD_X
+  ctx.row_x0     = theme.PAD_X
   ctx.y          = theme.PAD_Y
   ctx.content_w  = gfx.w - 2 * theme.PAD_X
   ctx.clip_y1    = nil
@@ -208,10 +217,10 @@ function M.separator()
   if not clipped(y, 1) then
     local c = t.C.SEP
     gfx.set(c[1], c[2], c[3], 1)
-    gfx.line(t.PAD_X, sy(y), t.PAD_X + ctx.content_w, sy(y))
+    gfx.line(ctx.row_x0, sy(y), ctx.row_x0 + ctx.content_w, sy(y))
   end
-  ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = t.PAD_X, ctx.y, ctx.content_w, 5
-  ctx.x = t.PAD_X
+  ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = ctx.row_x0, ctx.y, ctx.content_w, 5
+  ctx.x = ctx.row_x0
   ctx.y = y + 3 + t.SPACING_Y
 end
 
@@ -313,7 +322,7 @@ end
 
 function M.text_wrapped(s)
   local t = theme
-  local max_w = ctx.content_w - (ctx.x - t.PAD_X)
+  local max_w = ctx.content_w - (ctx.x - ctx.row_x0)
   gfx.setfont(cur_font())
   local lh = select(2, gfx.measurestr("Ay"))
   local start_x, start_y = ctx.x, ctx.y
