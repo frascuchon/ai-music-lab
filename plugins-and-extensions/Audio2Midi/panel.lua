@@ -15,6 +15,7 @@ local common  = require("common")
 local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
+local track_placement = require("track_placement")
 
 local HOME      = common.HOME
 local TMPDIR    = common.TMPDIR
@@ -246,8 +247,9 @@ import_midi = function()
     or (S.src:match("([^/\\]+)%.%w+$") or "audio")
   local model_tag = A2M_MODELS[S.model_idx] or "midi"
 
-  -- Record track count before import
-  local tcnt_before = reaper.CountTracks(0)
+  -- Land the transcribed track(s) right below the source track/clip
+  -- instead of always at the very end of the project's track list.
+  local tcnt_before = track_placement.insert_index(S.src_track_idx, reaper.CountTracks(0))
 
   -- Insert a new track and position the cursor
   reaper.InsertTrackAtIndex(tcnt_before, true)

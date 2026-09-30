@@ -15,6 +15,7 @@ local common  = require("common")
 local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
+local track_placement = require("track_placement")
 
 local HOME       = common.HOME
 local TMPDIR     = common.TMPDIR
@@ -223,7 +224,9 @@ import_stems = function()
     folder_name = (base or "stems") .. " [stems]"
   end
 
-  local tcnt = reaper.CountTracks(0)
+  -- Land the new folder right below the source track/clip instead of
+  -- always at the very end of the project's track list.
+  local tcnt = track_placement.insert_index(S.src_track_idx, reaper.CountTracks(0))
   reaper.InsertTrackAtIndex(tcnt, true)
   local folder_tr = reaper.GetTrack(0, tcnt)
   reaper.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", folder_name, true)
@@ -233,7 +236,10 @@ import_stems = function()
     local f = io.open(fp, "rb")
     if f then
       f:close()
-      local tidx = reaper.CountTracks(0)
+      -- Insert right after the folder (or the last stem added so far), NOT
+      -- at reaper.CountTracks(0) — that would append at the end of the
+      -- whole project instead of keeping every stem inside the folder.
+      local tidx = tcnt + 1 + imported
       reaper.InsertTrackAtIndex(tidx, true)
       local track      = reaper.GetTrack(0, tidx)
       local stem_name  = fp:match("([^/\\]+)%.wav$") or fp:match("([^/\\]+)$")
@@ -250,7 +256,11 @@ import_stems = function()
   end
 
   if imported > 0 then
-    local last_tr = reaper.GetTrack(0, reaper.CountTracks(0) - 1)
+    -- Last stem track is tcnt+imported (folder at tcnt, stems at
+    -- tcnt+1..tcnt+imported) — NOT reaper.CountTracks(0)-1, which would be
+    -- wrong whenever the folder was inserted mid-project rather than at
+    -- the very end.
+    local last_tr = reaper.GetTrack(0, tcnt + imported)
     reaper.SetMediaTrackInfo_Value(last_tr, "I_FOLDERDEPTH", -1)
     for i = 0, imported - 1 do
       local tr   = reaper.GetTrack(0, tcnt + 1 + i)
