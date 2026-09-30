@@ -1045,4 +1045,29 @@ function M.scroll_to_bottom(id)
   if ctx.state[id] then ctx.state[id].scroll_to_bottom = true end
 end
 
+-- ── EXAMPLE PROMPT PICKER ────────────────────────────────────────
+-- Dropdown of model-specific example prompts, meant to sit next to a
+-- prompt textarea and seed it with a starting point the user can then
+-- edit. `examples` is a list of { label = "short combo text",
+-- text = "full prompt text to insert" } (nil/empty list draws nothing).
+-- `state` is a small persistent table the caller keeps in its own S
+-- (e.g. `S.prompt_example = {idx = 1}`) — the picker needs its own combo
+-- index separate from the target field so it can show a neutral
+-- placeholder ("Example prompts...") instead of echoing the last pick.
+-- Returns the picked prompt's full text on the frame it was selected,
+-- or nil otherwise.
+function M.example_prompt_picker(id, state, examples)
+  if not examples or #examples == 0 then return nil end
+  local items = { "Example prompts..." }
+  for _, ex in ipairs(examples) do table.insert(items, ex.label) end
+  local prev_idx = state.idx or 1
+  local new_idx = M.combo(id, prev_idx, items)
+  local picked = nil
+  if new_idx ~= prev_idx and new_idx > 1 then
+    picked = examples[new_idx - 1].text
+  end
+  state.idx = 1  -- always settle back on the placeholder
+  return picked
+end
+
 return M

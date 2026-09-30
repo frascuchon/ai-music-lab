@@ -69,6 +69,57 @@ local MG_TEMP_RANGE_DEFAULT = { 0.5, 2.0 }
 local AMT_MODES = { "accompaniment", "continuation" }
 local AMT_MODE_LABELS = { "Accompaniment", "Continuation" }
 
+-- Example prompts per text model, selectable from a dropdown next to the
+-- prompt box. Each model expects a different prompt "dialect" (see notes
+-- in the draw() code below), so examples are written to match: MidiCaps-
+-- style descriptive sentences for amadeus/text2midi, free-form phrases for
+-- midi_llm, chord/harmonization instructions for chatmusician, and
+-- attribute-laden descriptions (with explicit instrument names) for
+-- musecoco. Sourced from the model cards / eval prompts already used in
+-- evaluation/{amadeus,chatmusician}/README.md and research_*_modal.py.
+local MG_EXAMPLE_PROMPTS = {
+  amadeus = {
+    { label = "Electronic ambient, E major, tubular bells...",
+      text = "A melodic electronic ambient song with a touch of darkness, set in the key of E major and a 4/4 time signature. Tubular bells, electric guitar, synth effects, synth pad, and oboe weave together to create an epic, space-like atmosphere. The tempo is a steady Andante, and the chord progression of A, B, and E forms the harmonic backbone of this captivating piece." },
+    { label = "Jazz fusion, F minor, 120 BPM, piano/bass",
+      text = "An upbeat jazz fusion track in the key of F minor at 120 BPM, featuring piano, upright bass, and brushed drums. The chord progression Fm-Db-Ab-Eb repeats throughout, building a relaxed but energetic groove." },
+    { label = "Cinematic orchestral, D minor, 90 BPM",
+      text = "A cinematic orchestral piece in D minor, 90 BPM, 3/4 time signature. Strings, French horn, and timpani build a tense, dramatic atmosphere over a Dm-Bb-F-C chord progression." },
+  },
+  midi_llm = {
+    { label = "Cheerful pop, piano/bass/drums",
+      text = "A cheerful pop song with piano, bass, and drums, upbeat tempo" },
+    { label = "Melancholic piano ballad, minor key",
+      text = "A melancholic piano ballad, slow tempo, minor key" },
+    { label = "Energetic rock, electric guitar riffs",
+      text = "An energetic rock track with electric guitar riffs and driving drums" },
+  },
+  text2midi = {
+    { label = "Pop, piano/bass/drums, 120 BPM, C major",
+      text = "A pop song with piano, bass, and drums at 120 BPM in C major" },
+    { label = "Jazz, saxophone/double bass, slow swing",
+      text = "A jazz piece with saxophone and double bass, slow swing feel" },
+    { label = "EDM, synth lead, four-on-the-floor, 128 BPM",
+      text = "An electronic dance track with synth lead and four-on-the-floor drums, 128 BPM" },
+  },
+  chatmusician = {
+    { label = "Develop piece from chord progression Dm-C-Dm...",
+      text = "Develop a musical piece using the given chord progression. 'Dm', 'C', 'Dm', 'Dm', 'C', 'Dm', 'C', 'Dm'" },
+    { label = "Increase harmonic complexity (needs seed)",
+      text = "Formulate chord combinations to increase the harmonic complexity of the specified musical excerpt." },
+    { label = "Develop piece from chords Am-F-C-G, 4/4",
+      text = "Using the chord progression 'Am', 'F', 'C', 'G', develop this into a full melodic piece in 4/4 time." },
+  },
+  musecoco = {
+    { label = "Pop, piano/electric guitar/bass/drums",
+      text = "A pop song with piano, electric guitar, bass, and drums, upbeat and energetic" },
+    { label = "Classical solo piano, slow, minor key",
+      text = "A classical piece for solo piano, slow and expressive, in a minor key" },
+    { label = "Electronic, synth pad/synth lead/bass",
+      text = "An electronic track with synth pad, synth lead, and bass, dreamy atmosphere" },
+  },
+}
+
 local MIDIGEN_PY = SCRIPT_DIR .. "midigen.py"
 local PROGRESS_F = TMPDIR .. "midigen_progress.txt"
 local LOG_F      = TMPDIR .. "midigen.log"
@@ -80,6 +131,7 @@ local S = {
   gpu       = "A10G",
   -- Prompt (text models)
   prompt    = "",
+  prompt_example = { idx = 1 },
   -- Optional MidiCaps fields (amadeus / text2midi)
   field_key         = "",
   field_bpm         = "",
@@ -623,6 +675,13 @@ function M.draw()
     local rv, nv = widgets.input_textarea("##mg_prompt", S.prompt, 3,
       { placeholder = "Describe the musical style, instruments, mood..." })
     if rv then S.prompt = nv end
+
+    local mg_examples = MG_EXAMPLE_PROMPTS[mk]
+    if mg_examples then
+      g.next_width(-1)
+      local picked = widgets.example_prompt_picker("##mg_prompt_ex", S.prompt_example, mg_examples)
+      if picked then S.prompt = picked end
+    end
 
     -- Informational note per model
     if mk == "midi_llm" then

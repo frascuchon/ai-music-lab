@@ -42,6 +42,15 @@ local SAM_MODELS = { "facebook/sam-audio-large", "facebook/sam-audio-base" }
 local SAM_GPUS   = { "A100-80GB", "A100", "H100", "A10G" }
 local ODE_METHODS= { "midpoint", "euler", "rk4" }
 
+-- SAM Audio takes a short CLAP-style instrument/sound descriptor, not a
+-- full sentence (see modal_sam_audio.py's own examples: "jazz trumpet",
+-- "vocals", "saxophone").
+local SAM_EXAMPLE_PROMPTS = {
+  { label = "vocals", text = "vocals" },
+  { label = "jazz trumpet", text = "jazz trumpet" },
+  { label = "saxophone", text = "saxophone" },
+}
+
 -- ── STATE ────────────────────────────────────────────────────────
 local S = {
   tab            = 1,
@@ -59,6 +68,7 @@ local S = {
                      guitar=false, piano=false },
   -- SAM
   sam_prompt     = "jazz trumpet",
+  sam_prompt_example = { idx = 1 },
   sam_midx       = 1,
   sam_gidx       = 1,
   sam_oidx       = 1,
@@ -415,6 +425,11 @@ local function draw_sam_tab()
   g.row_label("Prompt:", lw)
   local rv, nv = widgets.input_text("##prompt", S.sam_prompt)
   if rv then S.sam_prompt = nv end
+
+  g.row_label("Examples:", lw)
+  g.next_width(-1)
+  local picked = widgets.example_prompt_picker("##sam_prompt_ex", S.sam_prompt_example, SAM_EXAMPLE_PROMPTS)
+  if picked then S.sam_prompt = picked end
 
   -- Model
   g.row_label("Model:", lw)

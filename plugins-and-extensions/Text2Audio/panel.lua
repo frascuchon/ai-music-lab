@@ -111,6 +111,130 @@ local ACESTEP_LORA_SCALE_RANGE = { 0.0, 1.0  }
 
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 
+-- Example prompts per model, shown as a dropdown next to each prompt box.
+-- Generation models each expect their own prompt "dialect" (Foundation-1's
+-- comma-separated TAG format is the clearest case); edit models take a
+-- transformation instruction applied to the source audio rather than a
+-- from-scratch description. Sourced from each model's card / demo and from
+-- evaluation/prompts_official.json and evaluation/edit/README.md, which
+-- already collect the prompts used to validate these models.
+local GEN_EXAMPLE_PROMPTS = {
+  sao = {
+    { label = "128 BPM tech house drum loop",
+      text = "128 BPM tech house drum loop" },
+    { label = "Hammer hitting a wooden surface (SFX)",
+      text = "The sound of a hammer hitting a wooden surface." },
+    { label = "Lo-fi slow BPM electro chill",
+      text = "Lo-fi slow BPM electro chill with organic samples" },
+  },
+  foundation1 = {
+    { label = "Bass, FM Bass, Acid, Dubstep, 140 BPM, E min",
+      text = "Bass, FM Bass, Medium Delay, Medium Reverb, Phaser, Acid, Gritty, Dubstep, 8 Bars, 140 BPM, E minor" },
+    { label = "Drums, 808 Kick, House, 4 Bars, 120 BPM",
+      text = "Drums, 808 Kick, Clap, Closed Hi-Hat, Open Hi-Hat, Tight, Dry, Minimal, House, 4 Bars, 120 BPM" },
+    { label = "Lead Synth, Saw Wave, Arpeggio, 128 BPM, A min",
+      text = "Lead Synth, Saw Wave, Short Delay, Short Reverb, Arpeggio, Bright, Wide, 4 Bars, 128 BPM, A minor" },
+  },
+  acestep_gen = {
+    { label = "Uplifting EDM, synths, driving beat",
+      text = "uplifting electronic dance music with synthesizers and driving beat" },
+    { label = "Funk reinterpretation, syncopated bass",
+      text = "funk reinterpretation with syncopated bass" },
+    { label = "Dark cinematic trailer, brass stabs",
+      text = "dark cinematic trailer music with heavy percussion and brass stabs" },
+  },
+  inspiremusic_gen = {
+    { label = "Relaxing ambient piano in C major",
+      text = "Generate a relaxing ambient piano piece in C major" },
+    { label = "Energetic electronic dance music",
+      text = "Generate energetic electronic dance music." },
+    { label = "Upbeat jazz fusion, sax and electric piano",
+      text = "Generate an upbeat jazz fusion track with saxophone and electric piano" },
+  },
+  mustango = {
+    { label = "Jazz piano, 120 BPM, C major, walking bass",
+      text = "Generate a jazz piano piece at 120 BPM in C major with walking bass" },
+    { label = "Acoustic guitar melody, 90 BPM, G major",
+      text = "A relaxing acoustic guitar melody at 90 BPM in G major" },
+    { label = "Rock riff, 140 BPM, E minor, drums/bass",
+      text = "An energetic rock riff at 140 BPM in E minor with drums and bass" },
+  },
+  audiogen = {
+    { label = "Footsteps on wooden floor, indoors",
+      text = "Footsteps walking on a wooden floor, indoors, quiet environment" },
+    { label = "Heavy rain on window, distant thunder",
+      text = "Heavy rain falling on a window, with distant thunder rumbling" },
+    { label = "Crowd cheering in a large stadium",
+      text = "A crowd of people cheering and applauding in a large stadium" },
+  },
+  musicgen_gen = {
+    { label = "80s pop, heavy drums, synth pads",
+      text = "An 80s driving pop song with heavy drums and synth pads in the background" },
+    { label = "Cheerful country, acoustic guitars, banjo",
+      text = "A cheerful country song with acoustic guitars, banjo, and light drums" },
+    { label = "Melancholic jazz, piano/bass/brushed drums",
+      text = "Jazz music with piano, acoustic bass, and brushed drums. Melancholic mood." },
+  },
+  magnet = {
+    { label = "happy rock",
+      text = "happy rock" },
+    { label = "energetic EDM, upbeat, driving beat",
+      text = "energetic EDM, upbeat, driving beat" },
+    { label = "melodic lo-fi hip hop, chill, slow tempo",
+      text = "melodic lo-fi hip hop, chill, slow tempo" },
+  },
+}
+local EDIT_EXAMPLE_PROMPTS = {
+  sao_edit = {
+    { label = "Jazz piano version, swing feel",
+      text = "jazz piano version, swing feel, relaxed tempo" },
+    { label = "Lo-fi hip hop remix, dusty vinyl texture",
+      text = "lo-fi hip hop remix, chill, dusty vinyl texture, slow tempo" },
+    { label = "Orchestral symphonic arrangement",
+      text = "orchestral symphonic arrangement" },
+  },
+  acestep = {
+    { label = "Cheerful country, acoustic guitars",
+      text = "A cheerful country song with acoustic guitars" },
+    { label = "8-bit chiptune arcade soundtrack version",
+      text = "8-bit chiptune arcade video game soundtrack version" },
+    { label = "Dark ambient, heavy reverb, ominous mood",
+      text = "dark ambient version, heavy reverb, ominous and haunting mood" },
+  },
+  musicgen = {
+    { label = "Same melody played by a string quartet",
+      text = "the same melody played by a string quartet" },
+    { label = "Acoustic drum kit, same rhythm, 90 BPM",
+      text = "acoustic drum kit playing the same rhythm, tight studio recording, 90 BPM" },
+    { label = "Same chords on grand piano, jazz voicings",
+      text = "the same chord progression played on a grand piano, jazz voicings, warm and intimate" },
+  },
+  melodyflow = {
+    { label = "Soft dreamy ambient, gentle synth pads",
+      text = "soft dreamy ambient rendition with gentle synth pads" },
+    { label = "Dark ambient, heavy reverb, ominous mood",
+      text = "dark ambient version, heavy reverb, ominous and haunting mood" },
+    { label = "Orchestral symphonic arrangement",
+      text = "orchestral symphonic arrangement" },
+  },
+  zeta = {
+    { label = "Jazz piano version, swing feel",
+      text = "jazz piano version, swing feel, relaxed tempo" },
+    { label = "Same melody played by a string quartet",
+      text = "the same melody played by a string quartet" },
+    { label = "Lo-fi hip hop remix, dusty vinyl texture",
+      text = "lo-fi hip hop remix, chill, dusty vinyl texture, slow tempo" },
+  },
+  inspiremusic = {
+    { label = "Continue to generate jazz music.",
+      text = "Continue to generate jazz music." },
+    { label = "Continue with energetic electronic dance music.",
+      text = "Continue to generate energetic electronic dance music." },
+    { label = "Continue with a relaxing ambient piano piece.",
+      text = "Continue to generate a relaxing ambient piano piece." },
+  },
+}
+
 local TEXT2AUDIO_PY = SCRIPT_DIR .. "text2audio.py"
 local PROGRESS_F    = TMPDIR .. "t2a_progress.txt"
 local LOG_F         = TMPDIR .. "t2a.log"
@@ -121,6 +245,7 @@ local S = {
   mode              = 1,
   -- Generate mode
   prompt            = "",
+  prompt_example    = { idx = 1 },
   duration          = 8.0,
   gen_model_idx     = 1,
   -- ACE-Step 1.5 advanced inference parameters (acestep_gen only)
@@ -145,6 +270,7 @@ local S = {
   src_item_pos      = nil,
   src_is_section    = false,
   edit_prompt       = "",
+  edit_prompt_example = { idx = 1 },
   edit_duration     = 10.0,
   intensity_idx     = 2,   -- "moderate"
   edit_model_idx    = 1,
@@ -570,6 +696,13 @@ function M.draw()
     local changed_p, new_p = widgets.input_textarea("##gen_prompt", S.prompt, 4)
     if changed_p then S.prompt = new_p end
 
+    local gen_examples = GEN_EXAMPLE_PROMPTS[GEN_MODELS[S.gen_model_idx]]
+    if gen_examples then
+      g.next_width(-1)
+      local picked = widgets.example_prompt_picker("##gen_prompt_ex", S.prompt_example, gen_examples)
+      if picked then S.prompt = picked end
+    end
+
     -- Foundation-1 hint
     if GEN_MODELS[S.gen_model_idx] == "foundation1" then
       g.text_colored(
@@ -764,6 +897,13 @@ function M.draw()
 
     local changed_ep, new_ep = widgets.input_textarea("##edit_prompt", S.edit_prompt, 3)
     if changed_ep then S.edit_prompt = new_ep end
+
+    local edit_examples = EDIT_EXAMPLE_PROMPTS[EDIT_MODELS[S.edit_model_idx]]
+    if edit_examples then
+      g.next_width(-1)
+      local picked = widgets.example_prompt_picker("##edit_prompt_ex", S.edit_prompt_example, edit_examples)
+      if picked then S.edit_prompt = picked end
+    end
     g.spacing()
 
     -- Edit model
