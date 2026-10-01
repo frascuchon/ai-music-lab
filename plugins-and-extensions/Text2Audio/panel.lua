@@ -23,17 +23,21 @@ local PYTHON, PYTHON_ERR = common.detect_reaper_python()
 
 -- ── CONSTANTS ────────────────────────────────────────────────────
 -- Generation models (text → audio, no source)
-local GEN_MODELS  = { "sao", "foundation1", "acestep_gen", "inspiremusic_gen",
-                      "mustango", "audiogen", "musicgen_gen", "magnet" }
+-- Ordered by real-world popularity (verified via GitHub stars: MusicGen/AudioGen/MAGNeT
+-- share facebookresearch/audiocraft ~23.6k★; ACE-Step-1.5 has its own ~13k★ repo;
+-- Stable Audio Open's stable-audio-tools ~3.9k★; Mustango 395★; InspireMusic and
+-- Foundation-1 have no dedicated starred repo)
+local GEN_MODELS  = { "musicgen_gen", "acestep_gen", "sao", "audiogen",
+                      "magnet", "mustango", "inspiremusic_gen", "foundation1" }
 local GEN_LABELS  = {
-  "Stable Audio Open 1.0  (A10G, 44.1 kHz stereo)",
-  "Foundation-1  (A10G, electronic, TAG format)",
-  "ACE-Step 1.5  (A10G, full-song, Apache 2.0)",
-  "InspireMusic 1.5B  (A10G, 48 kHz, Apache 2.0)",
-  "Mustango  (A10G, ~10 s fixed, MuBERT features)",
-  "AudioGen-medium  (A10G, 16 kHz, effects/sound)",
   "MusicGen-medium  (A10G, 32 kHz, CC-BY-NC)",
+  "ACE-Step 1.5  (A10G, full-song, Apache 2.0)",
+  "Stable Audio Open 1.0  (A10G, 44.1 kHz stereo)",
+  "AudioGen-medium  (A10G, 16 kHz, effects/sound)",
   "MAGNeT-medium  (A10G, 32 kHz, non-AR, CC-BY-NC)",
+  "Mustango  (A10G, ~10 s fixed, MuBERT features)",
+  "InspireMusic 1.5B  (A10G, 48 kHz, Apache 2.0)",
+  "Foundation-1  (A10G, electronic, TAG format)",
 }
 local GEN_SCRIPTS = {
   sao            = SCRIPT_DIR .. "research/research_stable_audio_open_modal.py",
@@ -52,12 +56,14 @@ local GEN_MAX_SEC = {
 }
 
 -- Edit models (source audio + prompt → transformed audio)
-local EDIT_MODELS  = { "sao_edit", "acestep", "musicgen",
+-- Ordered by real-world popularity of the underlying base model (verified via GitHub
+-- stars / official announcements); AudioLDM2's own repo has only ~6★
+local EDIT_MODELS  = { "musicgen", "acestep", "sao_edit",
                        "melodyflow", "zeta", "inspiremusic" }
 local EDIT_LABELS  = {
-  "SAO Style Transfer  (A10G, SDEdit init_audio)",
-  "ACE-Step 1.5  (A10G, cover/re-style, Apache 2.0)",
   "MusicGen-melody  (A10G, melodic conditioning, CC-BY-NC)",
+  "ACE-Step 1.5  (A10G, cover/re-style, Apache 2.0)",
+  "SAO Style Transfer  (A10G, SDEdit init_audio)",
   "MelodyFlow  (A10G, ≤30 s, flow matching, MIT/CC-BY-NC)",
   "ZETA/AudioLDM2  (A10G, ≤10 s, zero-shot, Apache/CC-BY-SA)",
   "InspireMusic continuation  (A10G, ≤30 s, Apache 2.0)",

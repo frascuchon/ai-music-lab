@@ -32,13 +32,14 @@ local PYTHON, PYTHON_ERR = common.detect_reaper_python()
 -- Single unified Model list (replaces the old DEMUCS/SAM AUDIO sub-tabs):
 -- picking a model drives which parameter section is shown below, the same
 -- pattern MidiGenerator/AudioGenerator use for their own Model dropdowns.
-local SS_MODELS = { "htdemucs", "htdemucs_ft", "htdemucs_6s", "mdx_extra",
+-- Ordered by real-world popularity (community adoption / HF downloads)
+local SS_MODELS = { "htdemucs", "htdemucs_ft", "mdx_extra", "htdemucs_6s",
                     "sam_large", "sam_base" }
 local SS_LABELS = {
   "htdemucs  (4 stems, local Demucs)",
   "htdemucs_ft  (4 stems, fine-tuned, local Demucs)",
-  "htdemucs_6s  (6 stems, local Demucs)",
   "mdx_extra  (4 stems, MDX-Net, local Demucs)",
+  "htdemucs_6s  (6 stems, local Demucs)",
   "SAM Audio large  (cloud, prompt-based)",
   "SAM Audio base  (cloud, prompt-based)",
 }

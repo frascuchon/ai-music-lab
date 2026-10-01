@@ -22,10 +22,12 @@ local TMPDIR    = common.TMPDIR
 local PYTHON, PYTHON_ERR = common.detect_reaper_python()
 
 -- ── CONSTANTS ────────────────────────────────────────────────────
-local A2M_MODELS  = { "miros", "yourmt3" }
+-- Ordered by real-world popularity (community adoption); YourMT3+ is public/open,
+-- MIROS is internal-use only
+local A2M_MODELS  = { "yourmt3", "miros" }
 local A2M_LABELS  = {
-  "MIROS  (multi-instr., A10G, internal use)",
   "YourMT3+  (multi-instr., Apache 2.0)",
+  "MIROS  (multi-instr., A10G, internal use)",
 }
 local A2M_SCRIPTS = {
   miros   = SCRIPT_DIR .. "research/research_miros_modal.py",

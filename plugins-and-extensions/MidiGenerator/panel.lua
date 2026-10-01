@@ -22,17 +22,18 @@ local TMPDIR = common.TMPDIR
 local PYTHON, PYTHON_ERR = common.detect_reaper_python()
 
 -- ── CONSTANTS: MODELS ────────────────────────────────────────────
+-- Ordered by real-world popularity (community adoption / GitHub stars / HF downloads)
 local MG_MODELS = {
-  "amadeus", "midi_llm", "text2midi",
-  "chatmusician", "musecoco", "anticipatory",
+  "musecoco", "chatmusician", "anticipatory",
+  "text2midi", "amadeus", "midi_llm",
 }
 local MG_LABELS = {
+  "MuseCoco  (multi-track, attributes, A100) [~11 min]",
+  "ChatMusician  (multi-voice, ABC notation) [limited]",
+  "Anticipatory  (accompaniment/cover, seed MIDI, A10G)",
+  "text2midi  (baseline, multi-track) [low quality]",
   "Amadeus  (multi-track, MidiCaps, A10G)",
   "MIDI-LLM  (multi-track, free, A10G) [CUDA only]",
-  "text2midi  (baseline, multi-track) [low quality]",
-  "ChatMusician  (multi-voice, ABC notation) [limited]",
-  "MuseCoco  (multi-track, attributes, A100) [~11 min]",
-  "Anticipatory  (accompaniment/cover, seed MIDI, A10G)",
 }
 local MG_SCRIPTS = {}
 for _, k in ipairs(MG_MODELS) do
