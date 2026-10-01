@@ -416,17 +416,20 @@ function M.draw()
   local g = gui
   local t = theme
 
-  -- ── SCROLL REGION: entire page (source/model/params/button/log) ──
-  -- Single, non-nested scroll_region for everything. widgets_extra.lua's
-  -- scroll_region does not support nesting (its clip/scroll math doesn't
-  -- compound an outer scroll offset into an inner one), so the log below
-  -- prints its lines directly into THIS region instead of opening its own
-  -- nested scroll_region — new lines call
-  -- widgets.scroll_to_bottom("##a2m_page") to bring the log into view.
-  local scroll_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y)
-  widgets.scroll_region("##a2m_page", 0, scroll_h, function()
+  -- ── MODEL (fixed, above the scrollable content — same position across
+  -- every tab in the app) ──────────────────────────────────────────
+  g.row_label("Model:", t.sc(68))
+  g.next_width(-1)
+  local old_idx = S.model_idx
+  S.model_idx = widgets.combo("##a2m_model", S.model_idx, A2M_LABELS)
+  if S.model_idx ~= old_idx then
+    -- Update default GPU when model changes
+    S.gpu_idx = A2M_GPU_DEFAULT[A2M_MODELS[S.model_idx]] or 1
+  end
+  g.spacing()
 
-  -- Source
+  -- ── SOURCE (fixed, directly below Model — same position across every
+  -- tab that has a source file to pick) ────────────────────────────
   g.row_label("Source:", t.sc(54))
   local display_src = (S.src_track_name ~= "")
     and (S.src_track_name .. "  (" .. (S.src:match("[^/\\]+$") or "") .. ")")
@@ -458,15 +461,15 @@ function M.draw()
   g.separator()
   g.spacing()
 
-  -- Model
-  g.row_label("Model:", t.sc(68))
-  g.next_width(-1)
-  local old_idx = S.model_idx
-  S.model_idx = widgets.combo("##a2m_model", S.model_idx, A2M_LABELS)
-  if S.model_idx ~= old_idx then
-    -- Update default GPU when model changes
-    S.gpu_idx = A2M_GPU_DEFAULT[A2M_MODELS[S.model_idx]] or 1
-  end
+  -- ── SCROLL REGION: rest of the page (GPU/params/button/log) ──────
+  -- Single, non-nested scroll_region for everything below Model/Source.
+  -- widgets_extra.lua's scroll_region does not support nesting (its clip/
+  -- scroll math doesn't compound an outer scroll offset into an inner one),
+  -- so the log below prints its lines directly into THIS region instead of
+  -- opening its own nested scroll_region — new lines call
+  -- widgets.scroll_to_bottom("##a2m_page") to bring the log into view.
+  local scroll_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y)
+  widgets.scroll_region("##a2m_page", 0, scroll_h, function()
 
   -- GPU
   g.row_label("GPU:", t.sc(68))

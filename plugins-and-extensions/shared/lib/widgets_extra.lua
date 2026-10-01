@@ -171,7 +171,7 @@ function M.tab_bar(id, active_idx, tabs)
     -- Skip draw if clipped by an outer scroll_region — without this, a tab
     -- bar scrolled above/below the visible area still rendered at its
     -- (correctly computed) screen position, bleeding into unrelated UI.
-    if not (ctx.clip_y1 and (gy + tab_h < ctx.clip_y1 or gy > ctx.clip_y2)) then
+    if not (ctx.clip_y1 and (gy < ctx.clip_y1 or gy + tab_h > ctx.clip_y2)) then
       if is_active then
         local c = t.C.FRAME_ACT; gfx.set(c[1], c[2], c[3], 1)
       elseif hover then
@@ -231,7 +231,7 @@ function M.collapsing_header(label, default_open)
   -- Skip draw if clipped by an outer scroll_region — without this, a
   -- header scrolled above/below the visible area still rendered at its
   -- (correctly computed) screen position, bleeding into unrelated UI.
-  if not (ctx.clip_y1 and (scy_hdr + h < ctx.clip_y1 or scy_hdr > ctx.clip_y2)) then
+  if not (ctx.clip_y1 and (scy_hdr < ctx.clip_y1 or scy_hdr + h > ctx.clip_y2)) then
     local bg = hover and t.C.FRAME_HOV or t.C.FRAME
     gfx.set(bg[1], bg[2], bg[3], 0.7)
     gfx.rect(x, scy_hdr, w, h, 1)
@@ -292,7 +292,7 @@ function M.combo(id, idx, items)
   -- Skip draw if clipped by an outer scroll_region — without this, a combo
   -- scrolled above/below the visible area still rendered at its (correctly
   -- computed) screen position, bleeding into unrelated UI.
-  if not (ctx.clip_y1 and (scy + h < ctx.clip_y1 or scy > ctx.clip_y2)) then
+  if not (ctx.clip_y1 and (scy < ctx.clip_y1 or scy + h > ctx.clip_y2)) then
     -- Background
     local bg = (popup_mine or hover) and t.C.FRAME_HOV or t.C.FRAME
     gfx.set(bg[1], bg[2], bg[3], a)
@@ -417,6 +417,16 @@ function M.input_text(id, text, opts)
   local s = ctx.state[id]
   if s.sel_anchor == nil then s.sel_anchor = nil end  -- compat
   s.caret = math.max(0, math.min(s.caret, #text))
+  -- Readonly fields (e.g. the "Source:" display) never receive keyboard
+  -- input, so nothing ever advances their caret past wherever it was when
+  -- the widget was first created (often caret=0, from an initial empty
+  -- value). Left there, "scroll display so caret is visible" below never
+  -- triggers once a long value (e.g. a long filename) is later assigned,
+  -- and the untrimmed text overflows the box into whatever sits to its
+  -- right (the "..."/"R" buttons). Pinning the caret to the end keeps the
+  -- tail of the value (usually the most relevant part) visible and inside
+  -- the box.
+  if opts.readonly then s.caret = #text end
 
   -- Click to focus and position caret
   local hover_field = ctx.mx >= x and ctx.mx < x+w
@@ -511,7 +521,7 @@ function M.input_text(id, text, opts)
 
   -- Draw
   local focused = (ctx.focused_id == id)
-  if ctx.clip_y1 and (gy + h < ctx.clip_y1 or gy > ctx.clip_y2) then
+  if ctx.clip_y1 and (gy < ctx.clip_y1 or gy + h > ctx.clip_y2) then
     ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
     ctx.x = ctx.row_x0; ctx.y = y + h + t.SPACING_Y
     return changed, new_text
@@ -564,7 +574,11 @@ function M.input_text(id, text, opts)
   gfx.set(fc[1], fc[2], fc[3], 1)
   gfx.x = x + 4
   gfx.y = gy + math.floor((h - th) / 2)
-  gfx.drawstr(draw_disp)
+  -- Hard right-edge clip as a safety net on top of the trim above: caps
+  -- what gfx.drawstr can paint to the box itself, so a value that's still
+  -- too wide (or any future bug in the trim math) can never bleed into
+  -- whatever sits to the right of the field.
+  gfx.drawstr(draw_disp, 0, x + w - 4, gy + h)
 
   -- Blinking caret
   if focused then
@@ -743,7 +757,7 @@ function M.input_textarea(id, text, lines_visible, opts)
   s.scroll_y = math.max(0, math.min(max_scroll, s.scroll_y))
 
   -- Skip draw if clipped by outer scroll_region
-  if ctx.clip_y1 and (gy + h < ctx.clip_y1 or gy > ctx.clip_y2) then
+  if ctx.clip_y1 and (gy < ctx.clip_y1 or gy + h > ctx.clip_y2) then
     ctx.last_x, ctx.last_y, ctx.last_w, ctx.last_h = x, y, w, h
     ctx.x = ctx.row_x0; ctx.y = y + h + t.SPACING_Y
     return changed, new_text

@@ -672,10 +672,68 @@ function M.draw()
     S.mode = 2
   end
   g.spacing()
-  g.separator()
+  g.separator(); g.spacing()
 
-  -- ── SCROLL REGION: entire page (prompt/model/params/button/log) ──
-  -- Single, non-nested scroll_region for everything below the mode tabs.
+  -- ── MODEL (fixed, above the scrollable content — same position across
+  -- every tab in the app). Which combo is shown depends on Generate/Edit
+  -- mode, but it's always the first thing under the mode tabs. ──────
+  if S.mode == 1 then
+    g.row_label("Model:", t.sc(70))
+    g.next_width(-1)
+    local old_gen_model_idx = S.gen_model_idx
+    S.gen_model_idx = widgets.combo("##gen_model", S.gen_model_idx, GEN_LABELS)
+    -- A prompt written for one model's phrasing conventions (e.g.
+    -- Foundation-1's TAG format) rarely still makes sense for another, so
+    -- clear it instead of silently carrying it over.
+    S.prompt = model_switch.next_prompt(old_gen_model_idx, S.gen_model_idx, S.prompt)
+  else
+    g.row_label("Model:", t.sc(70))
+    g.next_width(-1)
+    local old_edit_model_idx = S.edit_model_idx
+    S.edit_model_idx = widgets.combo("##edit_model", S.edit_model_idx, EDIT_LABELS)
+    -- The change-intent prompt's phrasing advice is model-specific, so
+    -- clear it instead of silently carrying it over to a different model.
+    S.edit_prompt = model_switch.next_prompt(old_edit_model_idx, S.edit_model_idx, S.edit_prompt)
+  end
+  g.spacing()
+
+  -- ── SOURCE (fixed, directly below Model — same position across every
+  -- tab that has a source file to pick). Edit mode only. ────────────
+  if S.mode == 2 then
+    g.row_label("Source:", t.sc(54))
+    local display_src = (S.src_track_name ~= "")
+      and (S.src_track_name .. "  (" .. (S.src:match("[^/\\]+$") or "") .. ")")
+      or S.src
+    g.next_width(-(2 * t.SPACING_X + 2 * t.sc(44)))
+    widgets.input_text("##src_disp", display_src, { readonly = true })
+    g.same_line()
+    if g.button("...", t.sc(44), t.ITEM_H) then
+      local ok, fn = reaper.GetUserFileNameForRead("", "Open audio", "wav")
+      if ok then
+        S.src = fn; S.src_track_name = ""; S.src_track_idx = -1
+        S.src_is_section = false; S.src_item_pos = nil
+      end
+    end
+    g.same_line()
+    if g.button("R", t.sc(44), t.ITEM_H) then grab_from_reaper() end
+
+    if S.src_track_name ~= "" then
+      g.text_disabled("Track selected  |  click R to update")
+    else
+      g.text_disabled("Click R to use the active REAPER track/item/split")
+    end
+    if S.src_is_section then
+      g.text_colored(string.format("Section: %.2fs → %.2fs  (%.2fs)",
+        S.src_start_offs, S.src_start_offs + S.src_section_dur, S.src_section_dur),
+        "YELLOW")
+    end
+    g.spacing()
+  end
+
+  g.separator(); g.spacing()
+
+  -- ── SCROLL REGION: rest of the page (prompt/params/button/log) ───
+  -- Single, non-nested scroll_region for everything below Model/Source.
   -- widgets_extra.lua's scroll_region does not support nesting (its clip/
   -- scroll math doesn't compound an outer scroll offset into an inner
   -- one), so the log below prints its lines directly into THIS region
@@ -689,16 +747,6 @@ function M.draw()
   -- ════════════════════════════════════════════
   if S.mode == 1 then
   -- ── GENERATE MODE ───────────────────────────
-
-    -- Model (first — everything below depends on it)
-    g.row_label("Model:", t.sc(70))
-    g.next_width(-1)
-    local old_gen_model_idx = S.gen_model_idx
-    S.gen_model_idx = widgets.combo("##gen_model", S.gen_model_idx, GEN_LABELS)
-    -- A prompt written for one model's phrasing conventions (e.g.
-    -- Foundation-1's TAG format) rarely still makes sense for another, so
-    -- clear it instead of silently carrying it over.
-    S.prompt = model_switch.next_prompt(old_gen_model_idx, S.gen_model_idx, S.prompt)
 
     -- GPU
     g.row_label("GPU:", t.sc(70))
@@ -864,51 +912,6 @@ function M.draw()
   -- ════════════════════════════════════════════
   else
   -- ── EDIT MODE ───────────────────────────────
-
-    -- Model (first — the fields below depend on it)
-    g.row_label("Model:", t.sc(80))
-    g.next_width(-1)
-    local old_edit_model_idx = S.edit_model_idx
-    S.edit_model_idx = widgets.combo("##edit_model", S.edit_model_idx, EDIT_LABELS)
-    -- The change-intent prompt's phrasing advice is model-specific, so
-    -- clear it instead of silently carrying it over to a different model.
-    S.edit_prompt = model_switch.next_prompt(old_edit_model_idx, S.edit_model_idx, S.edit_prompt)
-    g.spacing()
-    g.separator(); g.spacing()
-
-    -- Source
-    g.push_font(t.F.H1)
-    g.text("Source audio")
-    g.pop_font()
-
-    g.row_label("Source:", t.sc(54))
-    local display_src = (S.src_track_name ~= "")
-      and (S.src_track_name .. "  (" .. (S.src:match("[^/\\]+$") or "") .. ")")
-      or S.src
-    g.next_width(-(2 * t.SPACING_X + 2 * t.sc(44)))
-    widgets.input_text("##src_disp", display_src, { readonly = true })
-    g.same_line()
-    if g.button("...", t.sc(44), t.ITEM_H) then
-      local ok, fn = reaper.GetUserFileNameForRead("", "Open audio", "wav")
-      if ok then
-        S.src = fn; S.src_track_name = ""; S.src_track_idx = -1
-        S.src_is_section = false; S.src_item_pos = nil
-      end
-    end
-    g.same_line()
-    if g.button("R", t.sc(44), t.ITEM_H) then grab_from_reaper() end
-
-    if S.src_track_name ~= "" then
-      g.text_disabled("Track selected  |  click R to update")
-    else
-      g.text_disabled("Click R to use the active REAPER track/item/split")
-    end
-    if S.src_is_section then
-      g.text_colored(string.format("Section: %.2fs → %.2fs  (%.2fs)",
-        S.src_start_offs, S.src_start_offs + S.src_section_dur, S.src_section_dur),
-        "YELLOW")
-    end
-    g.spacing()
 
     -- Change intent prompt
     g.push_font(t.F.H1)

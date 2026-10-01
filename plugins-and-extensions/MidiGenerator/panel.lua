@@ -688,17 +688,8 @@ function M.draw()
   local has_fields = (mk == "amadeus" or mk == "text2midi")
   local has_opt_seed = (mk == "chatmusician")
 
-  -- ── SCROLL REGION: entire page (model/prompt/params/button/log) ──
-  -- Single, non-nested scroll_region for everything. widgets_extra.lua's
-  -- scroll_region does not support nesting (its clip/scroll math doesn't
-  -- compound an outer scroll offset into an inner one), so the log below
-  -- prints its lines directly into THIS region instead of opening its own
-  -- nested scroll_region — new lines call
-  -- widgets.scroll_to_bottom("##mg_page") to bring the log into view.
-  local scroll_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y)
-  widgets.scroll_region("##mg_page", 0, scroll_h, function()
-
-  -- ── MODEL ───────────────────────────────────────────────────────
+  -- ── MODEL (fixed, above the scrollable content — same position across
+  -- every tab in the app) ──────────────────────────────────────────
   g.row_label("Model:", t.sc(70))
   g.next_width(-1)
   local old_idx = S.model_idx
@@ -714,6 +705,16 @@ function M.draw()
   S.prompt = model_switch.next_prompt(old_idx, S.model_idx, S.prompt)
   g.spacing()
   g.separator(); g.spacing()
+
+  -- ── SCROLL REGION: rest of the page (prompt/params/button/log) ───
+  -- Single, non-nested scroll_region for everything below Model.
+  -- widgets_extra.lua's scroll_region does not support nesting (its clip/
+  -- scroll math doesn't compound an outer scroll offset into an inner one),
+  -- so the log below prints its lines directly into THIS region instead of
+  -- opening its own nested scroll_region — new lines call
+  -- widgets.scroll_to_bottom("##mg_page") to bring the log into view.
+  local scroll_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y)
+  widgets.scroll_region("##mg_page", 0, scroll_h, function()
 
   -- ── INPUT: PROMPT OR SEED ───────────────────────────────────────
   if is_text then

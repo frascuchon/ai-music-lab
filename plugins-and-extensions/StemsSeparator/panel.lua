@@ -29,17 +29,28 @@ local LOG_F      = TMPDIR .. "stemsep.log"
 local PYTHON, PYTHON_ERR = common.detect_reaper_python()
 
 -- ── CONSTANTS ────────────────────────────────────────────────────
-local DM_MODELS = { "htdemucs", "htdemucs_ft", "htdemucs_6s", "mdx_extra" }
-local DM_LABELS = {
-  "htdemucs  (4 stems)",
-  "htdemucs_ft  (4 stems, fine-tuned)",
-  "htdemucs_6s  (6 stems)",
-  "mdx_extra  (4 stems, MDX-Net)",
+-- Single unified Model list (replaces the old DEMUCS/SAM AUDIO sub-tabs):
+-- picking a model drives which parameter section is shown below, the same
+-- pattern MidiGenerator/AudioGenerator use for their own Model dropdowns.
+local SS_MODELS = { "htdemucs", "htdemucs_ft", "htdemucs_6s", "mdx_extra",
+                    "sam_large", "sam_base" }
+local SS_LABELS = {
+  "htdemucs  (4 stems, local Demucs)",
+  "htdemucs_ft  (4 stems, fine-tuned, local Demucs)",
+  "htdemucs_6s  (6 stems, local Demucs)",
+  "mdx_extra  (4 stems, MDX-Net, local Demucs)",
+  "SAM Audio large  (cloud, prompt-based)",
+  "SAM Audio base  (cloud, prompt-based)",
+}
+local SS_IS_SAM = { htdemucs=false, htdemucs_ft=false, htdemucs_6s=false,
+                    mdx_extra=false, sam_large=true, sam_base=true }
+local SS_SAM_MODEL_NAME = {
+  sam_large = "facebook/sam-audio-large",
+  sam_base  = "facebook/sam-audio-base",
 }
 local STEM_KEYS  = { "vocals", "drums", "bass", "other", "guitar", "piano" }
 local STEM_NAMES = { vocals="Vocals", drums="Drums", bass="Bass",
                      other="Other", guitar="Guitar*", piano="Piano*" }
-local SAM_MODELS = { "facebook/sam-audio-large", "facebook/sam-audio-base" }
 local SAM_GPUS   = { "A100-80GB", "A100", "H100", "A10G" }
 local ODE_METHODS= { "midpoint", "euler", "rk4" }
 
@@ -54,7 +65,7 @@ local SAM_EXAMPLE_PROMPTS = {
 
 -- ── STATE ────────────────────────────────────────────────────────
 local S = {
-  tab            = 1,
+  model_idx      = 1,
   src            = "",
   src_track_name = "",
   src_track_idx  = -1,
@@ -64,13 +75,11 @@ local S = {
   src_is_section  = false,
   outdir         = HOME .. "/stems",
   -- Demucs
-  dm_idx         = 1,
   dm_stems       = { vocals=true, drums=true, bass=true, other=true,
                      guitar=false, piano=false },
   -- SAM
   sam_prompt     = "jazz trumpet",
   sam_prompt_example = { idx = 1 },
-  sam_midx       = 1,
   sam_gidx       = 1,
   sam_oidx       = 1,
   sam_steps      = 64,
@@ -322,7 +331,7 @@ local function launch_demucs()
   if #stems == 0 then
     reaper.MB("Select at least one stem.", "Stem Separator", 0); return
   end
-  local model = DM_MODELS[S.dm_idx]
+  local model = SS_MODELS[S.model_idx]
   clear_run("Starting Demucs (" .. model .. ")...")
   add_log("Model: " .. model .. " | Stems: " .. table.concat(stems, ", "))
   local section_args = ""
@@ -358,9 +367,10 @@ local function launch_sam()
     return
   end
   f:close()
+  local sam_model_name = SS_SAM_MODEL_NAME[SS_MODELS[S.model_idx]]
   clear_run("Starting SAM Audio via Modal...")
   add_log("Prompt: " .. S.sam_prompt)
-  add_log("Model: " .. SAM_MODELS[S.sam_midx] .. " | GPU: " .. SAM_GPUS[S.sam_gidx])
+  add_log("Model: " .. sam_model_name .. " | GPU: " .. SAM_GPUS[S.sam_gidx])
   local section_args = ""
   if S.src_is_section then
     section_args = string.format(" --start %.6f --duration %.6f",
@@ -374,7 +384,7 @@ local function launch_sam()
     ' --confidence %.2f --candidates %d%s --outdir %s --progress %s >>%s 2>&1 &',
     q(PYTHON), q(SAM_PY), q(SAM_DIR), q(SHARED_DIR),
     q(S.src), q(S.sam_prompt),
-    q(SAM_MODELS[S.sam_midx]), q(SAM_GPUS[S.sam_gidx]),
+    q(sam_model_name), q(SAM_GPUS[S.sam_gidx]),
     S.sam_steps, ODE_METHODS[S.sam_oidx],
     S.sam_chunk, S.sam_overlap, S.sam_conf, S.sam_cands,
     section_args, q(S.outdir), q(PROGRESS_F), q(LOG_F))
@@ -382,20 +392,15 @@ local function launch_sam()
   S.pid = common.launch_tracked(cmd)
 end
 
--- ── DEMUCS TAB ───────────────────────────────────────────────────
-local function draw_demucs_tab()
+-- ── DEMUCS PARAMETERS (shown when a local Demucs model is selected) ──
+local function draw_demucs_params()
   local g = gui
   local t = theme
-
-  g.row_label("Model:", t.sc(68))
-  g.next_width(-1)
-  S.dm_idx = widgets.combo("##dm_model", S.dm_idx, DM_LABELS)
-  g.spacing()
 
   g.text("Stems:")
   g.spacing()
 
-  local is6s = DM_MODELS[S.dm_idx] == "htdemucs_6s"
+  local is6s = SS_MODELS[S.model_idx] == "htdemucs_6s"
   local row1 = { "vocals", "drums", "bass", "other" }
   for i, k in ipairs(row1) do
     local cl, nv = g.checkbox(STEM_NAMES[k] .. "##" .. k, S.dm_stems[k])
@@ -425,8 +430,8 @@ local function draw_demucs_tab()
   end
 end
 
--- ── SAM AUDIO TAB ────────────────────────────────────────────────
-local function draw_sam_tab()
+-- ── SAM AUDIO PARAMETERS (shown when a SAM Audio model is selected) ──
+local function draw_sam_params()
   local g = gui
   local t = theme
   local lw = t.sc(78)  -- label column width
@@ -440,11 +445,6 @@ local function draw_sam_tab()
   g.next_width(-1)
   local picked = widgets.example_prompt_picker("##sam_prompt_ex", S.sam_prompt_example, SAM_EXAMPLE_PROMPTS)
   if picked then S.sam_prompt = picked end
-
-  -- Model
-  g.row_label("Model:", lw)
-  g.next_width(-1)
-  S.sam_midx = widgets.combo("##sam_model", S.sam_midx, SAM_MODELS)
 
   -- GPU + ODE method
   g.row_label("GPU:", lw)
@@ -509,18 +509,18 @@ end
 function M.draw()
   local g = gui
   local t = theme
+  local is_sam = SS_IS_SAM[SS_MODELS[S.model_idx]]
 
-  -- ── SCROLL REGION: entire page (source/model/params/button/log) ──
-  -- Single, non-nested scroll_region for everything. widgets_extra.lua's
-  -- scroll_region does not support nesting (its clip/scroll math doesn't
-  -- compound an outer scroll offset into an inner one), so the log below
-  -- prints its lines directly into THIS region instead of opening its own
-  -- nested scroll_region — new lines call
-  -- widgets.scroll_to_bottom("##ss_page") to bring the log into view.
-  local scroll_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y)
-  widgets.scroll_region("##ss_page", 0, scroll_h, function()
+  -- ── MODEL (fixed, above the scrollable content — same position across
+  -- every tab in the app). Replaces the old DEMUCS/SAM AUDIO sub-tabs:
+  -- the selected model now drives which parameter section is shown below. ──
+  g.row_label("Model:", t.sc(68))
+  g.next_width(-1)
+  S.model_idx = widgets.combo("##ss_model", S.model_idx, SS_LABELS)
+  g.spacing()
 
-  -- Source file row
+  -- ── SOURCE (fixed, directly below Model — same position across every
+  -- tab that has a source file to pick) ────────────────────────────
   g.row_label("Source:", t.sc(54))
   local display_src = (S.src_track_name ~= "")
     and (S.src_track_name .. "  (" .. (S.src:match("[^/\\]+$") or "") .. ")")
@@ -549,31 +549,38 @@ function M.draw()
       "YELLOW")
   end
   g.spacing()
+  g.separator(); g.spacing()
 
-  -- Tab bar
-  S.tab = widgets.tab_bar("##stemsep_subtabs", S.tab, {"DEMUCS  (local)", "SAM AUDIO  (cloud)"})
-  g.spacing()
+  -- ── SCROLL REGION: rest of the page (params/button/log) ───────────
+  -- Single, non-nested scroll_region for everything below Model/Source.
+  -- widgets_extra.lua's scroll_region does not support nesting (its clip/
+  -- scroll math doesn't compound an outer scroll offset into an inner one),
+  -- so the log below prints its lines directly into THIS region instead of
+  -- opening its own nested scroll_region — new lines call
+  -- widgets.scroll_to_bottom("##ss_page") to bring the log into view.
+  local scroll_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y)
+  widgets.scroll_region("##ss_page", 0, scroll_h, function()
 
-  if S.tab == 1 then draw_demucs_tab()
-  else               draw_sam_tab() end
+  if is_sam then draw_sam_params()
+  else           draw_demucs_params() end
 
   g.spacing()
   g.separator()
   g.spacing()
 
-  -- SEPARATE button — colors change per tab; doubles as STOP while running
+  -- SEPARATE button — colors change per model type; doubles as STOP while running
   local sep_colors
-  if S.tab == 1 then
-    sep_colors = {
-      norm   = { 0x29/255, 0x66/255, 0xB0/255 },
-      hover  = { 0x3D/255, 0x80/255, 0xD8/255 },
-      active = { 0x47/255, 0x99/255, 0xFF/255 },
-    }
-  else
+  if is_sam then
     sep_colors = {
       norm   = { 0x4D/255, 0x19/255, 0xC4/255 },
       hover  = { 0x66/255, 0x26/255, 0xE0/255 },
       active = { 0x80/255, 0x33/255, 0xD1/255 },
+    }
+  else
+    sep_colors = {
+      norm   = { 0x29/255, 0x66/255, 0xB0/255 },
+      hover  = { 0x3D/255, 0x80/255, 0xD8/255 },
+      active = { 0x47/255, 0x99/255, 0xFF/255 },
     }
   end
   local stop_colors = {
@@ -582,12 +589,12 @@ function M.draw()
     active = { 0xF2/255, 0x70/255, 0x66/255 },
   }
   local sep_lbl = S.running and "STOP  (Processing...)"
-    or (S.tab == 1 and "SEPARATE  (Demucs)" or "SEPARATE  (SAM Audio)")
+    or (is_sam and "SEPARATE  (SAM Audio)" or "SEPARATE  (Demucs)")
   g.next_width(-1)
   if g.button(sep_lbl, nil, t.sc(36), { solid = S.running and stop_colors or sep_colors }) then
     if S.running then
       stop_run()
-    elseif S.tab == 1 then launch_demucs() else launch_sam() end
+    elseif is_sam then launch_sam() else launch_demucs() end
   end
   g.spacing()
 
