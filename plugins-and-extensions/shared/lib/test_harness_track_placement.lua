@@ -98,6 +98,61 @@ case_("composition: accompaniment folder lands below the last of melody+seeds", 
   assert(tp.insert_index(ref, 10) == 5)
 end)
 
+-- ── plan_candidate_import ────────────────────────────────────────
+-- MidiGenerator/panel.lua's _import_one: wraps the `delta` instrument
+-- tracks InsertMedia just created (at tcnt_before) in a folder, which
+-- involves inserting ONE more track (the folder header) at tcnt_before —
+-- shifting the instrument tracks down by one. Regression target for the
+-- "Amadeus candidates mix together / overlap existing tracks" report:
+-- these are the index computations that must stay internally consistent
+-- across candidates for multi-candidate (multi-"version") imports to stack
+-- cleanly instead of colliding.
+
+case_("plan_candidate_import: single instrument track", function()
+  local plan = tp.plan_candidate_import(10, 1)
+  assert(plan.folder_index == 10)
+  assert(plan.instrument_start == 11)
+  assert(plan.instrument_end == 11)
+  assert(plan.next_insert_at == 12)
+end)
+
+case_("plan_candidate_import: multi-instrument MIDI (e.g. Amadeus multi-track output)", function()
+  -- 4 instrument tracks (piano/bass/drums/strings) imported at index 10.
+  local plan = tp.plan_candidate_import(10, 4)
+  assert(plan.folder_index == 10)
+  assert(plan.instrument_start == 11)
+  assert(plan.instrument_end == 14)
+  assert(plan.next_insert_at == 15)
+end)
+
+case_("plan_candidate_import: delta <= 0 (InsertMedia added no tracks) returns nil", function()
+  assert(tp.plan_candidate_import(10, 0) == nil)
+  assert(tp.plan_candidate_import(10, -1) == nil)
+  assert(tp.plan_candidate_import(10, nil) == nil)
+end)
+
+case_("plan_candidate_import: tcnt_before == 0 (first candidate in an empty project)", function()
+  local plan = tp.plan_candidate_import(0, 2)
+  assert(plan.folder_index == 0)
+  assert(plan.instrument_start == 1)
+  assert(plan.instrument_end == 2)
+  assert(plan.next_insert_at == 3)
+end)
+
+case_("plan_candidate_import: chained candidates stack contiguously without overlap", function()
+  -- Candidate 1: 3 instrument tracks at index 5 (folder + 3 instruments = 4 tracks).
+  local plan1 = tp.plan_candidate_import(5, 3)
+  assert(plan1.next_insert_at == 9)
+  -- Candidate 2 starts exactly where candidate 1's folder ended — no gap,
+  -- no overlap with candidate 1's tracks [5..8].
+  local plan2 = tp.plan_candidate_import(plan1.next_insert_at, 2)
+  assert(plan2.folder_index == 9)
+  assert(plan2.instrument_start == 10)
+  assert(plan2.instrument_end == 11)
+  -- The two candidates' track ranges (folder + instruments) must not overlap.
+  assert(plan2.folder_index > plan1.instrument_end)
+end)
+
 if failures > 0 then
   print(failures .. " failure(s)")
   os.exit(1)

@@ -119,17 +119,19 @@ app = modal.App("foundation1-inference", image=image)
 # ---------------------------------------------------------------------------
 # Setup — descarga pesos al Volume (sin token HF, repo público)
 # ---------------------------------------------------------------------------
-@app.function(
-    volumes={WEIGHTS_MOUNT: weights_vol},
-    timeout=1800,
-)
-def setup():
+def _ensure_weights() -> str:
     """
-    Descarga los pesos de Foundation-1 al Modal Volume.
-    Ejecutar una sola vez (~3.4 GB, ~$0.05):
-        modal run research/research_foundation1_modal.py::setup
+    Descarga los pesos de Foundation-1 al Modal Volume si no están ya
+    presentes, y devuelve la ruta local.
 
-    No requiere HF_TOKEN — pesos públicos.
+    Antes solo `setup()` descargaba los pesos y `generate_batch` asumía que
+    ya estaban en el Volume (`local_files_only=True`). Como el panel nunca
+    invoca `::setup` — solo `::main`/`generate_batch` — un Volume nuevo (o uno
+    al que nunca se le ejecutó setup a mano) hacía que
+    `StableAudioPipeline.from_pretrained(..., local_files_only=True)`
+    fallara con "is neither a valid local path nor a valid repo id" en lugar
+    de descargar. Igual que audiogen/magnet/mustango, que descargan
+    perezosamente en el primer uso.
     """
     from huggingface_hub import snapshot_download
 
@@ -137,13 +139,7 @@ def setup():
     config_path = f"{dest}/config.json"
 
     if os.path.exists(config_path):
-        size_gb = sum(
-            os.path.getsize(os.path.join(d, f))
-            for d, _, files in os.walk(dest)
-            for f in files
-        ) / 1e9
-        print(f"[setup] Foundation-1 ya descargado en {dest} ({size_gb:.1f} GB).")
-        return
+        return dest
 
     print(f"[setup] Descargando {MODEL_HF_REPO} → {dest} …")
     t0 = time.time()
@@ -164,6 +160,24 @@ def setup():
 
     weights_vol.commit()
     print("[setup] Volume commiteado.")
+    return dest
+
+
+@app.function(
+    volumes={WEIGHTS_MOUNT: weights_vol},
+    timeout=1800,
+)
+def setup():
+    """
+    Descarga los pesos de Foundation-1 al Modal Volume.
+    Ejecutar una sola vez (~3.4 GB, ~$0.05):
+        modal run research/research_foundation1_modal.py::setup
+
+    No requiere HF_TOKEN — pesos públicos. Ya no es estrictamente necesario
+    (generate_batch descarga perezosamente si faltan), pero sigue
+    disponible para pre-calentar el Volume antes del primer uso real.
+    """
+    _ensure_weights()
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +188,7 @@ def _load_pipeline():
     import torch
     from diffusers import StableAudioPipeline
 
-    model_path = f"{WEIGHTS_MOUNT}/foundation1"
+    model_path = _ensure_weights()
     print(f"[load_pipeline] Cargando Foundation-1 desde {model_path} …")
     t0 = time.time()
 

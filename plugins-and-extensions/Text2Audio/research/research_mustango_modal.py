@@ -74,6 +74,12 @@ image = (
     .run_commands(f"git clone --depth 1 https://github.com/AMAAI-Lab/mustango {REPO_DIR}")
     # 2. Pre-instalar torch (satisface deps antes de requirements.txt)
     .pip_install("torch", "torchaudio", "torchvision")
+    # 2b. setuptools explícito: librosa (vía requirements.txt) importa
+    #     `pkg_resources` en import time (librosa/util/files.py). Python
+    #     3.10+/pip recientes ya no instalan setuptools por defecto en el
+    #     venv, así que sin esto el import de mustango.Mustango explota con
+    #     `ModuleNotFoundError: No module named 'pkg_resources'`.
+    .pip_install("setuptools")
     # 3. Instalar requirements.txt sin los pines de torch ni paquetes problemáticos
     .run_commands(
         f"grep -vE '{_TORCH_SKIP}' {REPO_DIR}/requirements.txt > /tmp/req_mustango.txt && "

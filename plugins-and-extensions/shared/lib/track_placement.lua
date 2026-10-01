@@ -53,4 +53,40 @@ function M.max_track_number(numbers)
   return best
 end
 
+-- Plans the folder-wrapping layout for one imported MIDI candidate, given:
+--   tcnt_before : 0-based index where the candidate's instrument track(s)
+--                 were inserted (reused from the placeholder/anchor track).
+--   delta       : number of instrument tracks InsertMedia actually created
+--                 (reaper.CountTracks(0) - tcnt_before right after import,
+--                 before the folder header is inserted).
+--
+-- MidiGenerator/panel.lua's _import_one does, in order: insert `delta`
+-- instrument tracks at tcnt_before via InsertMedia, THEN insert one more
+-- track at tcnt_before to serve as the folder header — which pushes the
+-- instrument tracks down by one. This function makes that two-step index
+-- arithmetic a pure, testable unit instead of inline reaper.* calls, so a
+-- regression (tracks landing one off, folders overlapping the next
+-- candidate, etc.) shows up as a failing assertion here instead of only
+-- being visible by eye in a live REAPER project.
+--
+-- Returns:
+--   folder_index      : 0-based index to insert the folder header track at.
+--   instrument_start   : 0-based index of the first instrument track
+--                        AFTER the folder header shifts them down.
+--   instrument_end     : 0-based index of the last instrument track (the
+--                        one that must get I_FOLDERDEPTH = -1 to close the
+--                        folder).
+--   next_insert_at      : 0-based index the NEXT candidate's import should
+--                        start at (right below this whole folder).
+-- Returns nil if delta <= 0 (InsertMedia added no tracks — nothing to wrap).
+function M.plan_candidate_import(tcnt_before, delta)
+  if not delta or delta <= 0 then return nil end
+  return {
+    folder_index    = tcnt_before,
+    instrument_start = tcnt_before + 1,
+    instrument_end   = tcnt_before + delta,
+    next_insert_at   = tcnt_before + 1 + delta,
+  }
+end
+
 return M

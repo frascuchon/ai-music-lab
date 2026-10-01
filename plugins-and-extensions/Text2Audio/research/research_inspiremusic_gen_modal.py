@@ -155,11 +155,31 @@ def generate_batch(jobs: list[dict], seed: int = DEFAULT_SEED) -> list[bytes]:
         try:
             torch.manual_seed(seed + i)
 
+            # model.inference() always generates model.max_generate_audio_seconds
+            # of audio (InspireMusicModel.__init__ derives
+            # max_generate_audio_length from it once, and model.inference()
+            # hardcodes "duration_to_gen": self.max_generate_audio_seconds —
+            # it does NOT look at time_end for actual generated length).
+            # Previously this per-job "seconds" was never applied: every job
+            # generated model.max_generate_audio_seconds (== MAX_GENERATE_SECONDS,
+            # fixed at model construction) regardless of what was requested,
+            # which is why the UI's duration slider was ignored and the output
+            # was consistently longer than asked. Update both derived
+            # attributes before each job so generation (and the final-length
+            # truncation at max_generate_audio_length) honor the requested
+            # duration.
+            seconds = float(job.get("seconds") or MAX_GENERATE_SECONDS)
+            seconds = max(model.min_generate_audio_seconds,
+                           min(seconds, MAX_GENERATE_SECONDS))
+            model.max_generate_audio_seconds = seconds
+            model.max_generate_audio_length = int(model.output_sample_rate * seconds)
+
             output_fn = f"output_{i:02d}"
             model.inference(
                 task="text-to-music",
                 text=job.get("text") or "",
                 audio_prompt=None,
+                time_end=seconds,
                 output_fn=output_fn,
                 output_format="wav",
             )

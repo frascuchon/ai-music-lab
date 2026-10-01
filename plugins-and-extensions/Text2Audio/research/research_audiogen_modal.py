@@ -111,8 +111,10 @@ def generate_batch(
     from audiocraft.models import AudioGen
 
     t0 = time.time()
-    model = AudioGen.get_pretrained(variant)
-    model.to("cuda")
+    # AudioGen (audiocraft's BaseGenModel) has no .to() method — unlike
+    # nn.Module-based wrappers (e.g. transformers), device placement happens
+    # inside get_pretrained() itself via its `device` kwarg.
+    model = AudioGen.get_pretrained(variant, device="cuda")
     sr_out = model.sample_rate  # 16000 Hz
     print(f"[load_model] {variant} listo ({time.time()-t0:.1f}s)")
 

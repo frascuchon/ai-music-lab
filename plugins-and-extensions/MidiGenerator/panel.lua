@@ -298,7 +298,8 @@ local function _import_one(mid_path, folder_name, insert_at)
   end
 
   local delta = reaper.CountTracks(0) - tcnt_before
-  if delta <= 0 then
+  local plan = track_placement.plan_candidate_import(tcnt_before, delta)
+  if not plan then
     add_log("Warning: InsertMedia did not add tracks for " .. mid_path:match("[^/\\]+$"))
     reaper.DeleteTrack(anchor_tr)
     return insert_at
@@ -337,29 +338,35 @@ local function _import_one(mid_path, folder_name, insert_at)
   end
 
   -- Always create folder structure (regardless of track count)
-  reaper.InsertTrackAtIndex(tcnt_before, true)
-  local folder_tr = reaper.GetTrack(0, tcnt_before)
-  add_log(string.format("DEBUG: folder_tr created at index %d, name='%s'", tcnt_before, folder_name))
+  reaper.InsertTrackAtIndex(plan.folder_index, true)
+  local folder_tr = reaper.GetTrack(0, plan.folder_index)
+  add_log(string.format("DEBUG: folder_tr created at index %d, name='%s'", plan.folder_index, folder_name))
   reaper.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", folder_name, true)
   reaper.SetMediaTrackInfo_Value(folder_tr, "I_FOLDERDEPTH", 1)
-  for i = 1, delta do
-    local tr = reaper.GetTrack(0, tcnt_before + i)
+  for i = plan.instrument_start, plan.instrument_end do
+    local tr = reaper.GetTrack(0, i)
     if tr then
       local _, existing = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
       if existing == "" then
-        reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", folder_name .. " " .. i, true)
+        reaper.GetSetMediaTrackInfo_String(tr, "P_NAME",
+          folder_name .. " " .. (i - plan.instrument_start + 1), true)
       end
     end
   end
-  local last_tr = reaper.GetTrack(0, tcnt_before + delta)
+  local last_tr = reaper.GetTrack(0, plan.instrument_end)
   if last_tr then reaper.SetMediaTrackInfo_Value(last_tr, "I_FOLDERDEPTH", -1) end
   add_log(string.format("Imported into folder '%s' (%d track%s)",
     folder_name, delta, delta == 1 and "" or "s"))
 
   -- Next candidate (if any) must land right below THIS candidate's whole
   -- folder (1 folder track + delta instrument tracks), not back at
-  -- reaper.CountTracks(0).
-  return tcnt_before + 1 + delta
+  -- reaper.CountTracks(0). Clamp defensively to the live track count: if
+  -- any assumption above drifts (e.g. InsertMedia behaving unexpectedly for
+  -- a given multi-track SMF), a stale/overshooting index must never be
+  -- carried into the next InsertTrackAtIndex call — that is what lets
+  -- "versions"/candidates land on top of each other or on top of
+  -- already-existing tracks instead of failing loudly.
+  return math.min(plan.next_insert_at, reaper.CountTracks(0))
 end
 
 -- Reference track number (1-based IP_TRACKNUMBER) for AMT generations that
