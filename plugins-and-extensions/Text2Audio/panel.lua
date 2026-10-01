@@ -1,4 +1,4 @@
--- AI Music Lab - Text2Audio panel (text → audio generation and editing)
+-- AI Music Lab - AudioGenerator panel (text → audio generation and editing)
 -- Panel module: no gfx.init / reaper.defer of its own. Loaded by the
 -- unified ai-music-lab.lua container, which owns the window/main loop
 -- and calls M.init() once, M.poll() every frame, M.draw() when active.
@@ -14,6 +14,8 @@ local common  = require("common")
 local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
+local track_placement = require("track_placement")
+local model_switch = require("model_switch")
 
 local HOME   = common.HOME
 local TMPDIR = common.TMPDIR
@@ -367,7 +369,7 @@ end
 local function _set_src_from_item(item, context_label)
   local take = reaper.GetActiveTake(item)
   if not take then
-    reaper.MB("Item has no active take.", "Text2Audio", 0); return false
+    reaper.MB("Item has no active take.", "AudioGenerator", 0); return false
   end
   local src   = reaper.GetMediaItemTake_Source(take)
   local fname = reaper.GetMediaSourceFileName(src, "")
@@ -409,11 +411,11 @@ local function grab_from_reaper()
       local item = reaper.GetTrackMediaItem(tr, i)
       if _set_src_from_item(item, "track") then return end
     end
-    reaper.MB("Selected track has no audio items.", "Text2Audio", 0)
+    reaper.MB("Selected track has no audio items.", "AudioGenerator", 0)
     return
   end
 
-  reaper.MB("No item or track selected in REAPER.", "Text2Audio", 0)
+  reaper.MB("No item or track selected in REAPER.", "AudioGenerator", 0)
 end
 
 -- ── IMPORT AUDIO ─────────────────────────────────────────────────
@@ -445,7 +447,9 @@ import_audio = function()
   end
   local track_name = base_name .. " [" .. model_key .. "]"
 
-  local tcnt_before = reaper.CountTracks(0)
+  -- Land the new track right below the source track/clip (when there is
+  -- one) instead of always at the very end of the project's track list.
+  local tcnt_before = track_placement.insert_index(S.src_track_idx, reaper.CountTracks(0))
   reaper.InsertTrackAtIndex(tcnt_before, true)
   local new_track = reaper.GetTrack(0, tcnt_before)
   reaper.GetSetMediaTrackInfo_String(new_track, "P_NAME", track_name, true)
@@ -455,7 +459,7 @@ import_audio = function()
   reaper.InsertMedia(wav_path, 0)
   reaper.UpdateArrange()
   add_log("Imported: " .. track_name)
-  reaper.Undo_EndBlock("Text2Audio: import WAV", -1)
+  reaper.Undo_EndBlock("AudioGenerator: import WAV", -1)
 end
 
 -- ── LAUNCH GENERATION/EDITING ────────────────────────────────────
@@ -491,14 +495,14 @@ local function launch_t2a()
   if S.mode == 1 then
     local prompt = S.prompt:match("^%s*(.-)%s*$")
     if prompt == "" then
-      reaper.MB("Write a text prompt before generating.", "Text2Audio", 0)
+      reaper.MB("Write a text prompt before generating.", "AudioGenerator", 0)
       return
     end
     local model_key = GEN_MODELS[S.gen_model_idx]
     local script    = GEN_SCRIPTS[model_key]
     local f = io.open(script, "r")
     if not f then
-      reaper.MB("Script not found:\n" .. tostring(script), "Text2Audio", 0)
+      reaper.MB("Script not found:\n" .. tostring(script), "AudioGenerator", 0)
       return
     end
     f:close()
@@ -568,19 +572,19 @@ local function launch_t2a()
   else
     if S.src == "" then
       reaper.MB("Select an audio track, item or section first.\n"
-        .. "Use the R button to capture the REAPER selection.", "Text2Audio", 0)
+        .. "Use the R button to capture the REAPER selection.", "AudioGenerator", 0)
       return
     end
     local prompt = S.edit_prompt:match("^%s*(.-)%s*$")
     if prompt == "" then
-      reaper.MB("Write the change intent (e.g. 'jazz style with piano').", "Text2Audio", 0)
+      reaper.MB("Write the change intent (e.g. 'jazz style with piano').", "AudioGenerator", 0)
       return
     end
     local model_key = EDIT_MODELS[S.edit_model_idx]
     local script    = EDIT_SCRIPTS[model_key]
     local f = io.open(script, "r")
     if not f then
-      reaper.MB("Script not found:\n" .. tostring(script), "Text2Audio", 0)
+      reaper.MB("Script not found:\n" .. tostring(script), "AudioGenerator", 0)
       return
     end
     f:close()
@@ -625,13 +629,13 @@ local function launch_t2a()
 end
 
 -- ── MODULE ───────────────────────────────────────────────────────
-local M = { title = "Text2Audio" }
+local M = { title = "AudioGenerator" }
 
 function M.init()
   if PYTHON_ERR then
-    reaper.ShowConsoleMsg("Text2Audio - WARNING: " .. PYTHON_ERR .. "\n")
+    reaper.ShowConsoleMsg("AudioGenerator - WARNING: " .. PYTHON_ERR .. "\n")
   end
-  add_log("Text2Audio ready.")
+  add_log("AudioGenerator ready.")
   add_log("Python: " .. PYTHON)
   add_log("Backend: " .. TEXT2AUDIO_PY)
 end
@@ -686,6 +690,23 @@ function M.draw()
   if S.mode == 1 then
   -- ── GENERATE MODE ───────────────────────────
 
+    -- Model (first — everything below depends on it)
+    g.row_label("Model:", t.sc(70))
+    g.next_width(-1)
+    local old_gen_model_idx = S.gen_model_idx
+    S.gen_model_idx = widgets.combo("##gen_model", S.gen_model_idx, GEN_LABELS)
+    -- A prompt written for one model's phrasing conventions (e.g.
+    -- Foundation-1's TAG format) rarely still makes sense for another, so
+    -- clear it instead of silently carrying it over.
+    S.prompt = model_switch.next_prompt(old_gen_model_idx, S.gen_model_idx, S.prompt)
+
+    -- GPU
+    g.row_label("GPU:", t.sc(70))
+    g.next_width(t.sc(90))
+    S.gpu_idx = widgets.combo("##gen_gpu", S.gpu_idx, GPUS)
+    g.spacing()
+    g.separator(); g.spacing()
+
     -- Prompt
     g.push_font(t.F.H1)
     g.text("Prompt")
@@ -717,16 +738,6 @@ function M.draw()
     g.next_width(-1)
     local ch_dur, new_dur = g.slider_float("##gen_dur", S.duration, 1.0, max_sec, "%.1f s")
     if ch_dur then S.duration = new_dur end
-
-    -- Model
-    g.row_label("Model:", t.sc(70))
-    g.next_width(-1)
-    S.gen_model_idx = widgets.combo("##gen_model", S.gen_model_idx, GEN_LABELS)
-
-    -- GPU
-    g.row_label("GPU:", t.sc(70))
-    g.next_width(t.sc(90))
-    S.gpu_idx = widgets.combo("##gen_gpu", S.gpu_idx, GPUS)
     g.spacing()
 
     -- ACE-Step 1.5 advanced inference parameters + LoRA adapter
@@ -854,6 +865,17 @@ function M.draw()
   else
   -- ── EDIT MODE ───────────────────────────────
 
+    -- Model (first — the fields below depend on it)
+    g.row_label("Model:", t.sc(80))
+    g.next_width(-1)
+    local old_edit_model_idx = S.edit_model_idx
+    S.edit_model_idx = widgets.combo("##edit_model", S.edit_model_idx, EDIT_LABELS)
+    -- The change-intent prompt's phrasing advice is model-specific, so
+    -- clear it instead of silently carrying it over to a different model.
+    S.edit_prompt = model_switch.next_prompt(old_edit_model_idx, S.edit_model_idx, S.edit_prompt)
+    g.spacing()
+    g.separator(); g.spacing()
+
     -- Source
     g.push_font(t.F.H1)
     g.text("Source audio")
@@ -904,12 +926,6 @@ function M.draw()
       local picked = widgets.example_prompt_picker("##edit_prompt_ex", S.edit_prompt_example, edit_examples)
       if picked then S.edit_prompt = picked end
     end
-    g.spacing()
-
-    -- Edit model
-    g.row_label("Model:", t.sc(80))
-    g.next_width(-1)
-    S.edit_model_idx = widgets.combo("##edit_model", S.edit_model_idx, EDIT_LABELS)
     g.spacing()
 
     -- Intensity (not applicable to MusicGen or InspireMusic continuation)

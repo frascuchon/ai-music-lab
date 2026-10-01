@@ -13,6 +13,8 @@ local common  = require("common")
 local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
+local track_placement = require("track_placement")
+local model_switch = require("model_switch")
 local smf     = dofile(SCRIPT_DIR .. "smf_writer.lua")
 
 local HOME   = common.HOME
@@ -249,13 +251,18 @@ end
 -- Each candidate (.mid) is imported into its own track folder.
 -- Reuses Audio2Midi's I_FOLDERDEPTH folder logic.
 
-local function _import_one(mid_path, folder_name)
+-- Imports one candidate .mid into its own folder, anchored at `insert_at`
+-- (a 0-based track index — see track_placement.lua) instead of always at
+-- reaper.CountTracks(0). Returns the insert_at index the NEXT candidate
+-- should use, so multiple candidates stack below each other right under
+-- the source instead of all landing at the end of the project.
+local function _import_one(mid_path, folder_name, insert_at)
   local f = io.open(mid_path, "rb")
-  if not f then add_log("Error: cannot read " .. mid_path); return end
+  if not f then add_log("Error: cannot read " .. mid_path); return insert_at end
   f:close()
 
   local cursor      = reaper.GetCursorPosition()
-  local tcnt_before = reaper.CountTracks(0)
+  local tcnt_before = insert_at
 
   -- Snapshot existing markers: InsertMedia can create markers from MIDI
   -- meta-events (type 0x06/0x07), adding visual noise to the timeline.
@@ -265,12 +272,18 @@ local function _import_one(mid_path, folder_name)
     marker_snap[idx] = true
   end
 
-  -- Deselect all tracks before InsertMedia: if tracks are selected
-  -- (e.g. from the previous candidate), InsertMedia would add items to those
-  -- tracks instead of creating new ones.
+  -- Create + select a placeholder track AT the desired position before
+  -- calling InsertMedia: with nothing selected, REAPER's "add to new
+  -- track" mode always appends at reaper.CountTracks(0), which is the bug
+  -- being fixed here. With exactly one track selected, InsertMedia anchors
+  -- the import there (reusing it for the first instrument, and inserting
+  -- any extra instruments from a multi-track SMF immediately after it).
   for i = 0, reaper.CountTracks(0) - 1 do
     reaper.SetTrackSelected(reaper.GetTrack(0, i), false)
   end
+  reaper.InsertTrackAtIndex(tcnt_before, true)
+  local anchor_tr = reaper.GetTrack(0, tcnt_before)
+  reaper.SetOnlyTrackSelected(anchor_tr)
 
   reaper.SetEditCurPos(cursor, false, false)
   reaper.InsertMedia(mid_path, 0)
@@ -286,7 +299,8 @@ local function _import_one(mid_path, folder_name)
   local delta = reaper.CountTracks(0) - tcnt_before
   if delta <= 0 then
     add_log("Warning: InsertMedia did not add tracks for " .. mid_path:match("[^/\\]+$"))
-    return
+    reaper.DeleteTrack(anchor_tr)
+    return insert_at
   end
   add_log(string.format("DEBUG: delta=%d tcnt_before=%d tcnt_after=%d", delta, tcnt_before, reaper.CountTracks(0)))
 
@@ -340,6 +354,29 @@ local function _import_one(mid_path, folder_name)
   if last_tr then reaper.SetMediaTrackInfo_Value(last_tr, "I_FOLDERDEPTH", -1) end
   add_log(string.format("Imported into folder '%s' (%d track%s)",
     folder_name, delta, delta == 1 and "" or "s"))
+
+  -- Next candidate (if any) must land right below THIS candidate's whole
+  -- folder (1 folder track + delta instrument tracks), not back at
+  -- reaper.CountTracks(0).
+  return tcnt_before + 1 + delta
+end
+
+-- Reference track number (1-based IP_TRACKNUMBER) for AMT generations that
+-- are based on other tracks (melody item + seed takes) — nil when there is
+-- no such basis (e.g. text-only models like amadeus/text2midi), in which
+-- case track_placement.insert_index falls back to appending at the end.
+local function _amt_ref_track_number()
+  local nums = {}
+  if S.amt_melody_item then
+    local tr = reaper.GetMediaItemTrack(S.amt_melody_item)
+    if tr then table.insert(nums, reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")) end
+  end
+  for _, seed in ipairs(S.amt_seed_takes) do
+    local item = seed.take and reaper.GetMediaItemTake_Item(seed.take)
+    local tr   = item and reaper.GetMediaItemTrack(item)
+    if tr then table.insert(nums, reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")) end
+  end
+  return track_placement.max_track_number(nums)
 end
 
 import_midi_all = function()
@@ -358,10 +395,17 @@ import_midi_all = function()
     add_log(string.format("Cursor → %.2fs (end of melody item)", pos + len))
   end
 
+  -- Land the generated folder(s) right below the melody/seed tracks this
+  -- generation is based on (AMT), instead of always at the very end of the
+  -- project's track list. Each extra candidate then stacks right below the
+  -- previous candidate's folder.
+  local ref_track = (mk == "anticipatory") and _amt_ref_track_number() or nil
+  local insert_at = track_placement.insert_index(ref_track, reaper.CountTracks(0))
+
   reaper.Undo_BeginBlock()
   for i, path in ipairs(S.out_files) do
     local suffix = #S.out_files > 1 and (" — candidate " .. i) or ""
-    _import_one(path, label .. suffix)
+    insert_at = _import_one(path, label .. suffix, insert_at)
   end
   reaper.UpdateArrange()
   reaper.Undo_EndBlock("MidiGenerator: import MIDI", -1)
@@ -659,11 +703,15 @@ function M.draw()
   g.next_width(-1)
   local old_idx = S.model_idx
   S.model_idx = widgets.combo("##mg_model", S.model_idx, MG_LABELS)
-  if S.model_idx ~= old_idx then
+  if model_switch.changed(old_idx, S.model_idx) then
     local new_mk = MG_MODELS[S.model_idx]
-    S.gpu = MG_GPU_DEFAULT[new_mk] or "A10G"
-    S.temperature = MG_TEMP_DEFAULT[new_mk] or 1.0
+    S.gpu = model_switch.default_for(MG_GPU_DEFAULT, new_mk, "A10G")
+    S.temperature = model_switch.default_for(MG_TEMP_DEFAULT, new_mk, 1.0)
   end
+  -- The prompt (and its model-specific phrasing advice) doesn't carry over
+  -- meaningfully to a different model — e.g. musecoco's instrument-class
+  -- phrasing vs. amadeus's descriptive-sentence style.
+  S.prompt = model_switch.next_prompt(old_idx, S.model_idx, S.prompt)
   g.spacing()
   g.separator(); g.spacing()
 
