@@ -58,6 +58,22 @@ import tempfile
 from collections import deque
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Local-execution support lookup (shared/model_execution.py). Imported
+# lazily-by-path (not a package) the same way the rest of this plugin family
+# resolves its shared/ sibling directory.
+# ---------------------------------------------------------------------------
+_SHARED_DIR = Path(__file__).resolve().parent.parent / "shared"
+if str(_SHARED_DIR) not in sys.path:
+    sys.path.insert(0, str(_SHARED_DIR))
+from model_execution import is_local_supported  # noqa: E402
+
+LOCAL_SCRIPT = Path(__file__).resolve().parent / "text2audio_local.py"
+
+# Edit-mode models whose local backend (text2audio_local.py) needs --seconds
+# explicitly (mirrors panel.lua's EDIT_NEEDS_SECONDS for the remote path).
+_LOCAL_EDIT_NEEDS_SECONDS = {"musicgen"}
+
 
 # ---------------------------------------------------------------------------
 # Model contract type per model key
@@ -172,6 +188,9 @@ def main() -> int:
                    help="Transformation intensity (edit mode).")
     p.add_argument("--gpu",         default="A10G",
                    help="GPU for Modal (A10G|A100|T4).")
+    p.add_argument("--execution",   default="remote", choices=["local", "remote"],
+                   help="local = run on this machine (MPS/CPU) via text2audio_local.py; "
+                        "remote = Modal cloud (default, unchanged behavior).")
 
     # ACE-Step generation (acestep_gen) only — advanced inference params.
     # All optional; the Modal script clamps to valid ranges regardless.
@@ -199,15 +218,6 @@ def main() -> int:
     kind        = MODEL_KIND.get(args.model)
 
     # ---- Validations -------------------------------------------------------
-    if not script_path.exists():
-        write_progress(pf, "error", 0, f"Script not found: {script_path}")
-        return 1
-
-    if not (shared_dir / "pyproject.toml").exists():
-        write_progress(pf, "error", 0,
-                       f"shared/pyproject.toml not found at: {shared_dir}")
-        return 1
-
     if kind is None:
         write_progress(pf, "error", 0, f"Unknown model: {args.model}")
         return 1
@@ -216,12 +226,29 @@ def main() -> int:
         write_progress(pf, "error", 0, "Empty prompt. Write a description of the audio.")
         return 1
 
-    uv_bin = _find_uv()
-    if uv_bin is None:
-        write_progress(pf, "error", 0,
-                       "uv not found. "
-                       "Install with: curl -LsSf https://astral.sh/uv/install.sh | sh")
-        return 1
+    if args.execution == "local":
+        supported, reason = is_local_supported("text2audio", args.model)
+        if not supported:
+            write_progress(pf, "error", 0,
+                           f"Local execution not supported for {args.model}: {reason}")
+            return 1
+        uv_bin = None  # not used on the local path
+    else:
+        if not script_path.exists():
+            write_progress(pf, "error", 0, f"Script not found: {script_path}")
+            return 1
+
+        if not (shared_dir / "pyproject.toml").exists():
+            write_progress(pf, "error", 0,
+                           f"shared/pyproject.toml not found at: {shared_dir}")
+            return 1
+
+        uv_bin = _find_uv()
+        if uv_bin is None:
+            write_progress(pf, "error", 0,
+                           "uv not found. "
+                           "Install with: curl -LsSf https://astral.sh/uv/install.sh | sh")
+            return 1
 
     # ---- Extract source section if applicable ------------------------------
     temp_dir     = None
@@ -248,7 +275,24 @@ def main() -> int:
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ---- Build modal run command -------------------------------------------
+    # ---- Build command -------------------------------------------
+    if args.execution == "local":
+        write_progress(pf, "running", 0.08,
+                       f"Launching local inference ({args.model} · MPS/CPU)...")
+        cmd = [sys.executable, str(LOCAL_SCRIPT),
+               "--model", args.model, "--prompt", args.prompt,
+               "--out-dir", str(out_dir)]
+        if kind == "text2audio":
+            cmd += ["--mode", "generate", "--seconds", str(args.seconds)]
+        else:
+            cmd += ["--mode", "edit", "--input", str(process_path),
+                   "--intensity", args.intensity]
+            if args.model in _LOCAL_EDIT_NEEDS_SECONDS:
+                cmd += ["--seconds", str(args.seconds)]
+        env = os.environ.copy()
+        print(f"[text2audio] Command (local): {' '.join(cmd)}", flush=True)
+        return _run_and_collect(cmd, env, pf, out_dir, args, temp_dir)
+
     write_progress(pf, "running", 0.08,
                    f"Launching Modal ({args.model} · {args.gpu})...")
 
@@ -349,7 +393,15 @@ def main() -> int:
     env["STABLE_AUDIO_GPU"] = args.gpu
 
     print(f"[text2audio] Command: {' '.join(cmd)}", flush=True)
+    return _run_and_collect(cmd, env, pf, out_dir, args, temp_dir)
 
+
+def _run_and_collect(cmd: list[str], env: dict, pf: str, out_dir: Path,
+                     args: argparse.Namespace, temp_dir: str | None) -> int:
+    """Launch cmd, tail its stdout into the progress file, then locate and
+    rename out_dir/output.wav. Shared by both the remote (``uv run ... modal
+    run ...``) and local (``text2audio_local.py``) execution paths — same
+    protocol either way, so the Lua panel needs no changes to handle either."""
     try:
         proc = subprocess.Popen(
             cmd,
@@ -357,10 +409,10 @@ def main() -> int:
             text=True, bufsize=1, env=env,
         )
     except FileNotFoundError:
-        write_progress(pf, "error", 0, f"Could not execute: {uv_bin}")
+        write_progress(pf, "error", 0, f"Could not execute: {cmd[0]}")
         return 1
     except PermissionError:
-        write_progress(pf, "error", 0, f"Permission denied: {uv_bin}")
+        write_progress(pf, "error", 0, f"Permission denied: {cmd[0]}")
         return 1
 
     # ---- Parse stdout for progress ----------------------------------------
@@ -394,7 +446,8 @@ def main() -> int:
         last = next((ln for ln in reversed(tail_lines) if ln.strip()), "")
         detail = f" Last: {last[:160]}" if last else " Check the log for details."
         write_progress(pf, "error", 0,
-                       f"Modal failed with code {proc.returncode}.{detail}",
+                       f"{'Local' if args.execution == 'local' else 'Modal'} "
+                       f"failed with code {proc.returncode}.{detail}",
                        ["--- last output lines ---"] + tail_lines)
         return 1
 

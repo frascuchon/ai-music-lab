@@ -74,6 +74,12 @@ def main():
             extract_section(input_path, args.start, args.duration, section_file)
             process_path = section_file
             print(f"Section extracted to: {section_file}", flush=True)
+        except ModuleNotFoundError as exc:
+            write_progress(pf, "error", 0,
+                           f"Missing Python package '{exc.name}'. Open the "
+                           f"Setup tab and click Install next to demucs to "
+                           f"reinstall it (this pulls in {exc.name}).")
+            return 1
         except Exception as exc:
             write_progress(pf, "error", 0, f"Error extracting section: {exc}")
             return 1

@@ -36,15 +36,21 @@ Subcommands:
   modal-login                            Open browser for Modal token new.
   modal-secret-list                      Report whether huggingface-secret exists.
   modal-secret-create --token <tok>      Create/update huggingface-secret.
-  prewarm-sam      [--model <hf-id>]     Pre-load SAM Audio in Modal Volume.
-  prewarm-miros                          Download MIROS weights in Modal Volume.
-  prewarm-yourmt3                        Download YourMT3+ weights in Modal Volume.
+
+Note: there used to be prewarm-sam / prewarm-miros / prewarm-yourmt3 /
+prewarm-midigen-* subcommands here that manually pre-downloaded each model's
+weights into its Modal Volume before first real use. Removed — every real
+generate/transcribe/separate Modal function now downloads+caches its own
+weights lazily on first call (see each research_*_modal.py's _ensure_weights()
+or equivalent), so the first real run simply absorbs the download time
+instead of requiring a separate manual pre-warm step.
 """
 
 import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -139,6 +145,23 @@ def _stream(pf: Path | None, cmd: list[str], *, done_msg: str = "Completed",
 # Core env checks  →  (status, detail)   status = "ok" | "missing"
 # ---------------------------------------------------------------------------
 
+def _find_versioned_python3(bindir: Path) -> Path | None:
+    """Scan bindir for the highest-numbered python3.N when the bare
+    "python3" symlink isn't there (e.g. Homebrew python@3.10 framework)."""
+    best, best_ver = None, -1
+    try:
+        entries = list(bindir.iterdir())
+    except OSError:
+        return None
+    for entry in entries:
+        m = re.fullmatch(r"python3\.(\d+)", entry.name)
+        if m:
+            ver = int(m.group(1))
+            if ver > best_ver:
+                best_ver, best = ver, entry
+    return best
+
+
 def _chk_python(ini_path: Path) -> tuple[str, str]:
     if not ini_path.exists():
         return "missing", f"reaper.ini not found: {ini_path}"
@@ -155,13 +178,20 @@ def _chk_python(ini_path: Path) -> tuple[str, str]:
     if not libpath:
         return "missing", "pythonlibpath not found in reaper.ini"
     # If the configured path points inside lib/ (e.g. lib/python3.11/config-...)
-    # instead of at lib/ itself, walk up ancestors looking for bin/python3.
+    # instead of at lib/ itself, walk up ancestors looking for bin/python3
+    # (or bin/python3.N, e.g. Homebrew framework builds that ship no bare
+    # "python3" symlink — mirrors common.lua's _find_versioned_python3).
     parent = Path(libpath).parent
     exe = None
     for _ in range(4):
-        candidate = parent / "bin" / "python3"
+        bindir = parent / "bin"
+        candidate = bindir / "python3"
         if candidate.exists():
             exe = candidate
+            break
+        versioned = _find_versioned_python3(bindir)
+        if versioned is not None:
+            exe = versioned
             break
         if parent.parent == parent:
             break
@@ -207,13 +237,25 @@ def _chk_modal_auth() -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 def _chk_demucs() -> tuple[str, str]:
-    """Check demucs in the interpreter running this script (== REAPER's Python)."""
+    """Check demucs AND soundfile in the interpreter running this script
+    (== REAPER's Python). soundfile is checked here too (not just demucs)
+    because separate_demucs.py/separate_sam.py import it directly for their
+    own --start/--duration section-extraction helper — demucs 4.x dropped
+    its own soundfile dependency in favor of `sphn`, so `pip install demucs`
+    alone no longer pulls soundfile in, even though this plugin still needs
+    it. A user who had demucs installed before that changed would pass this
+    check yet still hit "No module named 'soundfile'" the first time they
+    cut a section, so install-demucs below always installs both together."""
     rc, out, err = _run([sys.executable, "-c",
                          "import demucs; print(demucs.__version__)"])
-    if rc == 0:
-        return "ok", f"demucs {out.strip()}"
-    last = (err or "ImportError").split("\n")[-1][:80]
-    return "missing", last
+    if rc != 0:
+        last = (err or "ImportError").split("\n")[-1][:80]
+        return "missing", last
+    rc_sf, _, err_sf = _run([sys.executable, "-c", "import soundfile"])
+    if rc_sf != 0:
+        last = (err_sf or "ImportError").split("\n")[-1][:80]
+        return "missing", f"soundfile: {last}"
+    return "ok", f"demucs {out.strip()}"
 
 
 # Mirrors MidiGenerator/research/tools/midi_abc.py's _COMMON_TOOL_DIRS —
@@ -352,8 +394,11 @@ def cmd_install_demucs(args) -> None:
     # Install torch/torchaudio together with demucs so pip's resolver picks
     # a single ABI-compatible pair instead of drifting apart across separate
     # installs (mismatched torch/torchaudio crashes at import time).
+    # soundfile is included even though demucs 4.x no longer depends on it
+    # itself (it switched to `sphn`) — separate_demucs.py/separate_sam.py
+    # import soundfile directly for their own section-extraction helper.
     _stream(pf, [python, "-m", "pip", "install", "--user",
-                 "demucs", "torch", "torchaudio"],
+                 "demucs", "torch", "torchaudio", "soundfile"],
             done_msg="demucs installed")
 
 
@@ -477,133 +522,6 @@ def cmd_modal_secret_create(args) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Subcommand: prewarm-sam  (StemsSeparator — SAM Audio)
-# ---------------------------------------------------------------------------
-
-def cmd_prewarm_sam(args) -> None:
-    pf = Path(args.progress) if args.progress else None
-    model = args.model or "facebook/sam-audio-large"
-    script = PLUGINS_DIR / "StemsSeparator" / "modal_sam_audio.py"
-    if not script.exists():
-        write(pf, "error", 0, f"Not found: {script}")
-        return
-    uv = _find_uv()
-    if uv is None:
-        write(pf, "error", 0, "uv not found — install it first (Setup tab, 'Install uv')")
-        return
-    write(pf, "running", 0.05, f"Downloading {model} (may take 10-20 min)...")
-    _stream(pf,
-            [str(uv), "run", "--project", str(SCRIPT_DIR),
-             "modal", "run", f"{script}::run_download", "--model", model],
-            done_msg="SAM model downloaded and cached in Modal Volume")
-
-
-# ---------------------------------------------------------------------------
-# Subcommand: prewarm-miros  (Audio2Midi — MIROS)
-# ---------------------------------------------------------------------------
-
-def cmd_prewarm_miros(args) -> None:
-    pf = Path(args.progress) if args.progress else None
-    script = PLUGINS_DIR / "Audio2Midi" / "research" / "research_miros_modal.py"
-    if not script.exists():
-        write(pf, "error", 0, f"Not found: {script}")
-        return
-    uv = _find_uv()
-    if uv is None:
-        write(pf, "error", 0, "uv not found — install it first (Setup tab, 'Install uv')")
-        return
-    write(pf, "running", 0.05,
-          "Downloading MIROS weights to Modal Volume (may take 10-15 min)...")
-    _stream(pf,
-            [str(uv), "run", "--project", str(SCRIPT_DIR),
-             "modal", "run", f"{script}::setup"],
-            done_msg="MIROS weights downloaded and cached in Modal Volume")
-
-
-# ---------------------------------------------------------------------------
-# Subcommand: prewarm-yourmt3  (Audio2Midi — YourMT3+)
-# ---------------------------------------------------------------------------
-
-def cmd_prewarm_yourmt3(args) -> None:
-    pf = Path(args.progress) if args.progress else None
-    script = PLUGINS_DIR / "Audio2Midi" / "research" / "research_yourmt3_modal.py"
-    if not script.exists():
-        write(pf, "error", 0, f"Not found: {script}")
-        return
-    uv = _find_uv()
-    if uv is None:
-        write(pf, "error", 0, "uv not found — install it first (Setup tab, 'Install uv')")
-        return
-    write(pf, "running", 0.05,
-          "Downloading YourMT3+ weights to Modal Volume (may take 5-10 min)...")
-    _stream(pf,
-            [str(uv), "run", "--project", str(SCRIPT_DIR),
-             "modal", "run", f"{script}::setup"],
-            done_msg="YourMT3+ weights downloaded and cached in Modal Volume")
-
-
-# ---------------------------------------------------------------------------
-# Subcommands: prewarm-midigen-*  (MidiGenerator — 6 models)
-# ---------------------------------------------------------------------------
-
-_MG_MODELS = {
-    "amadeus":             ("research_amadeus_modal.py",      "setup"),
-    "midi-llm":            ("research_midi_llm_modal.py",     "setup"),
-    "text2midi":           ("research_text2midi_modal.py",     "setup"),
-    "chatmusician":        ("research_chatmusician_modal.py",  "setup"),
-    "chatmusician-adapter": ("research_chatmusician_modal.py", "setup_adapter"),
-    "musecoco":            ("research_musecoco_modal.py",      "setup_weights"),
-    "anticipatory":        ("research_anticipatory_modal.py",  "setup"),
-}
-
-_MG_RESEARCH = PLUGINS_DIR / "MidiGenerator" / "research"
-
-
-def _prewarm_midigen_model(model_name: str, pf) -> None:
-    entry = _MG_MODELS.get(model_name)
-    if entry is None:
-        write(pf, "error", 0, f"Unknown MidiGenerator model: {model_name!r}")
-        return
-    script_name, entrypoint = entry
-    script = _MG_RESEARCH / script_name
-    if not script.exists():
-        write(pf, "error", 0, f"Script not found: {script}")
-        return
-    uv = _find_uv()
-    if uv is None:
-        write(pf, "error", 0, "uv not found — install it first (Setup tab, 'Install uv')")
-        return
-    msg = f"Downloading {model_name} weights to Modal Volume..."
-    write(pf, "running", 0.05, msg)
-    _stream(pf,
-            [str(uv), "run", "--project", str(SCRIPT_DIR),
-             "modal", "run", f"{script}::{entrypoint}"],
-            done_msg=f"{model_name} weights cached in Modal Volume")
-
-
-def cmd_prewarm_midigen_amadeus(args) -> None:
-    _prewarm_midigen_model("amadeus", Path(args.progress) if args.progress else None)
-
-def cmd_prewarm_midigen_midi_llm(args) -> None:
-    _prewarm_midigen_model("midi-llm", Path(args.progress) if args.progress else None)
-
-def cmd_prewarm_midigen_text2midi(args) -> None:
-    _prewarm_midigen_model("text2midi", Path(args.progress) if args.progress else None)
-
-def cmd_prewarm_midigen_chatmusician(args) -> None:
-    _prewarm_midigen_model("chatmusician", Path(args.progress) if args.progress else None)
-
-def cmd_prewarm_midigen_chatmusician_adapter(args) -> None:
-    _prewarm_midigen_model("chatmusician-adapter", Path(args.progress) if args.progress else None)
-
-def cmd_prewarm_midigen_musecoco(args) -> None:
-    _prewarm_midigen_model("musecoco", Path(args.progress) if args.progress else None)
-
-def cmd_prewarm_midigen_anticipatory(args) -> None:
-    _prewarm_midigen_model("anticipatory", Path(args.progress) if args.progress else None)
-
-
-# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -635,23 +553,8 @@ def main() -> None:
     p_scr.add_argument("--token", required=True)
     p_scr.add_argument("--progress", default="")
 
-    p_pw_sam = sub.add_parser("prewarm-sam")
-    p_pw_sam.add_argument("--model", default="facebook/sam-audio-large")
-    p_pw_sam.add_argument("--progress", default="")
-
-    p_pw_miros = sub.add_parser("prewarm-miros")
-    p_pw_miros.add_argument("--progress", default="")
-
-    p_pw_yt3 = sub.add_parser("prewarm-yourmt3")
-    p_pw_yt3.add_argument("--progress", default="")
-
-    for mg_model in ["amadeus", "midi-llm", "text2midi", "chatmusician",
-                      "chatmusician-adapter", "musecoco", "anticipatory"]:
-        p_mg = sub.add_parser(f"prewarm-midigen-{mg_model}")
-        p_mg.add_argument("--progress", default="")
-
     args = p.parse_args()
-    {
+    dispatch = {
         "check":                cmd_check,
         "install-uv":           cmd_install_uv,
         "sync-deps":            cmd_sync_deps,
@@ -659,17 +562,20 @@ def main() -> None:
         "install-abcmidi":      cmd_install_abcmidi,
         "modal-login":          cmd_modal_login,
         "modal-secret-create":  cmd_modal_secret_create,
-        "prewarm-sam":          cmd_prewarm_sam,
-        "prewarm-miros":        cmd_prewarm_miros,
-        "prewarm-yourmt3":      cmd_prewarm_yourmt3,
-        "prewarm-midigen-amadeus":      cmd_prewarm_midigen_amadeus,
-        "prewarm-midigen-midi-llm":     cmd_prewarm_midigen_midi_llm,
-        "prewarm-midigen-text2midi":    cmd_prewarm_midigen_text2midi,
-        "prewarm-midigen-chatmusician": cmd_prewarm_midigen_chatmusician,
-        "prewarm-midigen-chatmusician-adapter": cmd_prewarm_midigen_chatmusician_adapter,
-        "prewarm-midigen-musecoco":     cmd_prewarm_midigen_musecoco,
-        "prewarm-midigen-anticipatory": cmd_prewarm_midigen_anticipatory,
-    }[args.cmd](args)
+    }
+    try:
+        dispatch[args.cmd](args)
+    except Exception as exc:
+        # Without this, an uncaught exception here (e.g. the resolved
+        # REAPER Python path turning out not to exist, so subprocess.run
+        # raises FileNotFoundError — the actual bug behind one real report)
+        # leaves the progress file stuck on its initial "running|0.00|..."
+        # line forever: panel_setup.lua's poll_check()/poll_simple() just
+        # wait for a "done"/"error" state with no timeout, so the Setup tab
+        # looks permanently hung instead of surfacing the real failure.
+        pf = Path(getattr(args, "progress", "") or "") or None
+        write(pf, "error", 0, f"{args.cmd} crashed: {exc}")
+        raise
 
 
 if __name__ == "__main__":

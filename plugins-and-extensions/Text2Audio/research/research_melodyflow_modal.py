@@ -35,8 +35,8 @@ Mapeo strength_hint (prompts_edit.json) → target_flowstep (menor = edición m�
   moderate → 0.05
   strong → 0.0   (valor del ejemplo oficial)
 
-Setup (descarga pesos al Volume, una vez):
-    modal run research_melodyflow_modal.py::setup
+Los pesos se descargan automáticamente y se cachean en el Volume en la
+primera llamada real — no requiere un paso de setup manual.
 
 Smoke test oficial:
     modal run research_melodyflow_modal.py::smoke
@@ -134,23 +134,6 @@ def _patch_torch_load_weights_only():
         kwargs.setdefault("weights_only", False)
         return _orig(*args, **kwargs)
     torch.load = _load
-
-
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, gpu=DEFAULT_GPU, timeout=3600)
-def setup():
-    """
-    Descarga los pesos de MelodyFlow al Volume (una vez):
-        modal run research_melodyflow_modal.py::setup
-    Pesos públicos en HF — sin token.
-    """
-    _patch_torch_load_weights_only()
-    from audiocraft.models import MelodyFlow
-
-    t0 = time.time()
-    MelodyFlow.get_pretrained(MODEL_ID)
-    print(f"[setup] {MODEL_ID} descargado y cargado en {time.time()-t0:.0f}s")
-    weights_vol.commit()
-    print("[setup] Volume commiteado.")
 
 
 # ---------------------------------------------------------------------------

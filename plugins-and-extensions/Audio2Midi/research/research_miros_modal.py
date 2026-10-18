@@ -32,9 +32,9 @@ Pipeline:
         ↓
     transcribed_cuda.mid (multi-track, tempo map corregido)
 
-Setup (descarga pesos al Volume, ejecutar una vez):
-    cd Audio2Midi/research
-    modal run research_miros_modal.py::setup
+Los pesos (~2 GB) se descargan automáticamente al Volume en la primera
+llamada real (ver _ensure_weights(), llamado desde _setup_repo_env()) — no
+requiere un paso de setup manual.
 
 Smoke test:
     modal run research_miros_modal.py::main \\
@@ -203,6 +203,63 @@ def _download_gdrive(gdrive_id: str, dest_path: str, label: str = "") -> None:
     print(f"{tag}OK (curl) — {size/1e6:.0f} MB en {time.time()-t0:.0f}s")
 
 
+def _ensure_weights() -> None:
+    """Descarga MusicFM pretrain + MIROS fine-tuned al Volume si faltan
+    (antes el contenido de setup() — ahora llamado perezosamente desde
+    _setup_repo_env() en lugar de requerir un local_entrypoint de setup
+    manual separado; el panel nunca invoca ::setup, solo ::main/eval_all)."""
+    def _need_download(vol_path: str, min_mb: float = 50.0) -> bool:
+        full = f"{WEIGHTS_MOUNT}/{vol_path}"
+        if not os.path.exists(full):
+            return True
+        size_mb = os.path.getsize(full) / 1e6
+        if size_mb < min_mb:
+            print(f"[load] Archivo demasiado pequeño ({size_mb:.1f} MB < {min_mb} MB), re-descargando.")
+            os.unlink(full)
+            return True
+        return False
+
+    weights_vol.reload()
+
+    needs_musicfm = _need_download(MUSICFM_PRETRAIN_VOL_PATH, min_mb=100.0)
+    needs_miros = _need_download(MIROS_CKPT_VOL_PATH, min_mb=200.0)
+    if not (needs_musicfm or needs_miros):
+        return
+
+    if needs_musicfm:
+        _download_gdrive(
+            MUSICFM_GDRIVE_ID,
+            f"{WEIGHTS_MOUNT}/{MUSICFM_PRETRAIN_VOL_PATH}",
+            label="MusicFM",
+        )
+
+    if needs_miros:
+        _download_gdrive(
+            MIROS_FINETUNED_GDRIVE_ID,
+            f"{WEIGHTS_MOUNT}/{MIROS_CKPT_VOL_PATH}",
+            label="MIROS ckpt",
+        )
+
+    # Verificar magic bytes
+    for label, vol_path in [
+        ("MusicFM", MUSICFM_PRETRAIN_VOL_PATH),
+        ("MIROS", MIROS_CKPT_VOL_PATH),
+    ]:
+        full = f"{WEIGHTS_MOUNT}/{vol_path}"
+        with open(full, "rb") as f:
+            magic = f.read(8)
+        if magic[:2] in (b"PK", b"\x80\x04") or magic[0:1] == b"\x80":
+            print(f"[load] {label}: magic OK ({magic[:4].hex()!r})")
+        else:
+            print(f"[load] {label}: WARNING — magic inesperado {magic[:4].hex()!r} (posible LFS pointer)")
+
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
+    print("[load] Volume commiteado.")
+
+
 def _setup_repo_env() -> None:
     """
     Configura sys.path y symlinks de checkpoints.
@@ -211,8 +268,11 @@ def _setup_repo_env() -> None:
       model/musicfm/data/pretrained_msd.pt
       logs/Multi_longer_seq_length_frozen_enc_silu/le2bzt53/checkpoints/last.ckpt
 
-    Los almacenamos en el Volume con nombres planos y creamos symlinks.
+    Los almacenamos en el Volume con nombres planos y creamos symlinks,
+    descargándolos primero si faltan (ver _ensure_weights()).
     """
+    _ensure_weights()
+
     # Añadir el repo al Python path
     if REPO_DIR not in sys.path:
         sys.path.insert(0, REPO_DIR)
@@ -445,66 +505,6 @@ def _apply_beat_tracking(audio_bytes: bytes, midi_bytes: bytes) -> bytes:
                     os.unlink(p)
             except OSError:
                 pass
-
-
-# ---------------------------------------------------------------------------
-# Setup — descarga checkpoints al Volume
-# ---------------------------------------------------------------------------
-@app.function(
-    volumes={WEIGHTS_MOUNT: weights_vol},
-    timeout=3600,
-    cpu=4,
-    memory=8192,
-)
-def setup() -> None:
-    """
-    Descarga MusicFM pretrain + MIROS fine-tuned al Volume con gdown.
-    Ejecutar una sola vez:
-        modal run research_miros_modal.py::setup
-    """
-    def _need_download(vol_path: str, min_mb: float = 50.0) -> bool:
-        full = f"{WEIGHTS_MOUNT}/{vol_path}"
-        if not os.path.exists(full):
-            return True
-        size_mb = os.path.getsize(full) / 1e6
-        if size_mb < min_mb:
-            print(f"[setup] Archivo demasiado pequeño ({size_mb:.1f} MB < {min_mb} MB), re-descargando.")
-            os.unlink(full)
-            return True
-        print(f"[setup] Ya existe: {vol_path} ({size_mb:.0f} MB) — skip.")
-        return False
-
-    weights_vol.reload()
-
-    if _need_download(MUSICFM_PRETRAIN_VOL_PATH, min_mb=100.0):
-        _download_gdrive(
-            MUSICFM_GDRIVE_ID,
-            f"{WEIGHTS_MOUNT}/{MUSICFM_PRETRAIN_VOL_PATH}",
-            label="MusicFM",
-        )
-
-    if _need_download(MIROS_CKPT_VOL_PATH, min_mb=200.0):
-        _download_gdrive(
-            MIROS_FINETUNED_GDRIVE_ID,
-            f"{WEIGHTS_MOUNT}/{MIROS_CKPT_VOL_PATH}",
-            label="MIROS ckpt",
-        )
-
-    # Verificar magic bytes
-    for label, vol_path in [
-        ("MusicFM", MUSICFM_PRETRAIN_VOL_PATH),
-        ("MIROS", MIROS_CKPT_VOL_PATH),
-    ]:
-        full = f"{WEIGHTS_MOUNT}/{vol_path}"
-        with open(full, "rb") as f:
-            magic = f.read(8)
-        if magic[:2] in (b"PK", b"\x80\x04") or magic[0:1] == b"\x80":
-            print(f"[setup] {label}: magic OK ({magic[:4].hex()!r})")
-        else:
-            print(f"[setup] {label}: WARNING — magic inesperado {magic[:4].hex()!r} (posible LFS pointer)")
-
-    weights_vol.commit()
-    print("[setup] Volume commiteado. Setup completado.")
 
 
 # ---------------------------------------------------------------------------

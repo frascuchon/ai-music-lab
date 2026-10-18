@@ -15,6 +15,7 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections import deque
 from pathlib import Path
@@ -22,6 +23,25 @@ from pathlib import Path
 
 # Name of the Modal entrypoint script (same directory as this file)
 MODAL_SCRIPT = "modal_sam_audio.py"
+
+# Local (non-Modal) backend, same directory as this file.
+LOCAL_SCRIPT = Path(__file__).resolve().parent / "separate_sam_local.py"
+
+# HF repo id (what --model has always carried) -> short registry key (what
+# shared/model_execution.py's STEMSEPARATOR table and separate_sam_local.py
+# use) — the Lua panel keeps passing the long repo id unchanged for the
+# remote path; this is only consulted for --execution local.
+_HF_REPO_TO_KEY = {
+    "facebook/sam-audio-large": "sam_large",
+    "facebook/sam-audio-base": "sam_base",
+}
+
+# shared/ is a sibling of StemsSeparator/ — same layout as MidiGenerator's
+# and Text2Audio's own shared-dir resolution.
+_SHARED_DIR = Path(__file__).resolve().parent.parent / "shared"
+if str(_SHARED_DIR) not in sys.path:
+    sys.path.insert(0, str(_SHARED_DIR))
+from model_execution import is_local_supported  # noqa: E402
 
 
 def _find_uv():
@@ -89,10 +109,35 @@ def main():
                    help="Duration of section to process (seconds)")
     p.add_argument("--outdir", default="separated")
     p.add_argument("--progress", default="")
+    p.add_argument("--execution", default="remote", choices=["local", "remote"],
+                   help="local = run on this machine (MPS/CPU) via "
+                        "separate_sam_local.py; remote = Modal cloud "
+                        "(default, unchanged behavior).")
     args = p.parse_args()
 
     pf = args.progress
-    write_progress(pf, "running", 0.02, "Preparing Modal environment via uv...")
+    model_key = _HF_REPO_TO_KEY.get(args.model)
+
+    if args.execution == "local":
+        write_progress(pf, "running", 0.02, "Preparing local SAM Audio run...")
+        if model_key is None:
+            write_progress(pf, "error", 0,
+                           f"Unknown SAM Audio model for local execution: {args.model!r}")
+            return 1
+        supported, reason = is_local_supported("stemseparator", model_key)
+        if not supported:
+            write_progress(pf, "error", 0,
+                           f"Local execution not supported for {model_key}: {reason}")
+            return 1
+        if args.confidence > 0 or args.candidates > 1:
+            write_progress(pf, "error", 0,
+                           "Audio-query / confidence-gate features (Confidence > 0 or "
+                           "Candidates > 1) are remote-only (require CLAP/ImageBind "
+                           "rankers not implemented locally). Switch to Remote, or "
+                           "reset Confidence to 0 and Candidates to 1 to run locally.")
+            return 1
+    else:
+        write_progress(pf, "running", 0.02, "Preparing Modal environment via uv...")
 
     input_path = Path(args.input)
 
@@ -109,6 +154,12 @@ def main():
             extract_section(input_path, args.start, args.duration, section_file)
             process_path = section_file
             print(f"Section extracted to: {section_file}", flush=True)
+        except ModuleNotFoundError as exc:
+            write_progress(pf, "error", 0,
+                           f"Missing Python package '{exc.name}'. Open the "
+                           f"Setup tab and click Install next to demucs to "
+                           f"reinstall it (this pulls in {exc.name}).")
+            return 1
         except Exception as exc:
             write_progress(pf, "error", 0, f"Error extracting section: {exc}")
             return 1
@@ -119,70 +170,90 @@ def main():
     # Snapshot existing wav files so we can detect only the new ones after the run
     existing_wavs = set(str(f) for f in out_path.glob("*.wav"))
 
-    # --- locate uv binary ----------------------------------------------------
-    uv_bin = _find_uv()
-    if uv_bin is None:
-        write_progress(pf, "error", 0,
-                       "'uv' not found in PATH or "
-                       "~/.local/bin/uv. Install uv with: "
-                       "curl -LsSf https://astral.sh/uv/install.sh | sh")
-        return 1
-
-    # --- locate sam dir (Modal script) and shared dir (uv project) ----------
-    sam_dir = Path(args.sam_dir) if args.sam_dir else Path(__file__).parent
-    sam_script = sam_dir / MODAL_SCRIPT
-    if not sam_script.exists():
-        write_progress(pf, "error", 0,
-                       f"Not found: {sam_script}. "
-                       f"Check that SAM_DIR/{MODAL_SCRIPT} exists.")
-        return 1
-
-    # shared_dir hosts the uv project (pyproject.toml + uv.lock).
-    # Falls back to sam_dir for backward compatibility.
-    shared_dir = Path(args.shared_dir) if args.shared_dir else sam_dir
-
-    # --- build command -------------------------------------------------------
-    # --gpu is not a CLI flag; set SAM_AUDIO_GPU env var instead
     env = os.environ.copy()
-    env["SAM_AUDIO_GPU"] = args.gpu
-    cmd = [
-        str(uv_bin), "run", "--project", str(shared_dir),
-        "modal", "run", f"{sam_script}::main",
-    ]
-    # Typer args (--input, --output-dir, etc.)
-    cmd += [
-        "--input", str(process_path),
-        "--output-dir", str(out_path),
-        "--prompt", args.prompt,
-        "--model", args.model,
-        "--chunk-dur", str(args.chunk),
-        "--overlap", str(args.overlap),
-        "--ode-steps", str(args.steps),
-        "--ode-method", args.ode_method,
-    ]
-    if args.confidence > 0:
-        cmd += ["--confidence-threshold", str(args.confidence)]
-    if args.candidates > 1:
-        cmd += ["--reranking-candidates", str(args.candidates)]
-    cmd += ["--predict-spans" if args.predict_spans else "--no-predict-spans"]
-    cmd += ["--internal-candidates", str(args.internal_candidates)]
+
+    if args.execution == "local":
+        # --- build local command ---------------------------------------------
+        if not LOCAL_SCRIPT.exists():
+            write_progress(pf, "error", 0, f"Not found: {LOCAL_SCRIPT}")
+            return 1
+        write_progress(pf, "running", 0.03, f"Launching locally ({model_key})...")
+        cmd = [
+            sys.executable, str(LOCAL_SCRIPT),
+            "--input", str(process_path),
+            "--outdir", str(out_path),
+            "--prompt", args.prompt,
+            "--model", model_key,
+            "--chunk", str(args.chunk),
+            "--overlap", str(args.overlap),
+            "--steps", str(args.steps),
+            "--ode-method", args.ode_method,
+            "--internal-candidates", str(args.internal_candidates),
+        ]
+        cmd += ["--predict-spans" if args.predict_spans else "--no-predict-spans"]
+    else:
+        # --- locate uv binary -------------------------------------------------
+        uv_bin = _find_uv()
+        if uv_bin is None:
+            write_progress(pf, "error", 0,
+                           "'uv' not found in PATH or "
+                           "~/.local/bin/uv. Install uv with: "
+                           "curl -LsSf https://astral.sh/uv/install.sh | sh")
+            return 1
+
+        # --- locate sam dir (Modal script) and shared dir (uv project) ------
+        sam_dir = Path(args.sam_dir) if args.sam_dir else Path(__file__).parent
+        sam_script = sam_dir / MODAL_SCRIPT
+        if not sam_script.exists():
+            write_progress(pf, "error", 0,
+                           f"Not found: {sam_script}. "
+                           f"Check that SAM_DIR/{MODAL_SCRIPT} exists.")
+            return 1
+
+        # shared_dir hosts the uv project (pyproject.toml + uv.lock).
+        # Falls back to sam_dir for backward compatibility.
+        shared_dir = Path(args.shared_dir) if args.shared_dir else sam_dir
+
+        # --- build command ------------------------------------------------------
+        # --gpu is not a CLI flag; set SAM_AUDIO_GPU env var instead
+        env["SAM_AUDIO_GPU"] = args.gpu
+        cmd = [
+            str(uv_bin), "run", "--project", str(shared_dir),
+            "modal", "run", f"{sam_script}::main",
+        ]
+        # Typer args (--input, --output-dir, etc.)
+        cmd += [
+            "--input", str(process_path),
+            "--output-dir", str(out_path),
+            "--prompt", args.prompt,
+            "--model", args.model,
+            "--chunk-dur", str(args.chunk),
+            "--overlap", str(args.overlap),
+            "--ode-steps", str(args.steps),
+            "--ode-method", args.ode_method,
+        ]
+        if args.confidence > 0:
+            cmd += ["--confidence-threshold", str(args.confidence)]
+        if args.candidates > 1:
+            cmd += ["--reranking-candidates", str(args.candidates)]
+        cmd += ["--predict-spans" if args.predict_spans else "--no-predict-spans"]
+        cmd += ["--internal-candidates", str(args.internal_candidates)]
 
     # --- run -----------------------------------------------------------------
     print("Running:", " ".join(cmd), flush=True)
     write_progress(pf, "running", 0.05,
-                   f"Launching uv run on {MODAL_SCRIPT}...")
+                   "Launching locally..." if args.execution == "local"
+                   else f"Launching uv run on {MODAL_SCRIPT}...")
 
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT,
                                 text=True, bufsize=1, env=env)
     except FileNotFoundError:
-        write_progress(pf, "error", 0,
-                       f"Not found: '{uv_bin}' could not be executed.")
+        write_progress(pf, "error", 0, f"Not found: '{cmd[0]}' could not be executed.")
         return 1
     except PermissionError:
-        write_progress(pf, "error", 0,
-                       f"Permission denied: '{uv_bin}' is not executable.")
+        write_progress(pf, "error", 0, f"Permission denied: '{cmd[0]}' is not executable.")
         return 1
 
     tail = deque(maxlen=40)  # last output lines, surfaced on failure
@@ -212,7 +283,10 @@ def main():
         is_oom = ("OutOfMemoryError" in joined
                   or "CUDA out of memory" in joined
                   or "OOM" in joined)
-        if is_oom:
+        if is_oom and args.execution == "local":
+            msg = ("SAM Audio ran out of memory locally. Try sam_base instead of "
+                   "sam_large, lower Chunk s, or switch to Remote (Modal GPU).")
+        elif is_oom:
             msg = ("SAM Audio ran out of GPU memory. Pick a larger GPU in the "
                    "SAM Audio tab (A100-80GB or H100) or lower Chunk s, then "
                    "run again.")
@@ -220,8 +294,9 @@ def main():
             last = next((ln for ln in reversed(tail_lines) if ln.strip()), "")
             msg = (f"SAM Audio failed (code {proc.returncode}) - see Full log. "
                    f"Last: {last[:160]}")
-        extra = ["GPUs: A10G 24GB | A100 40GB | A100-80GB 80GB | H100 80GB",
-                 "--- last output lines ---"] + tail_lines
+        extra = (["--- last output lines ---"] + tail_lines if args.execution == "local"
+                 else ["GPUs: A10G 24GB | A100 40GB | A100-80GB 80GB | H100 80GB",
+                       "--- last output lines ---"] + tail_lines)
         write_progress(pf, "error", 0, msg, extra)
         return 1
 

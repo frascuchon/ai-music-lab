@@ -24,6 +24,10 @@ import textwrap
 import unittest
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import separate_sam as ss  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # SUT
@@ -636,6 +640,139 @@ class TestIntegrationWithStemSeparatorLua(TestCase):
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+
+class TestExecutionDispatch(TestCase):
+    """Tests for --execution local|remote dispatch added 2026-10 (SAM Audio
+    local-execution support). Verifies: unsupported-model-never-reached is
+    moot here (both sam_large/sam_base support local per the registry) so
+    these instead cover (a) local routes to separate_sam_local.py with the
+    short registry key, never touching uv/modal, (b) the confidence/
+    reranking-not-supported-locally guard rejects before any subprocess is
+    spawned, and (c) the remote path (explicit or omitted --execution) is
+    byte-for-byte unchanged from before this feature existed."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="sam_exec_"))
+        self.input_wav = self.tmpdir / "input.wav"
+        self.input_wav.write_bytes(b"\x00" * 8000)
+        self.outdir = self.tmpdir / "out"
+        self.outdir.mkdir()
+        self.progress_file = self.tmpdir / "progress.txt"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run(self, extra_args):
+        args = [
+            str(SCRIPT),
+            "--input", str(self.input_wav),
+            "--prompt", "vocals",
+            "--outdir", str(self.outdir),
+            "--progress", str(self.progress_file),
+        ] + extra_args
+        return subprocess.run([sys.executable] + args, capture_output=True,
+                              text=True, timeout=30)
+
+    def test_local_execution_routes_to_local_script_with_short_key(self):
+        proc = self._run(["--model", "facebook/sam-audio-large", "--execution", "local"])
+        stdout = proc.stdout + proc.stderr
+        self.assertIn("separate_sam_local.py", stdout)
+        self.assertIn("--model sam_large", stdout)
+        self.assertNotIn("modal run", stdout)
+        self.assertNotIn("uv run", stdout)
+
+    def test_local_execution_with_base_model_maps_short_key(self):
+        proc = self._run(["--model", "facebook/sam-audio-base", "--execution", "local"])
+        stdout = proc.stdout + proc.stderr
+        self.assertIn("--model sam_base", stdout)
+
+    def test_local_execution_rejects_confidence_gate_without_spawning(self):
+        proc = self._run(["--execution", "local", "--confidence", "0.3"])
+        self.assertEqual(proc.returncode, 1)
+        state, _, msg = parse_progress(self.progress_file)
+        self.assertEqual(state, "error")
+        self.assertIn("remote-only", msg)
+        self.assertNotIn("Running:", proc.stdout + proc.stderr)
+
+    def test_local_execution_rejects_reranking_candidates_without_spawning(self):
+        proc = self._run(["--execution", "local", "--candidates", "3"])
+        self.assertEqual(proc.returncode, 1)
+        state, _, msg = parse_progress(self.progress_file)
+        self.assertEqual(state, "error")
+        self.assertIn("remote-only", msg)
+        self.assertNotIn("Running:", proc.stdout + proc.stderr)
+
+    def test_local_execution_default_confidence_and_candidates_passes_guard(self):
+        # confidence=0, candidates=1 (defaults) must NOT trigger the guard —
+        # the run proceeds to attempt launching separate_sam_local.py.
+        proc = self._run(["--model", "facebook/sam-audio-large", "--execution", "local"])
+        stdout = proc.stdout + proc.stderr
+        self.assertIn("Running:", stdout)
+
+    def test_remote_execution_explicit_unchanged(self):
+        dummy_dir = Path(tempfile.mkdtemp(prefix="sam_exec_remote_"))
+        dummy_modal_script(dummy_dir / "modal_sam_audio.py")
+        proc = self._run(["--sam-dir", str(dummy_dir), "--execution", "remote"])
+        stdout = proc.stdout + proc.stderr
+        self.assertIn("uv run", stdout)
+        self.assertIn("modal run", stdout)
+        shutil.rmtree(dummy_dir, ignore_errors=True)
+
+    def test_remote_execution_omitted_defaults_unchanged(self):
+        dummy_dir = Path(tempfile.mkdtemp(prefix="sam_exec_default_"))
+        dummy_modal_script(dummy_dir / "modal_sam_audio.py")
+        proc = self._run(["--sam-dir", str(dummy_dir)])
+        stdout = proc.stdout + proc.stderr
+        self.assertIn("uv run", stdout)
+        self.assertIn("modal run", stdout)
+        shutil.rmtree(dummy_dir, ignore_errors=True)
+
+    def test_unknown_model_for_local_execution_rejected(self):
+        proc = self._run(["--model", "facebook/sam-audio-xlarge", "--execution", "local"])
+        self.assertEqual(proc.returncode, 1)
+        state, _, msg = parse_progress(self.progress_file)
+        self.assertEqual(state, "error")
+        self.assertIn("Unknown SAM Audio model", msg)
+
+
+class TestMissingSoundfileOnSectionExtraction(TestCase):
+    """Regression test: section extraction (--start/--duration) runs via
+    extract_section() BEFORE the Modal/local dispatch, on whatever Python is
+    running this script — demucs 4.x no longer pulls in `soundfile` as its
+    own dependency (it switched to `sphn`), so this import can fail even
+    when the rest of the StemsSeparator setup looks fine. Mocked in-process
+    via direct import rather than depending on the real environment's
+    soundfile state."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="test_sam_missing_sf_"))
+        self.input_wav = self.tmpdir / "test_input.wav"
+        self.input_wav.touch()
+        self.progress_file = self.tmpdir / "progress.txt"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_module_not_found_error_gives_actionable_message(self):
+        argv = [
+            "separate_sam.py",
+            "--input", str(self.input_wav),
+            "--start", "1.0",
+            "--duration", "2.0",
+            "--outdir", str(self.tmpdir / "out"),
+            "--progress", str(self.progress_file),
+        ]
+        with patch.object(sys, "argv", argv), \
+             patch.object(ss, "extract_section",
+                          side_effect=ModuleNotFoundError("No module named 'soundfile'", name="soundfile")):
+            rc = ss.main()
+        self.assertEqual(rc, 1)
+        content = self.progress_file.read_text()
+        self.assertTrue(content.startswith("error|"))
+        self.assertIn("soundfile", content)
+        self.assertIn("Setup", content)
+        self.assertNotIn("Error extracting section: No module named", content)
 
 
 if __name__ == "__main__":

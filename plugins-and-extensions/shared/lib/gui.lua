@@ -207,6 +207,26 @@ function M.same_line(spacing)
   ctx.y = ctx.last_y
 end
 
+-- Like same_line(), but only if a widget at least `min_w` wide would still
+-- fit before the row's right edge (ctx.row_x0 + ctx.content_w) — otherwise
+-- wraps to a new line instead. Use this before a button/status label that
+-- follows a variable-length label/detail string on the same row (e.g.
+-- Setup's demucs/abcmidi check rows): with plain same_line(), a long detail
+-- string plus an icon plus a label can push x past the panel's right edge,
+-- and everything placed after it (the Install button, the "Installing..."
+-- status text) renders outside the visible Setup area instead of wrapping.
+function M.same_line_or_wrap(min_w, spacing)
+  spacing = spacing ~= nil and spacing or theme.SPACING_X
+  local next_x = ctx.last_x + ctx.last_w + spacing
+  if next_x + min_w <= ctx.row_x0 + ctx.content_w then
+    ctx.x = next_x
+    ctx.y = ctx.last_y
+  else
+    ctx.x = ctx.row_x0
+    ctx.y = ctx.last_y + ctx.last_h + theme.SPACING_Y
+  end
+end
+
 function M.spacing(n)
   ctx.y = ctx.y + (n or 1) * theme.SPACING_Y
 end
@@ -276,8 +296,15 @@ local function drawstr_clipped(s, x, screen_y, th)
     gfx.x = draw_x
     gfx.drawstr(draw_s, 0, ctx.clip_x2, screen_y + th)
   else
-    -- Only vertical scroll: right-clip to content_w.
-    gfx.drawstr(s, 0, x + ctx.content_w, screen_y + th)
+    -- Only vertical scroll: right-clip to the region's actual right edge
+    -- (row_x0 + content_w), NOT x + content_w — x is wherever the cursor
+    -- has drifted to after a chain of same_line() calls (icon, label,
+    -- detail text, a button, a status label, ...), so "x + content_w"
+    -- pushes the clip boundary further right the more same_line() calls
+    -- preceded it, effectively disabling clipping for any row crowded
+    -- enough to need it. This is exactly what let Setup's "Installing..."
+    -- status text spill past the panel's right edge on the demucs row.
+    gfx.drawstr(s, 0, ctx.row_x0 + ctx.content_w, screen_y + th)
   end
 end
 

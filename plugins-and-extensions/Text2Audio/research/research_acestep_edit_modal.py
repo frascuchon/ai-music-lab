@@ -31,8 +31,9 @@ Mapeo strength_hint (prompts_edit.json) → audio_cover_strength:
   moderate → 0.7 (valor del ejemplo oficial de la doc)
   strong → 0.4   (interpretación libre)
 
-Setup (descarga pesos al Volume, una vez):
-    modal run research_acestep_edit_modal.py::setup
+Los pesos se descargan automáticamente (auto-download de HuggingFace, según
+README) y se cachean en el Volume en la primera llamada real — no requiere
+un paso de setup manual.
 
 Smoke test oficial (2 pasos autocontenidos — el repo no incluye audios de ejemplo):
     modal run research_acestep_edit_modal.py::smoke
@@ -171,19 +172,6 @@ def _generate_one(dit_handler, llm_handler, params_kwargs: dict) -> bytes:
 # ---------------------------------------------------------------------------
 # Setup — fuerza la descarga de pesos al Volume
 # ---------------------------------------------------------------------------
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, gpu=DEFAULT_GPU, timeout=3600)
-def setup():
-    """
-    Inicializa el handler una vez para forzar la descarga de los checkpoints
-    (auto-download desde HuggingFace en el primer uso, según README) y commitea
-    el Volume. Ejecutar una sola vez:
-        modal run research_acestep_edit_modal.py::setup
-    """
-    _init_handlers()
-    weights_vol.commit()
-    print("[setup] Pesos descargados y Volume commiteado.")
-
-
 # ---------------------------------------------------------------------------
 # Función Modal principal — batch de trabajos de edición
 # ---------------------------------------------------------------------------

@@ -40,8 +40,10 @@ Post-procesado (verbatim de chatmusician_web_demo.py):
     abc_pattern = r'(X:\\d+\\n(?:[^\\n]*\\n)+)'
     → subprocess.run(["abc2midi", abc_file, "-o", midi_file])
 
-Setup (pre-descarga de pesos al Volume, ejecutar una vez):
-    modal run research/research_chatmusician_modal.py::setup
+Los pesos (ChatMusician ~13 GB + el small instruct-LLM de adapt_prompt()
+~3 GB) se descargan automáticamente (y se cachean en el Volume) en la
+primera llamada real — no requiere un paso de setup manual; la primera
+ejecución simplemente tarda más.
 
 Inferencia libre:
     modal run research/research_chatmusician_modal.py::main \\
@@ -137,50 +139,6 @@ adapt_image = (
         extra_index_url="https://download.pytorch.org/whl/cu121",
     )
 )
-
-
-# ---------------------------------------------------------------------------
-# Pre-descarga de pesos al Volume
-# ---------------------------------------------------------------------------
-@app.function(
-    volumes={WEIGHTS_MOUNT: weights_vol},
-    timeout=1800,
-    gpu=DEFAULT_GPU,
-)
-def setup():
-    """Descarga los pesos del modelo a un Volume persistente. Ejecutar una vez."""
-    from huggingface_hub import snapshot_download
-
-    os.environ["HF_HOME"] = HF_CACHE
-    os.makedirs(HF_CACHE, exist_ok=True)
-
-    print(f"[setup] Descargando {MODEL_ID} (~13 GB) → {HF_CACHE} ...")
-    path = snapshot_download(MODEL_ID, cache_dir=HF_CACHE)
-    print(f"[setup] Descargado en {path}")
-
-    weights_vol.commit()
-    print("[setup] Pesos committed al Volume.")
-
-
-@app.function(
-    volumes={WEIGHTS_MOUNT: weights_vol},
-    timeout=600,
-)
-def setup_adapter():
-    """Descarga los pesos del prompt-adapter (~3 GB) al Volume persistente.
-    Opcional — sin esto, la primera llamada a adapt_prompt() descarga los
-    pesos on-demand (más lenta pero funciona igual)."""
-    from huggingface_hub import snapshot_download
-
-    os.environ["HF_HOME"] = HF_CACHE
-    os.makedirs(HF_CACHE, exist_ok=True)
-
-    print(f"[setup_adapter] Descargando {ADAPTER_MODEL_ID} (~3 GB) → {HF_CACHE} ...")
-    path = snapshot_download(ADAPTER_MODEL_ID, cache_dir=HF_CACHE)
-    print(f"[setup_adapter] Descargado en {path}")
-
-    weights_vol.commit()
-    print("[setup_adapter] Pesos committed al Volume.")
 
 
 # ---------------------------------------------------------------------------
@@ -358,6 +316,14 @@ def generate(
     import time
 
     model, tokenizer = _load_model()
+    # Persist any weights just downloaded by _load_model() to the Volume —
+    # there is no separate setup() step anymore, so this is the only place
+    # that commits, and it must happen before generation in case a long
+    # batch times out partway through.
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
     print(f"[modal] n_prompts={len(prompts)}  n_outputs={n_outputs}  temperature={temperature}")
 
     results = []
@@ -664,7 +630,7 @@ def adapt_prompt(user_prompt: str) -> str:
     using a small, self-hosted instruction-tuned LLM (Qwen2.5-1.5B-Instruct)
     — runs entirely inside this Modal container on a cheap T4 GPU. No
     external API, no secret to configure; weights are cached in the same
-    Volume as ChatMusician's (see setup_adapter() to pre-warm)."""
+    Volume as ChatMusician's, downloaded lazily on first call."""
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -677,6 +643,12 @@ def adapt_prompt(user_prompt: str) -> str:
         device_map="cuda",
         cache_dir=HF_CACHE,
     ).eval()
+    # Persist any weights just downloaded to the Volume — there is no
+    # separate setup_adapter() step anymore.
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
 
     messages = [
         {"role": "system", "content": _ADAPT_SYSTEM_PROMPT},

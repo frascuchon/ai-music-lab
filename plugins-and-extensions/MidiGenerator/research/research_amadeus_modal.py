@@ -26,8 +26,9 @@ Parámetros de generación (verbatim de demo/Amadeus_app_EN.py):
     threshold=0.99, temperature=1.25, generation_length=1024
     sampling_method='top_p', text_encoder='google/flan-t5-base'
 
-Setup (descarga pesos al Volume, ejecutar una vez):
-    modal run research/research_amadeus_modal.py::setup
+Los pesos (checkpoint Amadeus-S + T5 encoder) se descargan automáticamente
+(y se cachean en el Volume) en la primera llamada real — no requiere un
+paso de setup manual; la primera ejecución simplemente tarda más.
 
 Inferencia libre:
     modal run research/research_amadeus_modal.py::main \\
@@ -114,41 +115,6 @@ image = (
 )
 
 app = modal.App("amadeus-inference", image=image)
-
-
-# ---------------------------------------------------------------------------
-# Pre-descarga de pesos al Volume
-# ---------------------------------------------------------------------------
-@app.function(
-    volumes={WEIGHTS_MOUNT: weights_vol},
-    timeout=1800,
-    gpu=DEFAULT_GPU,
-)
-def setup():
-    """Descarga el modelo al Volume persistente. Ejecutar una vez."""
-    from huggingface_hub import snapshot_download
-
-    os.environ["HF_HOME"] = HF_CACHE
-    os.makedirs(HF_CACHE, exist_ok=True)
-
-    # Excluir soundfont HF (1.69 GB) — usamos el del sistema via apt
-    print(f"[setup] Descargando {MODEL_ID} (~2.5 GB checkpoint + vocab) → {HF_CACHE}")
-    path = snapshot_download(
-        MODEL_ID,
-        cache_dir=HF_CACHE,
-        ignore_patterns=["*.sf2"],
-    )
-    print(f"[setup] Descargado en {path}")
-
-    # Pre-cachear el T5 encoder en el Volume también
-    print(f"[setup] Descargando {TEXT_ENCODER} ...")
-    from transformers import T5Tokenizer, T5EncoderModel
-    T5Tokenizer.from_pretrained(TEXT_ENCODER, cache_dir=HF_CACHE)
-    T5EncoderModel.from_pretrained(TEXT_ENCODER, cache_dir=HF_CACHE)
-    print(f"[setup] T5 cacheado.")
-
-    weights_vol.commit()
-    print("[setup] Volume committed.")
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +348,14 @@ def generate(
     Returns: list[prompt] → list[output] → midi_bytes
     """
     config, model, vocab, tokenizer, encoder, device = _load_model()
+    # Persist any weights just downloaded by _load_model() to the Volume —
+    # there is no separate setup() step anymore, so this is the only place
+    # that commits, and it must happen before generation in case a long
+    # batch times out partway through.
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
 
     print(f"[modal] n_prompts={len(prompts)}  n_outputs={n_outputs}  "
           f"temperature={temperature}  threshold={threshold}  length={generation_length}")

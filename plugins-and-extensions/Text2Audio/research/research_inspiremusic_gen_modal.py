@@ -17,8 +17,9 @@ Condiciones oficiales (FunAudioLLM/InspireMusic README):
   model = InspireMusicModel(model_name="InspireMusic-1.5B-Long")
   model.inference("text-to-music", text="Generate jazz music.", audio_prompt=None)
 
-Setup (descarga pesos al Volume, compartido con script de continuación):
-    modal run research_inspiremusic_gen_modal.py::setup
+Los pesos (~7 GB, compartidos con el script de continuación) se descargan
+automáticamente y se cachean en el Volume en la primera llamada real — no
+requiere un paso de setup manual.
 
 Generación libre:
     modal run research_inspiremusic_gen_modal.py::main \\
@@ -82,27 +83,6 @@ app = modal.App("inspiremusic-gen-inference", image=image)
 # ---------------------------------------------------------------------------
 # Setup — descarga pesos al Volume (compartido con script de continuación)
 # ---------------------------------------------------------------------------
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, timeout=3600)
-def setup():
-    """
-    Descarga pesos de InspireMusic (~7 GB). Ejecutar una vez:
-        modal run research_inspiremusic_gen_modal.py::setup
-    Si ya ejecutaste research_inspiremusic_modal.py::setup, los pesos ya están listos.
-    """
-    from huggingface_hub import snapshot_download
-
-    if os.path.exists(f"{MODEL_LOCAL_DIR}/llm.pt"):
-        print(f"[setup] Modelo ya descargado en {MODEL_LOCAL_DIR}. Nada que hacer.")
-        return
-
-    print(f"[setup] Descargando {MODEL_HF_REPO} → {MODEL_LOCAL_DIR} …")
-    t0 = time.time()
-    snapshot_download(repo_id=MODEL_HF_REPO, local_dir=MODEL_LOCAL_DIR)
-    print(f"[setup] Descarga completa en {time.time()-t0:.0f}s")
-    weights_vol.commit()
-    print("[setup] Volume commiteado.")
-
-
 # ---------------------------------------------------------------------------
 # Función Modal principal — generación por lotes (text2music)
 # ---------------------------------------------------------------------------

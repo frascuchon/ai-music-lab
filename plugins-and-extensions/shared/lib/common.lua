@@ -12,6 +12,35 @@ function M.q(s)
   return '"' .. s:gsub('"', '\\"') .. '"'
 end
 
+-- Homebrew's python@3.x formula (the pythonlibpath REAPER records for a
+-- Framework build) ships bin/python3.10, bin/python3.11, etc. but NO plain
+-- "python3" symlink in that same bin/ dir — only the generic "python3",
+-- "python3.10", "python3" aliases installed separately by `brew link` land
+-- on PATH, not inside the Framework's own bin/. A real user hit this: the
+-- literal "bin/python3" lookup below always missed, detect_reaper_python
+-- silently fell back to whatever bare "python3" resolved to on PATH (here,
+-- miniconda's python3.12) — a DIFFERENT interpreter than the one Setup's
+-- install-demucs had been told to target, so packages installed there were
+-- invisible to it ("No module named 'soundfile'" despite Setup reporting
+-- demucs as installed). Scans bindir for the highest-numbered python3.N
+-- when the bare name isn't there.
+function M._find_versioned_python3(bindir)
+  local pipe = io.popen('ls "' .. bindir .. '" 2>/dev/null')
+  if not pipe then return nil end
+  local out = pipe:read("*a")
+  pipe:close()
+  local best, best_ver = nil, -1
+  for name in out:gmatch("[^\r\n]+") do
+    local ver = name:match("^python3%.(%d+)$")
+    if ver then
+      ver = tonumber(ver)
+      if ver > best_ver then best_ver = ver; best = name end
+    end
+  end
+  if best then return bindir .. "/" .. best end
+  return nil
+end
+
 -- Returns (python_path, err_or_nil). Falls back to "python3" on failure.
 function M.detect_reaper_python()
   local ini = reaper.GetResourcePath() .. "/reaper.ini"
@@ -29,11 +58,14 @@ function M.detect_reaper_python()
               or libpath:match("^(.+)/lib[^/]*$")
               or libpath
   -- If the configured path points inside lib/ (e.g. lib/python3.11/config-...)
-  -- instead of at lib/ itself, walk up ancestors looking for bin/python3.
+  -- instead of at lib/ itself, walk up ancestors looking for bin/python3
+  -- (or bin/python3.N — see _find_versioned_python3 above).
   for _ = 1, 4 do
     local exe = parent .. "/bin/python3"
     local tf = io.open(exe, "r")
     if tf then tf:close(); return exe, nil end
+    local versioned = M._find_versioned_python3(parent .. "/bin")
+    if versioned then return versioned, nil end
     local up = parent:match("^(.*)/[^/]+$")
     if not up or up == parent then break end
     parent = up

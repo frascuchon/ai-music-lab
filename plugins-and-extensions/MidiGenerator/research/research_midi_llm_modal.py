@@ -6,8 +6,9 @@ https://midi-llm-demo.vercel.app — mismos parámetros, mismo pipeline.
 
 Modelo: slseanwu/MIDI-LLM_Llama-3.2-1B (1.4B params, BF16)
 
-Setup (pre-descarga de pesos al Volume, recomendado antes de la primera inferencia):
-    modal run research_midi_llm_modal.py::setup
+Los pesos se descargan automáticamente (y se cachean en el Volume) en la
+primera llamada real — no requiere un paso de setup manual; la primera
+ejecución simplemente tarda más.
 
 Inferencia (un prompt, 4 outputs):
     modal run research_midi_llm_modal.py::main \
@@ -82,28 +83,6 @@ image = (
 )
 
 app = modal.App("midi-llm-inference", image=image)
-
-
-# ---------------------------------------------------------------------------
-# Pre-descarga de pesos al Volume
-# ---------------------------------------------------------------------------
-@app.function(
-    volumes={WEIGHTS_MOUNT: weights_vol},
-    timeout=600,
-    gpu=DEFAULT_GPU,
-)
-def setup(model_id: str = MODEL_ID):
-    """Descarga el modelo a un Volume persistente. Ejecutar una vez."""
-    import os
-    from huggingface_hub import snapshot_download
-
-    os.environ["HF_HOME"] = HF_CACHE
-    os.makedirs(HF_CACHE, exist_ok=True)
-
-    print(f"[setup] Descargando {model_id} → {HF_CACHE} ...")
-    snapshot_download(model_id, cache_dir=HF_CACHE)
-    weights_vol.commit()
-    print("[setup] Pesos descargados y committed al Volume.")
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +197,12 @@ def generate(
         top_p=top_p,
         max_tokens=max_tokens,
     )
+    # Persist any weights just downloaded by _generate_vllm() to the Volume —
+    # there is no separate setup() step anymore.
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
 
     def tokens_to_midi_bytes(midi_tokens: list[int]) -> bytes:
         """Convierte token IDs a bytes MIDI, o b'' si la conversión falla."""

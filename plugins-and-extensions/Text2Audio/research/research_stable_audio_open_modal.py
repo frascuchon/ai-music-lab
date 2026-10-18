@@ -18,7 +18,8 @@ Punto de entrada DAW:
     2. Obtener token HF (read access): https://huggingface.co/settings/tokens
     3. Crear secret en Modal:
          modal secret create huggingface HF_TOKEN=<tu_token>
-  Sin esto, setup() fallará con HTTP 401.
+  Sin esto, la primera llamada real (main()/generate_batch(), que descargan
+  los pesos perezosamente — ver _ensure_weights()) fallará con HTTP 401.
 
 Pipeline completo:
     [prompt: str + seconds: float]
@@ -39,8 +40,9 @@ Modelo: stabilityai/stable-audio-open-1.0
            https://arxiv.org/abs/2407.14358
   Tamaño:  ~3.4 GB total (VAE + transformer + T5)
 
-Setup (descarga pesos al Volume, ejecutar una vez):
-    modal run research/research_stable_audio_open_modal.py::setup
+Los pesos (~3.4 GB) se descargan automáticamente (ver _ensure_weights()) y
+se cachean en el Volume en la primera llamada real — no requiere un paso de
+setup manual (el HF_TOKEN gated sigue siendo obligatorio, ver arriba).
 
 Generación libre (single prompt):
     modal run research/research_stable_audio_open_modal.py::main \\
@@ -138,22 +140,28 @@ hf_secret = modal.Secret.from_name("huggingface-secret")
 # ---------------------------------------------------------------------------
 # Setup — descarga pesos al Volume
 # ---------------------------------------------------------------------------
-@app.function(
-    volumes={WEIGHTS_MOUNT: weights_vol},
-    secrets=[hf_secret],
-    timeout=1800,
-)
-def setup():
-    """
-    Descarga los pesos de Stable Audio Open al Modal Volume.
-    Ejecutar una sola vez (~3.4 GB, ~$0.05 en A10G):
-        modal run research/research_stable_audio_open_modal.py::setup
-
-    Prerequisito: aceptar licencia en HuggingFace y tener el secret "huggingface"
-    creado con: modal secret create huggingface HF_TOKEN=<tu_token>
-    """
+# ---------------------------------------------------------------------------
+# Descarga perezosa de pesos al Volume — llamada desde _load_pipeline() en
+# lugar de requerir un local_entrypoint de setup manual separado. Antes solo
+# setup() descargaba los pesos y _load_pipeline() asumía que ya estaban en
+# el Volume (local_files_only=True); como el panel nunca invoca ::setup —
+# solo ::main/generate_batch — un Volume nuevo hacía que
+# StableAudioPipeline.from_pretrained(..., local_files_only=True) fallara
+# con "is neither a valid local path nor a valid repo id" en lugar de
+# descargar. Mismo fix que ya tiene research_foundation1_modal.py.
+# ---------------------------------------------------------------------------
+def _ensure_weights() -> str:
+    """Descarga los pesos de Stable Audio Open al Volume si no están ya
+    presentes (requiere HF_TOKEN — modelo gated), y devuelve la ruta local."""
     from huggingface_hub import snapshot_download
     import os
+
+    dest = f"{WEIGHTS_MOUNT}/stable-audio-open-1.0"
+
+    # Check si ya existe (comprueba que hay config.json, no solo la carpeta)
+    config_path = f"{dest}/config.json"
+    if os.path.exists(config_path):
+        return dest
 
     hf_token = os.environ.get("HF_TOKEN")
     if not hf_token:
@@ -162,21 +170,8 @@ def setup():
             "modal secret create huggingface-secret HF_TOKEN=<tu_token>"
         )
 
-    dest = f"{WEIGHTS_MOUNT}/stable-audio-open-1.0"
-
-    # Check si ya existe (comprueba que hay config.json, no solo la carpeta)
-    config_path = f"{dest}/config.json"
-    if os.path.exists(config_path):
-        size_gb = sum(
-            os.path.getsize(os.path.join(d, f))
-            for d, _, files in os.walk(dest)
-            for f in files
-        ) / 1e9
-        print(f"[setup] Modelo ya descargado en {dest} ({size_gb:.1f} GB). Nada que hacer.")
-        return
-
-    print(f"[setup] Descargando {MODEL_HF_REPO} → {dest} …")
-    print("[setup] (requiere que hayas aceptado la licencia en HuggingFace)")
+    print(f"[load] Descargando {MODEL_HF_REPO} → {dest} …")
+    print("[load] (requiere que hayas aceptado la licencia en HuggingFace)")
     t0 = time.time()
 
     snapshot_download(
@@ -192,10 +187,13 @@ def setup():
         for d, _, files in os.walk(dest)
         for f in files
     ) / 1e9
-    print(f"[setup] Descarga completa: {size_gb:.1f} GB en {elapsed:.0f}s")
+    print(f"[load] Descarga completa: {size_gb:.1f} GB en {elapsed:.0f}s")
 
-    weights_vol.commit()
-    print("[setup] Volume commiteado.")
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
+    return dest
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +202,8 @@ def setup():
 
 def _load_pipeline(variant: str = "1.0"):
     """
-    Carga el pipeline de Stable Audio Open desde el Volume.
+    Carga el pipeline de Stable Audio Open desde el Volume, descargando los
+    pesos primero si faltan (ver _ensure_weights()).
 
     Usa StableAudioPipeline de diffusers como interfaz principal.
     El pipeline incluye: AutoencoderKL (VAE), UNet (DiT), T5TextEncoder.
@@ -212,7 +211,7 @@ def _load_pipeline(variant: str = "1.0"):
     import torch
     from diffusers import StableAudioPipeline
 
-    model_path = f"{WEIGHTS_MOUNT}/stable-audio-open-1.0"
+    model_path = _ensure_weights()
     print(f"[load_pipeline] Cargando desde {model_path} …")
     t0 = time.time()
 

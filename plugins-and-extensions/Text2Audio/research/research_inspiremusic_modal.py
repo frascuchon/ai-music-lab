@@ -26,8 +26,8 @@ Nota: el output de InspireMusic en continuation INCLUYE el audio prompt al inici
 seguido de la continuación. compute_metrics_edit.py recorta la duración del prompt
 antes de medir el segmento continuado.
 
-Setup (descarga pesos al Volume, una vez, ~7 GB):
-    modal run research_inspiremusic_modal.py::setup
+Los pesos (~7 GB) se descargan automáticamente y se cachean en el Volume
+en la primera llamada real — no requiere un paso de setup manual.
 
 Smoke test oficial:
     modal run research_inspiremusic_modal.py::smoke
@@ -115,27 +115,6 @@ app = modal.App("inspiremusic-continuation-inference", image=image)
 # ---------------------------------------------------------------------------
 # Setup — descarga pesos al Volume
 # ---------------------------------------------------------------------------
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, timeout=3600)
-def setup():
-    """
-    Descarga los pesos de InspireMusic al Volume (una vez, ~7 GB):
-        modal run research_inspiremusic_modal.py::setup
-    Pesos públicos en HF (Apache 2.0) — sin token.
-    """
-    from huggingface_hub import snapshot_download
-
-    if os.path.exists(f"{MODEL_LOCAL_DIR}/llm.pt"):
-        print(f"[setup] Modelo ya descargado en {MODEL_LOCAL_DIR}. Nada que hacer.")
-        return
-
-    print(f"[setup] Descargando {MODEL_HF_REPO} → {MODEL_LOCAL_DIR} …")
-    t0 = time.time()
-    snapshot_download(repo_id=MODEL_HF_REPO, local_dir=MODEL_LOCAL_DIR)
-    print(f"[setup] Descarga completa en {time.time()-t0:.0f}s")
-    weights_vol.commit()
-    print("[setup] Volume commiteado.")
-
-
 # ---------------------------------------------------------------------------
 # Función Modal principal — batch de continuaciones
 # ---------------------------------------------------------------------------

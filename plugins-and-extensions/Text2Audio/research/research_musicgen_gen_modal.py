@@ -18,8 +18,9 @@ Condiciones oficiales (Copet et al., NeurIPS 2023):
   - `model.generate([prompt])` → audio tensor (batch, channels, samples)
   - Sampling rate: 32000 Hz, mono
 
-Setup (descarga pesos al Volume, una vez, ~3 GB):
-    modal run research_musicgen_gen_modal.py::setup
+Los pesos de MusicGen-medium (~3 GB) se descargan automáticamente y se
+cachean en el Volume en la primera llamada real — no requiere un paso de
+setup manual.
 
 Generación libre:
     modal run research_musicgen_gen_modal.py::main \\
@@ -71,20 +72,6 @@ app = modal.App("musicgen-gen-inference", image=image)
 # ---------------------------------------------------------------------------
 # Setup — descarga pesos al Volume
 # ---------------------------------------------------------------------------
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, gpu=DEFAULT_GPU, timeout=3600)
-def setup(variant: str = DEFAULT_VARIANT):
-    """
-    Descarga pesos de MusicGen-medium (~3 GB). Ejecutar una vez:
-        modal run research_musicgen_gen_modal.py::setup
-    """
-    from transformers import AutoProcessor, MusicgenForConditionalGeneration
-
-    t0 = time.time()
-    AutoProcessor.from_pretrained(variant)
-    MusicgenForConditionalGeneration.from_pretrained(variant)
-    print(f"[setup] {variant} descargado en {time.time()-t0:.0f}s")
-    weights_vol.commit()
-    print("[setup] Volume commiteado.")
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +98,12 @@ def generate_batch(
     model = MusicgenForConditionalGeneration.from_pretrained(variant)
     model.to("cuda")
     sr_out = model.config.audio_encoder.sampling_rate  # 32000 Hz
+    # Persist any weights just downloaded to the Volume — there is no
+    # separate setup() step anymore.
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
     print(f"[load_model] {variant} listo ({time.time()-t0:.1f}s)")
 
     results = []

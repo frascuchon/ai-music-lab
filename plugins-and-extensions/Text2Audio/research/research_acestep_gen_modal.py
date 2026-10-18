@@ -41,8 +41,9 @@ main() lee la carpeta entera en memoria y la envía como parte de la llamada
 remota (ver _read_lora_dir / _materialize_lora_dir); límite de 2 GB para
 evitar subir por error un directorio de checkpoint de entrenamiento completo.
 
-Setup (descarga pesos al Volume, una vez; compartido con script de edición):
-    modal run research_acestep_gen_modal.py::setup
+Los pesos (compartidos con el script de edición) se descargan
+automáticamente y se cachean en el Volume en la primera llamada real — no
+requiere un paso de setup manual.
 
 Generación libre:
     modal run research_acestep_gen_modal.py::main \\
@@ -225,19 +226,6 @@ def _generate_one(dit_handler, llm_handler, params_kwargs: dict) -> bytes:
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, gpu=DEFAULT_GPU, timeout=3600)
-def setup(dit_variant: str = "turbo"):
-    """
-    Descarga pesos de ACE-Step 1.5 al Volume compartido. Ejecutar una vez por variante:
-        modal run research_acestep_gen_modal.py::setup                       # turbo (~5 GB)
-        modal run research_acestep_gen_modal.py::setup --dit-variant base    # base (larger)
-    Si ya ejecutaste research_acestep_edit_modal.py::setup, turbo ya está listo.
-    """
-    _init_handlers(dit_variant=dit_variant)
-    weights_vol.commit()
-    print(f"[setup] Pesos ({dit_variant}) descargados y Volume commiteado.")
-
-
 def _materialize_lora_dir(lora_files: dict[str, bytes] | None) -> str:
     """Write a LoRA/LoKr adapter's files (shipped as {relative_path: bytes}
     by main(), since the container has no access to the user's local

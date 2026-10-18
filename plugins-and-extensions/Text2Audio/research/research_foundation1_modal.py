@@ -41,8 +41,9 @@ Relación con SAO 1.0:
   - Para géneros no electrónicos (jazz, clásico, pop) los resultados serán pobres.
   - Pesos base SAO 1.0: ~3.4 GB. Foundation-1 sobrescribe solo el DiT → mismo tamaño.
 
-Setup (descarga pesos al Volume, ejecutar una vez):
-    modal run research/research_foundation1_modal.py::setup
+Los pesos (~3.4 GB) se descargan automáticamente (ver _ensure_weights()) y
+se cachean en el Volume en la primera llamada real — no requiere un paso de
+setup manual.
 
 Smoke test — verificación del script (prompt oficial del model card):
     modal run research/research_foundation1_modal.py::main \\
@@ -161,23 +162,6 @@ def _ensure_weights() -> str:
     weights_vol.commit()
     print("[setup] Volume commiteado.")
     return dest
-
-
-@app.function(
-    volumes={WEIGHTS_MOUNT: weights_vol},
-    timeout=1800,
-)
-def setup():
-    """
-    Descarga los pesos de Foundation-1 al Modal Volume.
-    Ejecutar una sola vez (~3.4 GB, ~$0.05):
-        modal run research/research_foundation1_modal.py::setup
-
-    No requiere HF_TOKEN — pesos públicos. Ya no es estrictamente necesario
-    (generate_batch descarga perezosamente si faltan), pero sigue
-    disponible para pre-calentar el Volume antes del primer uso real.
-    """
-    _ensure_weights()
 
 
 # ---------------------------------------------------------------------------

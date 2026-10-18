@@ -27,8 +27,8 @@ Mapeo strength_hint (prompts_edit.json) → tstart (sobre 200 steps; mayor = má
   moderate → 100 (default del user study)
   strong → 130
 
-Setup (descarga pesos del backbone al Volume, una vez):
-    modal run research_zeta_edit_modal.py::setup
+El backbone se descarga automáticamente al cache HF del Volume en la
+primera llamada real — no requiere un paso de setup manual.
 
 Smoke test oficial:
     modal run research_zeta_edit_modal.py::smoke
@@ -121,27 +121,6 @@ app = modal.App("zeta-edit-inference", image=image)
 
 # Solo necesario para el backbone SAO (gated); inocuo para AudioLDM2.
 hf_secret = modal.Secret.from_name("huggingface-secret")
-
-
-# ---------------------------------------------------------------------------
-# Setup — descarga pesos del backbone al Volume
-# ---------------------------------------------------------------------------
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, secrets=[hf_secret], timeout=3600)
-def setup(model_id: str = DEFAULT_MODEL_ID):
-    """
-    Descarga el backbone al cache HF del Volume (una vez):
-        modal run research_zeta_edit_modal.py::setup
-        modal run research_zeta_edit_modal.py::setup --model-id stabilityai/stable-audio-open-1.0
-    """
-    from huggingface_hub import snapshot_download
-
-    token = os.environ.get("HF_TOKEN") if "stable-audio" in model_id else None
-    print(f"[setup] Descargando {model_id} al cache HF del Volume …")
-    t0 = time.time()
-    snapshot_download(repo_id=model_id, token=token)
-    print(f"[setup] Descarga completa en {time.time()-t0:.0f}s")
-    weights_vol.commit()
-    print("[setup] Volume commiteado.")
 
 
 # ---------------------------------------------------------------------------

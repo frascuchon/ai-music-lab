@@ -25,8 +25,9 @@ Condiciones oficiales (Melechovsky et al., NAACL 2024):
   - Ejemplo oficial: "Generate a pleasant piano melody with chords."
   - Paper CLAP score: 0.274 en MusicCaps
 
-Setup (descarga pesos al Volume, una vez, ~8 GB — FLAN-T5-Large + UNet diffusion):
-    modal run research_mustango_modal.py::setup
+Los pesos de Mustango (~8 GB — FLAN-T5-Large + UNet diffusion) se
+descargan automáticamente y se cachean en el Volume en la primera llamada
+real — no requiere un paso de setup manual.
 
 Generación libre:
     modal run research_mustango_modal.py::main \\
@@ -100,21 +101,6 @@ app = modal.App("mustango-inference", image=image)
 # ---------------------------------------------------------------------------
 # Setup — descarga pesos al Volume
 # ---------------------------------------------------------------------------
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, gpu=DEFAULT_GPU, timeout=3600)
-def setup():
-    """
-    Descarga pesos de Mustango (~8 GB — FLAN-T5 + UNet). Ejecutar una vez:
-        modal run research_mustango_modal.py::setup
-    """
-    from mustango import Mustango
-
-    t0 = time.time()
-    Mustango("declare-lab/mustango")
-    print(f"[setup] Mustango descargado en {time.time()-t0:.0f}s")
-    weights_vol.commit()
-    print("[setup] Volume commiteado.")
-
-
 # ---------------------------------------------------------------------------
 # Función Modal principal — generación por lotes
 # ---------------------------------------------------------------------------
@@ -138,6 +124,12 @@ def generate_batch(
 
     t0 = time.time()
     model = Mustango("declare-lab/mustango")
+    # Persist any weights just downloaded to the Volume — there is no
+    # separate setup() step anymore.
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
     print(f"[load_model] Mustango listo ({time.time()-t0:.1f}s)")
 
     results = []

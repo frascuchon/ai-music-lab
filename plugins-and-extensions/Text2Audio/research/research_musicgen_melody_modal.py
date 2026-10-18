@@ -28,8 +28,9 @@ Condiciones oficiales replicadas (verificado 2026-07-02):
 Nota strength_hint: MusicGen-melody NO tiene knob de intensidad — el condicionamiento por
 cromagrama es fijo. El campo strength_hint de prompts_edit.json se ignora.
 
-Setup (descarga pesos al Volume, una vez, ~11 GB melody):
-    modal run research_musicgen_melody_modal.py::setup
+Los pesos de MusicGen-melody (~11 GB) se descargan automáticamente y se
+cachean en el Volume en la primera llamada real — no requiere un paso de
+setup manual.
 
 Smoke test oficial:
     modal run research_musicgen_melody_modal.py::smoke
@@ -103,26 +104,6 @@ app = modal.App("musicgen-melody-inference", image=image)
 
 
 # ---------------------------------------------------------------------------
-# Setup — descarga pesos al Volume
-# ---------------------------------------------------------------------------
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, gpu=DEFAULT_GPU, timeout=3600)
-def setup(variant: str = DEFAULT_VARIANT):
-    """
-    Descarga los pesos de MusicGen-melody al Volume (una vez, ~11 GB):
-        modal run research_musicgen_melody_modal.py::setup
-    Pesos públicos en HF — sin token.
-    """
-    from transformers import AutoProcessor, MusicgenMelodyForConditionalGeneration
-
-    t0 = time.time()
-    AutoProcessor.from_pretrained(variant)
-    MusicgenMelodyForConditionalGeneration.from_pretrained(variant)
-    print(f"[setup] {variant} descargado y cargado en {time.time()-t0:.0f}s")
-    weights_vol.commit()
-    print("[setup] Volume commiteado.")
-
-
-# ---------------------------------------------------------------------------
 # Función Modal principal — batch de versiones
 # ---------------------------------------------------------------------------
 @app.function(volumes={WEIGHTS_MOUNT: weights_vol}, gpu=DEFAULT_GPU, timeout=7200)
@@ -147,6 +128,12 @@ def generate_batch(
     model = MusicgenMelodyForConditionalGeneration.from_pretrained(variant)
     model.to("cuda")
     sr_out = model.config.audio_encoder.sampling_rate  # 32000 Hz
+    # Persist any weights just downloaded to the Volume — there is no
+    # separate setup() step anymore.
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
     print(f"[load_model] {variant} listo ({time.time()-t0:.1f}s)")
 
     results = []

@@ -163,5 +163,111 @@ class TestErrorReporting(TestCase):
         self.assertIn("prompt", msg.lower())
 
 
+class TestExecutionDispatch(TestCase):
+    """--execution local|remote dispatch added alongside the local/remote
+    toggle in panel.lua. remote (default) must be provably unchanged;
+    local must route to text2audio_local.py for supported models and
+    reject unsupported ones (e.g. mustango, acestep) without touching uv/
+    subprocess at all."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="t2a_exec_"))
+        self.progress_file = self.tmpdir / "progress.txt"
+        self.out_dir = self.tmpdir / "out"
+        self.shared_dir = self.tmpdir / "shared"
+        self.shared_dir.mkdir()
+        (self.shared_dir / "pyproject.toml").write_text("[project]\nname='shared'\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run(self, model, execution, mode="generate", prompt="a calm piano loop",
+             script_name="research_sao_modal.py"):
+        script = self.tmpdir / script_name
+        if not script.exists():
+            script.write_text("import sys; sys.exit(0)\n")
+        args = [
+            sys.executable, str(SCRIPT),
+            "--shared-dir", str(self.shared_dir),
+            "--script", str(script),
+            "--model", model,
+            "--mode", mode,
+            "--out-dir", str(self.out_dir),
+            "--prompt", prompt,
+            "--progress", str(self.progress_file),
+            "--execution", execution,
+        ]
+        return subprocess.run(args, capture_output=True, text=True, timeout=30)
+
+    def test_local_unsupported_model_errors_without_subprocess(self):
+        proc = self._run("mustango", "local")
+        self.assertEqual(proc.returncode, 1)
+        state, _, msg, _ = parse_progress(self.progress_file)
+        self.assertEqual(state, "error")
+        self.assertIn("Local execution not supported for mustango", msg)
+        # No output.wav should ever appear — nothing was launched.
+        self.assertFalse((self.out_dir / "output.wav").exists())
+
+    def test_local_unsupported_edit_model_errors(self):
+        proc = self._run("acestep", "local", mode="edit")
+        self.assertEqual(proc.returncode, 1)
+        state, _, msg, _ = parse_progress(self.progress_file)
+        self.assertEqual(state, "error")
+        self.assertIn("Local execution not supported for acestep", msg)
+
+    def test_local_supported_model_routes_to_local_script(self):
+        # text2audio_local.py will itself fail fast (no real model download),
+        # but it MUST be the thing that ran — not "uv run ... modal run ...".
+        proc = self._run("sao", "local")
+        state, _, msg, extra = parse_progress(self.progress_file)
+        self.assertEqual(state, "error")  # expected: no real GPU/weights here
+        # The remote-path wording ("Modal failed...") must not appear —
+        # confirms this went through the local-path error formatting.
+        self.assertNotIn("Modal failed", msg)
+
+    def test_remote_default_unchanged_for_known_bug(self):
+        """Regression guard: omitting --execution entirely (as the OLD
+        panel.lua command line did, before this feature existed) must still
+        take the remote path byte-for-byte the same as before."""
+        script = self._write_failing_stub("modal.exception.AuthError: token missing")
+        proc = self._run_raw(script)  # no --execution flag at all
+        self.assertEqual(proc.returncode, 1)
+        state, _, msg, _ = parse_progress(self.progress_file)
+        self.assertEqual(state, "error")
+        self.assertIn("Modal failed", msg)
+        self.assertIn("token missing", msg)
+
+    def test_remote_explicit_unchanged(self):
+        script = self._write_failing_stub("RuntimeError: CUDA out of memory")
+        proc = self._run("sao", "remote", script_name=script.name)
+        self.assertEqual(proc.returncode, 1)
+        state, _, msg, _ = parse_progress(self.progress_file)
+        self.assertEqual(state, "error")
+        self.assertIn("Modal failed", msg)
+
+    def _write_failing_stub(self, error_line):
+        script = self.tmpdir / "research_failing_modal.py"
+        script.write_text(textwrap.dedent(f"""\
+        import sys
+        print("Starting SAO inference...")
+        print({error_line!r})
+        sys.exit(1)
+        """))
+        return script
+
+    def _run_raw(self, script):
+        args = [
+            sys.executable, str(SCRIPT),
+            "--shared-dir", str(self.shared_dir),
+            "--script", str(script),
+            "--model", "sao",
+            "--mode", "generate",
+            "--out-dir", str(self.out_dir),
+            "--prompt", "a calm piano loop",
+            "--progress", str(self.progress_file),
+        ]
+        return subprocess.run(args, capture_output=True, text=True, timeout=30)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -21,8 +21,9 @@ Condiciones oficiales (Ziv et al., 2024):
   - `model.generate([prompt])` → audio tensor (batch, channels, samples)
   - Sampling rate: 32000 Hz
 
-Setup (descarga pesos al Volume, una vez, ~3 GB):
-    modal run research_magnet_modal.py::setup
+Los pesos de MAGNeT-medium (~3 GB) se descargan automáticamente y se
+cachean en el Volume en la primera llamada real — no requiere un paso de
+setup manual.
 
 Generación libre:
     modal run research_magnet_modal.py::main \\
@@ -89,21 +90,6 @@ app = modal.App("magnet-inference", image=image)
 # ---------------------------------------------------------------------------
 # Setup — descarga pesos al Volume
 # ---------------------------------------------------------------------------
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, gpu=DEFAULT_GPU, timeout=3600)
-def setup(variant: str = DEFAULT_VARIANT):
-    """
-    Descarga pesos de MAGNeT-medium (~3 GB). Ejecutar una vez:
-        modal run research_magnet_modal.py::setup
-    """
-    from audiocraft.models import MAGNeT
-
-    t0 = time.time()
-    MAGNeT.get_pretrained(variant)
-    print(f"[setup] {variant} descargado en {time.time()-t0:.0f}s")
-    weights_vol.commit()
-    print("[setup] Volume commiteado.")
-
-
 # ---------------------------------------------------------------------------
 # Función Modal principal — generación por lotes
 # ---------------------------------------------------------------------------
@@ -129,6 +115,12 @@ def generate_batch(
     # inside get_pretrained() itself via its `device` kwarg.
     model = MAGNeT.get_pretrained(variant, device="cuda")
     sr_out = model.sample_rate  # 32000 Hz
+    # Persist any weights just downloaded to the Volume — there is no
+    # separate setup() step anymore.
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
     print(f"[load_model] {variant} listo ({time.time()-t0:.1f}s)")
 
     results = []

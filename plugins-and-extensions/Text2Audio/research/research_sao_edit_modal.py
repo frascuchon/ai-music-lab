@@ -33,8 +33,10 @@ Mapeo strength_hint (prompts_edit.json) → init_noise_level:
   moderate → 1.0 (default de la función oficial)
   strong → 4.0   (transformación fuerte; >10 prácticamente regenera)
 
-Setup (verifica/descarga el checkpoint stable-audio-tools en el Volume ya existente):
-    modal run research_sao_edit_modal.py::setup
+El checkpoint stable-audio-tools (model.safetensors + model_config.json) se
+descarga automáticamente al Volume compartido en la primera llamada real
+(ver _ensure_weights()) si falta — no requiere un paso de setup manual (el
+HF_TOKEN gated sigue siendo obligatorio la primera vez).
 
 Smoke test oficial:
     modal run research_sao_edit_modal.py::smoke
@@ -115,25 +117,23 @@ hf_secret = modal.Secret.from_name("huggingface-secret")
 
 
 # ---------------------------------------------------------------------------
-# Setup — verifica el checkpoint stable-audio-tools en el Volume
+# Descarga perezosa del checkpoint al Volume — llamada desde _load_model() en
+# lugar de requerir un local_entrypoint de setup manual separado. El panel
+# nunca invoca ::setup, solo ::main — mismo fix que
+# research_stable_audio_open_modal.py/research_foundation1_modal.py.
 # ---------------------------------------------------------------------------
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, secrets=[hf_secret], timeout=1800)
-def setup():
-    """
-    Verifica que model.safetensors + model_config.json (formato stable-audio-tools)
-    están en el Volume compartido con el flujo text2audio; si faltan, los descarga.
-        modal run research_sao_edit_modal.py::setup
-    """
+def _ensure_weights() -> None:
+    """Descarga model.safetensors/model_config.json (formato stable-audio-tools)
+    al Volume compartido con el flujo text2audio si faltan (requiere HF_TOKEN
+    — modelo gated)."""
     from huggingface_hub import hf_hub_download
 
-    hf_token = os.environ.get("HF_TOKEN")
     needed = ["model_config.json", "model.safetensors"]
     missing = [f for f in needed if not os.path.exists(f"{MODEL_LOCAL_DIR}/{f}")]
-
     if not missing:
-        print(f"[setup] Checkpoint stable-audio-tools completo en {MODEL_LOCAL_DIR}. Nada que hacer.")
         return
 
+    hf_token = os.environ.get("HF_TOKEN")
     if not hf_token:
         raise RuntimeError(
             "HF_TOKEN no encontrado. Crear secret: "
@@ -141,7 +141,7 @@ def setup():
         )
 
     for fname in missing:
-        print(f"[setup] Descargando {fname} …")
+        print(f"[load] Descargando {fname} …")
         hf_hub_download(
             repo_id=MODEL_HF_REPO,
             filename=fname,
@@ -149,8 +149,11 @@ def setup():
             token=hf_token,
         )
 
-    weights_vol.commit()
-    print("[setup] Checkpoint completo y Volume commiteado.")
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
+    print("[load] Checkpoint completo y Volume commiteado.")
 
 
 # ---------------------------------------------------------------------------
@@ -158,11 +161,13 @@ def setup():
 # ---------------------------------------------------------------------------
 
 def _load_model():
-    """Carga el modelo con el pipeline oficial stable-audio-tools desde el Volume."""
+    """Carga el modelo con el pipeline oficial stable-audio-tools desde el
+    Volume, descargando el checkpoint primero si falta (ver _ensure_weights())."""
     import torch
     from stable_audio_tools.models.factory import create_model_from_config
     from stable_audio_tools.models.utils import load_ckpt_state_dict
 
+    _ensure_weights()
     t0 = time.time()
     with open(f"{MODEL_LOCAL_DIR}/model_config.json") as f:
         model_config = json.load(f)

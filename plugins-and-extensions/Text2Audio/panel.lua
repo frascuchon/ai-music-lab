@@ -16,6 +16,7 @@ local gui     = require("gui")
 local widgets = require("widgets_extra")
 local track_placement = require("track_placement")
 local model_switch = require("model_switch")
+local model_execution = require("model_execution")
 
 local HOME   = common.HOME
 local TMPDIR = common.TMPDIR
@@ -282,6 +283,8 @@ local S = {
   edit_duration     = 10.0,
   intensity_idx     = 2,   -- "moderate"
   edit_model_idx    = 1,
+  -- Execution: "local" (this machine, MPS/CPU) or "remote" (Modal cloud)
+  execution         = "remote",
   -- Common
   gpu_idx           = 1,
   -- Runtime
@@ -561,17 +564,18 @@ local function launch_t2a()
         variant, steps, shift, math.floor(S.acestep_seed + 0.5), tostring(S.acestep_thinking)))
     end
 
+    add_log("Execution: " .. S.execution)
     local cmd = string.format(
       '%s %s --shared-dir %s --script %s --model %s --mode generate'
-      .. ' --prompt %s --seconds %.2f --gpu %s'
+      .. ' --prompt %s --seconds %.2f --gpu %s --execution %s'
       .. ' --out-dir %s%s --progress %s >>%s 2>&1 &',
       q(PYTHON), q(TEXT2AUDIO_PY),
       q(SHARED_DIR), q(script),
       q(model_key),
-      q(prompt), S.duration, q(GPUS[S.gpu_idx]),
+      q(prompt), S.duration, q(GPUS[S.gpu_idx]), q(S.execution),
       q(run_dir), extra, q(PROGRESS_F), q(LOG_F))
 
-    add_log("Launching Modal process...")
+    add_log("Launching " .. (S.execution == "local" and "local" or "Modal") .. " process...")
     S.pid = common.launch_tracked(cmd)
 
   -- ── EDIT mode ──
@@ -618,18 +622,19 @@ local function launch_t2a()
       seconds_arg = string.format(" --seconds %.2f", S.edit_duration)
     end
 
+    add_log("Execution: " .. S.execution)
     local cmd = string.format(
       '%s %s --shared-dir %s --script %s --model %s --mode edit'
-      .. ' --input %s --prompt %s --intensity %s --gpu %s'
+      .. ' --input %s --prompt %s --intensity %s --gpu %s --execution %s'
       .. ' --out-dir %s%s%s --progress %s >>%s 2>&1 &',
       q(PYTHON), q(TEXT2AUDIO_PY),
       q(SHARED_DIR), q(script),
       q(model_key),
-      q(S.src), q(prompt), q(INTENSITIES[S.intensity_idx]), q(GPUS[S.gpu_idx]),
+      q(S.src), q(prompt), q(INTENSITIES[S.intensity_idx]), q(GPUS[S.gpu_idx]), q(S.execution),
       q(run_dir), section_args, seconds_arg,
       q(PROGRESS_F), q(LOG_F))
 
-    add_log("Launching Modal process...")
+    add_log("Launching " .. (S.execution == "local" and "local" or "Modal") .. " process...")
     S.pid = common.launch_tracked(cmd)
   end
 end
@@ -700,6 +705,26 @@ function M.draw()
     -- The change-intent prompt's phrasing advice is model-specific, so
     -- clear it instead of silently carrying it over to a different model.
     S.edit_prompt = model_switch.next_prompt(old_edit_model_idx, S.edit_model_idx, S.edit_prompt)
+  end
+
+  -- ── EXECUTION (Local / Remote) ──────────────────────────────────
+  local cur_model_key = (S.mode == 1) and GEN_MODELS[S.gen_model_idx] or EDIT_MODELS[S.edit_model_idx]
+  local local_ok, local_reason = model_execution.is_local_supported("text2audio", cur_model_key)
+  if not local_ok and S.execution == "local" then
+    S.execution = "remote"  -- model switched into one with no local backend
+  end
+  g.row_label("Execution:", t.sc(70))
+  if not local_ok then g.begin_disabled(true) end
+  g.next_width(t.sc(140))
+  local EXEC_OPTS = { "remote", "local" }
+  local EXEC_LABELS = { "Remote (Modal)", "Local (MPS/CPU)" }
+  local exec_idx = (S.execution == "local") and 2 or 1
+  local new_exec_idx = widgets.combo("##t2a_exec", exec_idx, EXEC_LABELS)
+  S.execution = EXEC_OPTS[new_exec_idx]
+  if not local_ok then
+    g.end_disabled()
+    g.same_line(t.sc(10))
+    g.text_disabled("Local unavailable: " .. local_reason)
   end
   g.spacing()
 

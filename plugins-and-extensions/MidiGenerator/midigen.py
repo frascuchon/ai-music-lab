@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Backend CLI for MidiGenerator.lua — generates MIDI via Modal cloud.
+"""Backend CLI for MidiGenerator.lua — generates MIDI via Modal cloud, or
+(for the models that support it — see shared/model_execution.py's MIDIGEN
+registry) locally on this machine.
 
 Called by MidiGenerator.lua as a background process:
 
     python3 midigen.py
         --shared-dir <shared/>
-        --script     <research_*_modal.py>
+        --script     <research_*_modal.py>   (remote)
+                      <research_*.py>         (local — plain, non-Modal script)
         --model      <model-key>
         --out-dir    <output-directory>
         --progress   <progress-file>
+        [--execution local|remote]  (default: remote)
         [--prompt    <free-text>]
         [--field-key <key>]  [--field-bpm <BPM>]
         [--field-instruments <list>]  [--field-chords <chords>]
@@ -48,6 +52,19 @@ seed_file (anticipatory):
            [--prompt-length] [--clip-length] [--top-p]
            [--multiplicity] [--melody-instrument]
     Output: generated.mid (mult=1) or generated_v0.mid … generated_v{N-1}.mid (mult>1)
+
+Local entrypoint contracts (--execution local; only text2midi, anticipatory —
+see shared/model_execution.py MIDIGEN registry for the full feasibility list)
+-------------------------------------------------------------------------------
+text2midi (research_text2midi.py, plain — no Modal):
+    --prompt … --out <out-dir>/generated.mid --temperature … --n_outputs …
+    Output: generated.mid (n=1) or generated_v0.mid … generated_v{N-1}.mid (n>1)
+
+anticipatory (research_anticipatory.py, plain — no Modal, CPU-only):
+    --input <seed.mid> --out <out-dir>/generated.mid --mode <accompaniment|continuation>
+           [--prompt-length] [--clip-length] [--top-p] [--multiplicity] [--melody-instrument]
+    Output: generated.mid (mult=1) or generated_v0.mid … (mult>1, accompaniment only —
+    the local script's continuation mode always produces a single file)
 """
 
 from __future__ import annotations
@@ -255,6 +272,73 @@ def _build_cmd(
 
 
 # ---------------------------------------------------------------------------
+# Build local run command per model (--execution local)
+# ---------------------------------------------------------------------------
+
+# Models with a plain (non-Modal) local script — the only two with
+# local_supported=True in shared/model_execution.py's MIDIGEN registry.
+_LOCAL_SUPPORTED_MODELS = {"text2midi", "anticipatory"}
+
+
+def _build_local_cmd(
+    uv_bin: Path,
+    script_path: Path,
+    out_dir: Path,
+    args: argparse.Namespace,
+    adapted_prompt: str,
+) -> list[str]:
+    """Return the token list to run a model's plain local script directly
+    (no `modal run`, no GPU). `script_path` points at the plain script
+    (e.g. research_text2midi.py) — its parent directory is the uv project
+    (MidiGenerator/research/, with its own pyproject.toml/venv, distinct
+    from the shared/ Modal-only project used by _build_cmd)."""
+
+    model = args.model.lower()
+    research_dir = script_path.parent
+
+    base = [str(uv_bin), "run", "--project", str(research_dir), str(script_path)]
+
+    if model == "text2midi":
+        out_path = out_dir / "generated.mid"
+        cmd = base + [
+            "--prompt",      adapted_prompt,
+            "--out",         str(out_path),
+            "--temperature", str(args.temperature),
+            "--n_outputs",   str(args.n_outputs),
+        ]
+
+    elif model == "anticipatory":
+        if not args.seed or not Path(args.seed).exists():
+            raise FileNotFoundError(
+                f"Anticipatory requires a seed MIDI (--seed). "
+                f"Specified path: {args.seed!r}"
+            )
+        out_path = out_dir / "generated.mid"
+        cmd = base + [
+            "--mode",             args.mode,
+            "--input",            args.seed,
+            "--out",              str(out_path),
+            "--prompt-length",    str(args.prompt_length),
+            "--clip-length",      str(args.clip_length),
+            "--top-p",            str(args.top_p),
+            "--melody-instrument", str(args.melody_instrument),
+            "--multiplicity",     str(args.n_outputs),
+        ]
+        # research_anticipatory.py's continuation mode ignores --multiplicity
+        # and always writes a single file; --duration only applies there.
+        if args.mode == "continuation":
+            cmd += ["--duration", str(args.clip_length)]
+
+    else:
+        # Defensive only: main() already rejects unsupported models via
+        # shared/model_execution.py's is_local_supported() before reaching
+        # here, so this should be unreachable.
+        raise ValueError(f"Local execution not supported for model: {model!r}")
+
+    return cmd
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -268,6 +352,11 @@ def main() -> int:
     p.add_argument("--model",      required=True)
     p.add_argument("--out-dir",    required=True, dest="out_dir")
     p.add_argument("--progress",   default="")
+    p.add_argument("--execution",  choices=["local", "remote"], default="remote",
+                   help="local runs the model's plain script directly on this "
+                        "machine (only text2midi/anticipatory support it; see "
+                        "shared/model_execution.py). remote (default) uses Modal, "
+                        "unchanged from previous behavior.")
 
     # Prompt and optional fields (for MidiCaps adapters)
     p.add_argument("--prompt",             default="")
@@ -329,6 +418,15 @@ def main() -> int:
                        "in REAPER or choose a .mid file).")
         return 1
 
+    if args.execution == "local":
+        sys.path.insert(0, str(shared_dir))
+        from model_execution import is_local_supported  # noqa: E402
+        supported, reason = is_local_supported("midigen", model_key)
+        if not supported:
+            write_progress(pf, "error", 0,
+                           f"Local execution not supported for {model_key}: {reason}")
+            return 1
+
     # --- Locate uv ----------------------------------------------------------
     uv_bin = _find_uv()
     if uv_bin is None:
@@ -358,15 +456,22 @@ def main() -> int:
         if cids:
             instruments_str = ",".join(str(c) for c in cids)
 
-    # --- Build and launch modal command ------------------------------------
-    write_progress(pf, "running", 0.06,
-                   f"Launching Modal ({model_key} · {args.gpu})...")
+    # --- Build and launch run command ---------------------------------------
+    if args.execution == "local":
+        write_progress(pf, "running", 0.06,
+                       f"Launching locally ({model_key})...")
+    else:
+        write_progress(pf, "running", 0.06,
+                       f"Launching Modal ({model_key} · {args.gpu})...")
 
     try:
-        cmd = _build_cmd(
-            uv_bin, shared_dir, script_path,
-            out_dir, args, adapted_prompt, instruments_str,
-        )
+        if args.execution == "local":
+            cmd = _build_local_cmd(uv_bin, script_path, out_dir, args, adapted_prompt)
+        else:
+            cmd = _build_cmd(
+                uv_bin, shared_dir, script_path,
+                out_dir, args, adapted_prompt, instruments_str,
+            )
     except (FileNotFoundError, ValueError) as exc:
         write_progress(pf, "error", 0, str(exc))
         return 1

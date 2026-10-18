@@ -9,8 +9,9 @@ Repo:   https://github.com/AMAAI-Lab/Text2midi
 Demo:   https://amaai-lab.github.io/Text2midi/
 Paper:  https://arxiv.org/abs/2412.16526
 
-Setup (pre-descarga de pesos al Volume, ejecutar una vez):
-    modal run research_text2midi_modal.py::setup
+Los pesos se descargan automáticamente (y se cachean en el Volume) en la
+primera llamada real a generate()/main() — no requiere un paso de setup
+manual; la primera ejecución simplemente tarda más.
 
 Inferencia (un prompt, N outputs):
     modal run research_text2midi_modal.py::main \\
@@ -92,30 +93,6 @@ image = (
 )
 
 app = modal.App("text2midi-inference", image=image)
-
-
-# ---------------------------------------------------------------------------
-# Pre-descarga de pesos al Volume
-# ---------------------------------------------------------------------------
-@app.function(
-    volumes={WEIGHTS_MOUNT: weights_vol},
-    timeout=600,
-    gpu=DEFAULT_GPU,
-)
-def setup():
-    """Descarga los pesos del modelo a un Volume persistente. Ejecutar una vez."""
-    from huggingface_hub import hf_hub_download
-
-    os.environ["HF_HOME"] = HF_CACHE
-    os.makedirs(HF_CACHE, exist_ok=True)
-
-    print(f"[setup] Descargando {MODEL_ID} → {HF_CACHE} ...")
-    for fname in ["pytorch_model.bin", "vocab_remi.pkl"]:
-        path = hf_hub_download(repo_id=MODEL_ID, filename=fname, cache_dir=HF_CACHE)
-        print(f"[setup]   {fname} → {path}")
-
-    weights_vol.commit()
-    print("[setup] Pesos descargados y committed al Volume.")
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +181,14 @@ def generate(
     import time
 
     model, text_tokenizer, r_tokenizer, device = _load_model()
+    # Persist any weights just downloaded by _load_model() to the Volume —
+    # there is no separate setup() step anymore, so this is the only place
+    # that commits, and it must happen before generation in case a long
+    # batch times out partway through.
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
     print(f"[modal] device={device}  temp={temperature}  max_len={max_len}  n_outputs={n_outputs}")
 
     results = []

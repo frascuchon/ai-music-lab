@@ -41,8 +41,9 @@ Inferencia args (verbatim de app.py del Space, modelo YPTF.MoE+Multi noPS):
      '-act', 'silu', '-epe', 'rope', '-rp', '1',
      '-ac', 'spec', '-hop', '300', '-atc', '1', '-pr', '16']
 
-Setup (descarga pesos al Volume, ejecutar una vez):
-    modal run research/research_yourmt3_modal.py::setup
+El checkpoint (~562 MB) se descarga automáticamente al Volume en la primera
+llamada real (ver _ensure_weights(), llamado desde _setup_space_env()) — no
+requiere un paso de setup manual.
 
 Transcripción libre:
     modal run research/research_yourmt3_modal.py::main \\
@@ -174,6 +175,63 @@ def debug_checkpoint():
 # ---------------------------------------------------------------------------
 # Helpers compartidos
 # ---------------------------------------------------------------------------
+def _ensure_weights() -> None:
+    """Descarga el checkpoint YPTF.MoE+Multi (noPS) al Volume si falta, con
+    requests directo (sin pasar por el caché de huggingface_hub que usa
+    symlinks y se rompe entre containers). Antes el contenido de setup() —
+    ahora llamado perezosamente desde _setup_space_env() en lugar de requerir
+    un local_entrypoint de setup manual separado; el panel nunca invoca
+    ::setup, solo ::main/eval_all."""
+    import requests
+
+    # Descargar a WEIGHTS_MOUNT/amt/logs/... para que el symlink amt/logs → WEIGHTS_MOUNT/amt/logs funcione
+    local_ckpt = f"{WEIGHTS_MOUNT}/{CKPT_VOL_PATH}"
+
+    if os.path.exists(local_ckpt) and not os.path.islink(local_ckpt):
+        size_mb = os.path.getsize(local_ckpt) / 1e6
+        if size_mb > 100:
+            return
+        print(f"[load] Archivo existente demasiado pequeño ({size_mb:.1f} MB), re-descargando…")
+    elif os.path.islink(local_ckpt):
+        print("[load] Symlink detectado — eliminando para descargar archivo real…")
+        os.unlink(local_ckpt)
+
+    os.makedirs(os.path.dirname(local_ckpt), exist_ok=True)
+
+    url = f"https://huggingface.co/{MODEL_HF_REPO}/resolve/main/{CKPT_HF_PATH}"
+    print(f"[load] Descargando desde {url} …")
+
+    t0 = time.time()
+    r = requests.get(url, stream=True, timeout=120)
+    r.raise_for_status()
+
+    total_bytes = 0
+    with open(local_ckpt, "wb") as f:
+        for chunk in r.iter_content(chunk_size=8 * 1024 * 1024):
+            f.write(chunk)
+            total_bytes += len(chunk)
+            if total_bytes % (100 * 1024 * 1024) < (8 * 1024 * 1024):
+                print(f"[load]   {total_bytes / 1e6:.0f} MB descargados…")
+
+    elapsed = time.time() - t0
+    size_mb = total_bytes / 1e6
+    print(f"[load] OK — {size_mb:.0f} MB en {elapsed:.0f}s ({size_mb/elapsed:.1f} MB/s)")
+
+    # Verificar que es un archivo PyTorch válido
+    with open(local_ckpt, "rb") as f:
+        magic = f.read(4)
+    if magic[:2] == b"PK" or magic[0:2] == b"\x80\x04":
+        print(f"[load] Verificación OK — magic bytes: {magic!r}")
+    else:
+        print(f"[load] WARNING: magic bytes inesperados: {magic!r}. El checkpoint puede estar corrupto.")
+
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
+    print("[load] Volume commiteado.")
+
+
 def _setup_space_env():
     """Configura sys.path y el symlink logs/ → volume, y crea model_output/.
 
@@ -187,7 +245,11 @@ def _setup_space_env():
                     config/
             examples/
             logs/ (LFS)
+
+    Descarga el checkpoint primero si falta (ver _ensure_weights()).
     """
+    _ensure_weights()
+
     for p in [SPACE_DIR, f"{SPACE_DIR}/amt/src"]:
         if p not in sys.path:
             sys.path.insert(0, p)
@@ -231,69 +293,6 @@ def _model_args():
         "-atc", "1",
         "-pr", PRECISION,
     ]
-
-
-# ---------------------------------------------------------------------------
-# Setup — descarga checkpoint al Volume
-# ---------------------------------------------------------------------------
-@app.function(
-    volumes={WEIGHTS_MOUNT: weights_vol},
-    timeout=1800,
-)
-def setup():
-    """
-    Descarga el checkpoint YPTF.MoE+Multi (noPS) al Volume con requests directo
-    (sin pasar por el caché de huggingface_hub que usa symlinks y se rompe entre containers).
-
-    Ejecutar una sola vez:
-        modal run research/research_yourmt3_modal.py::setup
-    """
-    import requests
-
-    # Descargar a WEIGHTS_MOUNT/amt/logs/... para que el symlink amt/logs → WEIGHTS_MOUNT/amt/logs funcione
-    local_ckpt = f"{WEIGHTS_MOUNT}/{CKPT_VOL_PATH}"
-
-    if os.path.exists(local_ckpt) and not os.path.islink(local_ckpt):
-        size_mb = os.path.getsize(local_ckpt) / 1e6
-        if size_mb > 100:
-            print(f"[setup] Checkpoint real ya existe: {local_ckpt} ({size_mb:.0f} MB)")
-            return
-        print(f"[setup] Archivo existente demasiado pequeño ({size_mb:.1f} MB), re-descargando…")
-    elif os.path.islink(local_ckpt):
-        print("[setup] Symlink detectado — eliminando para descargar archivo real…")
-        os.unlink(local_ckpt)
-
-    os.makedirs(os.path.dirname(local_ckpt), exist_ok=True)
-
-    url = f"https://huggingface.co/{MODEL_HF_REPO}/resolve/main/{CKPT_HF_PATH}"
-    print(f"[setup] Descargando desde {url} …")
-
-    t0 = time.time()
-    r = requests.get(url, stream=True, timeout=120)
-    r.raise_for_status()
-
-    total_bytes = 0
-    with open(local_ckpt, "wb") as f:
-        for chunk in r.iter_content(chunk_size=8 * 1024 * 1024):
-            f.write(chunk)
-            total_bytes += len(chunk)
-            if total_bytes % (100 * 1024 * 1024) < (8 * 1024 * 1024):
-                print(f"[setup]   {total_bytes / 1e6:.0f} MB descargados…")
-
-    elapsed = time.time() - t0
-    size_mb = total_bytes / 1e6
-    print(f"[setup] OK — {size_mb:.0f} MB en {elapsed:.0f}s ({size_mb/elapsed:.1f} MB/s)")
-
-    # Verificar que es un archivo PyTorch válido
-    with open(local_ckpt, "rb") as f:
-        magic = f.read(4)
-    if magic[:2] == b"PK" or magic[0:2] == b"\x80\x04":
-        print(f"[setup] Verificación OK — magic bytes: {magic!r}")
-    else:
-        print(f"[setup] WARNING: magic bytes inesperados: {magic!r}. El checkpoint puede estar corrupto.")
-
-    weights_vol.commit()
-    print("[setup] Volume commiteado.")
 
 
 # ---------------------------------------------------------------------------

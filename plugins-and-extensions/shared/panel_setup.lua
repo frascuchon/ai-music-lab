@@ -3,9 +3,14 @@
 -- unified ai-music-lab.lua container, which owns the window/main loop
 -- and calls M.init() once, M.poll() every frame, M.draw() when active.
 -- Manages the common environment (uv, Modal) and plugin-specific extras
--- (StemsSeparator: demucs, HF secret, SAM prewarm;
---  Audio2Midi: prewarm MIROS/YourMT3+;
---  MidiGenerator: prewarm per-model weights).
+-- (StemsSeparator: demucs, HF secret;
+--  MidiGenerator: abcmidi).
+-- Note: this used to also offer "pre-load weights" buttons per model
+-- (StemsSeparator/SAM, Audio2Midi/MIROS+YourMT3+, MidiGenerator/7 models).
+-- Removed — every model's real generate/transcribe/separate Modal function
+-- now downloads+caches its own weights lazily on first real use, so a
+-- separate manual pre-warm step is pure redundancy; the first real
+-- generation simply absorbs the download time instead.
 
 -- ── PATHS + LIB ──────────────────────────────────────────────────
 local _info      = debug.getinfo(1, "S")
@@ -54,17 +59,6 @@ local PF = {
   demucs       = TMPDIR .. "reaperai_setup_demucs.txt",
   abcmidi      = TMPDIR .. "reaperai_setup_abcmidi.txt",
   hfsecret     = TMPDIR .. "reaperai_setup_hfsecret.txt",
-  prewarm_sam  = TMPDIR .. "reaperai_setup_prewarm_sam.txt",
-  prewarm_mir  = TMPDIR .. "reaperai_setup_prewarm_miros.txt",
-  prewarm_yt3  = TMPDIR .. "reaperai_setup_prewarm_yourmt3.txt",
-  -- MidiGenerator
-  prw_mg_amadeus      = TMPDIR .. "reaperai_setup_prw_mg_amadeus.txt",
-  prw_mg_midi_llm     = TMPDIR .. "reaperai_setup_prw_mg_midi_llm.txt",
-  prw_mg_text2midi    = TMPDIR .. "reaperai_setup_prw_mg_text2midi.txt",
-  prw_mg_chatmusician = TMPDIR .. "reaperai_setup_prw_mg_chatmusician.txt",
-  prw_mg_cm_adapter   = TMPDIR .. "reaperai_setup_prw_mg_cm_adapter.txt",
-  prw_mg_musecoco     = TMPDIR .. "reaperai_setup_prw_mg_musecoco.txt",
-  prw_mg_anticipatory = TMPDIR .. "reaperai_setup_prw_mg_anticipatory.txt",
 }
 
 local function launch(key, subcmd_args)
@@ -121,17 +115,6 @@ local ST = {
   abcmidi_state   = "idle", abcmidi_msg   = "",
   hf_state        = "idle", hf_msg        = "",
   hf_token        = "",
-  prw_sam_state   = "idle", prw_sam_msg   = "", prw_sam_pct   = 0.0,
-  prw_mir_state   = "idle", prw_mir_msg   = "", prw_mir_pct   = 0.0,
-  prw_yt3_state   = "idle", prw_yt3_msg   = "", prw_yt3_pct   = 0.0,
-  -- MidiGenerator
-  prw_mg_amadeus_state      = "idle", prw_mg_amadeus_msg      = "", prw_mg_amadeus_pct      = 0.0,
-  prw_mg_midi_llm_state     = "idle", prw_mg_midi_llm_msg     = "", prw_mg_midi_llm_pct     = 0.0,
-  prw_mg_text2midi_state    = "idle", prw_mg_text2midi_msg    = "", prw_mg_text2midi_pct    = 0.0,
-  prw_mg_chatmusician_state = "idle", prw_mg_chatmusician_msg = "", prw_mg_chatmusician_pct = 0.0,
-  prw_mg_cm_adapter_state   = "idle", prw_mg_cm_adapter_msg   = "", prw_mg_cm_adapter_pct   = 0.0,
-  prw_mg_musecoco_state     = "idle", prw_mg_musecoco_msg     = "", prw_mg_musecoco_pct     = 0.0,
-  prw_mg_anticipatory_state = "idle", prw_mg_anticipatory_msg = "", prw_mg_anticipatory_pct = 0.0,
 }
 
 -- ── POLLING ──────────────────────────────────────────────────────
@@ -158,16 +141,6 @@ local function poll_simple(state_key, msg_key, pf_key)
   local r = common.read_progress_file(PF[pf_key])
   if not r then return end
   if msg_key then ST[msg_key] = r.msg or "" end
-  if r.state == "done" or r.state == "error" then
-    ST[state_key] = r.state
-  end
-end
-
-local function poll_prewarm(state_key, msg_key, pct_key, pf_key)
-  if ST[state_key] ~= "running" then return end
-  local r = common.read_progress_file(PF[pf_key])
-  if not r then return end
-  ST[msg_key] = r.msg or ""; ST[pct_key] = r.pct or 0
   if r.state == "done" or r.state == "error" then
     ST[state_key] = r.state
   end
@@ -215,19 +188,6 @@ function M.poll()
   poll_simple("demucs_state", "demucs_msg", "demucs")
   poll_simple("abcmidi_state", "abcmidi_msg", "abcmidi")
   poll_simple("hf_state",     "hf_msg",     "hfsecret")
-  poll_prewarm("prw_sam_state", "prw_sam_msg", "prw_sam_pct", "prewarm_sam")
-  poll_prewarm("prw_mir_state", "prw_mir_msg", "prw_mir_pct", "prewarm_mir")
-  poll_prewarm("prw_yt3_state", "prw_yt3_msg", "prw_yt3_pct", "prewarm_yt3")
-  -- MidiGenerator prewarms
-  if HAS_MG then
-    poll_prewarm("prw_mg_amadeus_state",      "prw_mg_amadeus_msg",      "prw_mg_amadeus_pct",      "prw_mg_amadeus")
-    poll_prewarm("prw_mg_midi_llm_state",     "prw_mg_midi_llm_msg",     "prw_mg_midi_llm_pct",     "prw_mg_midi_llm")
-    poll_prewarm("prw_mg_text2midi_state",    "prw_mg_text2midi_msg",    "prw_mg_text2midi_pct",    "prw_mg_text2midi")
-    poll_prewarm("prw_mg_chatmusician_state", "prw_mg_chatmusician_msg", "prw_mg_chatmusician_pct", "prw_mg_chatmusician")
-    poll_prewarm("prw_mg_cm_adapter_state", "prw_mg_cm_adapter_msg", "prw_mg_cm_adapter_pct", "prw_mg_cm_adapter")
-    poll_prewarm("prw_mg_musecoco_state",     "prw_mg_musecoco_msg",     "prw_mg_musecoco_pct",     "prw_mg_musecoco")
-    poll_prewarm("prw_mg_anticipatory_state", "prw_mg_anticipatory_msg", "prw_mg_anticipatory_pct", "prw_mg_anticipatory")
-  end
 
   -- Recheck after action finishes
   local function maybe_recheck(key)
@@ -301,35 +261,35 @@ function M.draw()
 
       if not checking then
         if c.name == "uv" and c.status == "missing" then
-          g.same_line()
+          g.same_line_or_wrap(t.sc(90))
           g.begin_disabled(ST.uv_state == "running")
           if g.button("Install uv", t.sc(90), t.ITEM_H) then
             ST.uv_state = "running"; ST.uv_msg = ""; launch("uv", "install-uv")
           end
           g.end_disabled()
           if ST.uv_state == "running" then
-            g.same_line(6)
+            g.same_line_or_wrap(t.sc(80), 6)
             g.text_colored(ST.uv_msg ~= "" and ST.uv_msg:sub(1,40) or "Installing...", "YELLOW")
           elseif ST.uv_state == "error" then
-            g.same_line(6); g.text_colored("Error", "RED")
+            g.same_line_or_wrap(t.sc(40), 6); g.text_colored("Error", "RED")
           end
 
         elseif c.name == "modal-cli" and c.status == "missing" and uv_ok then
-          g.same_line()
+          g.same_line_or_wrap(t.sc(102))
           g.begin_disabled(ST.sync_state == "running")
           if g.button("Install deps", t.sc(102), t.ITEM_H) then
             ST.sync_state = "running"; ST.sync_msg = ""; launch("sync", "sync-deps")
           end
           g.end_disabled()
           if ST.sync_state == "running" then
-            g.same_line(6)
+            g.same_line_or_wrap(t.sc(80), 6)
             g.text_colored(ST.sync_msg ~= "" and ST.sync_msg:sub(1,38) or "Installing...", "YELLOW")
           elseif ST.sync_state == "error" then
-            g.same_line(6); g.text_colored("Error", "RED")
+            g.same_line_or_wrap(t.sc(40), 6); g.text_colored("Error", "RED")
           end
 
         elseif c.name == "modal-auth" and c.status == "missing" then
-          g.same_line()
+          g.same_line_or_wrap(t.sc(50))
           g.begin_disabled(ST.login_state == "running")
           if g.button("Login", t.sc(50), t.ITEM_H) then
             ST.login_state = "running"; ST.login_msg = ""; launch("login", "modal-login")
@@ -337,9 +297,9 @@ function M.draw()
           g.end_disabled()
           if ST.login_state == "running" then
             local msg = ST.login_msg ~= "" and ST.login_msg:sub(1,40) or "Opening browser..."
-            g.same_line(6); g.text_colored(msg, "YELLOW")
+            g.same_line_or_wrap(t.sc(90), 6); g.text_colored(msg, "YELLOW")
           elseif ST.login_state == "error" then
-            g.same_line(6); g.text_colored("Error — retry", "RED")
+            g.same_line_or_wrap(t.sc(80), 6); g.text_colored("Error — retry", "RED")
           end
         end
       end
@@ -365,7 +325,7 @@ function M.draw()
           g.same_line(10); g.text_disabled(c.detail:sub(1, 48))
         end
         if not checking and c.name == "demucs" and c.status == "missing" then
-          g.same_line()
+          g.same_line_or_wrap(t.sc(70))
           g.begin_disabled(ST.demucs_state == "running")
           if g.button("Install", t.sc(70), t.ITEM_H) then
             ST.demucs_state = "running"; ST.demucs_msg = ""
@@ -373,9 +333,9 @@ function M.draw()
           end
           g.end_disabled()
           if ST.demucs_state == "running" then
-            g.same_line(6); g.text_colored("Installing...", "YELLOW")
+            g.same_line_or_wrap(t.sc(80), 6); g.text_colored("Installing...", "YELLOW")
           elseif ST.demucs_state == "error" then
-            g.same_line(6); g.text_colored("Error — check the log", "RED")
+            g.same_line_or_wrap(t.sc(130), 6); g.text_colored("Error — check the log", "RED")
           end
         end
       end
@@ -408,28 +368,6 @@ function M.draw()
     elseif ST.hf_state == "error" then
       g.text_colored("Error: " .. ST.hf_msg:sub(1,55), "RED")
     end
-
-    g.spacing()
-    g.text("Pre-load SAM Audio (optional)")
-    g.text_disabled("~14 GB  |  first time 10-20 min  |  cached in Modal")
-    g.begin_disabled(ST.prw_sam_state == "running")
-    g.next_width(-1)
-    if g.button("Download facebook/sam-audio-large") then
-      ST.prw_sam_state = "running"; ST.prw_sam_pct = 0; ST.prw_sam_msg = ""
-      launch("prewarm_sam", "prewarm-sam --model facebook/sam-audio-large")
-    end
-    g.end_disabled()
-    if ST.prw_sam_state == "running" then
-      g.progress_bar(ST.prw_sam_pct, nil, t.sc(14),
-        string.format("%d%%", math.floor(ST.prw_sam_pct * 100)))
-      if ST.prw_sam_msg ~= "" then
-        g.text_colored(ST.prw_sam_msg:sub(1,68), "YELLOW")
-      end
-    elseif ST.prw_sam_state == "done" then
-      g.text_colored("OK  SAM download complete", "GREEN")
-    elseif ST.prw_sam_state == "error" then
-      g.text_colored("Error: " .. ST.prw_sam_msg:sub(1,55), "RED")
-    end
   end
 
   -- ── SECTION: AUDIO2MIDI ─────────────────────────────────────────
@@ -441,53 +379,7 @@ function M.draw()
     g.spacing()
     g.text_colored("[OK]", "GREEN")
     g.same_line(6)
-    g.text("No local dependencies — weights in Modal Volumes")
-    g.spacing()
-
-    -- Prewarm MIROS
-    g.text("Pre-load MIROS (optional, recommended)")
-    g.text_disabled("~8 GB  |  first time 10-15 min  |  requires A10G in Modal")
-    g.begin_disabled(ST.prw_mir_state == "running")
-    g.next_width(-1)
-    if g.button("Download MIROS weights") then
-      ST.prw_mir_state = "running"; ST.prw_mir_pct = 0; ST.prw_mir_msg = ""
-      launch("prewarm_mir", "prewarm-miros")
-    end
-    g.end_disabled()
-    if ST.prw_mir_state == "running" then
-      g.progress_bar(ST.prw_mir_pct, nil, t.sc(14),
-        string.format("%d%%", math.floor(ST.prw_mir_pct * 100)))
-      if ST.prw_mir_msg ~= "" then
-        g.text_colored(ST.prw_mir_msg:sub(1,68), "YELLOW")
-      end
-    elseif ST.prw_mir_state == "done" then
-      g.text_colored("OK  MIROS cached in Modal Volume", "GREEN")
-    elseif ST.prw_mir_state == "error" then
-      g.text_colored("Error MIROS: " .. ST.prw_mir_msg:sub(1,50), "RED")
-    end
-
-    g.spacing()
-    -- Prewarm YourMT3+
-    g.text("Pre-load YourMT3+ (optional)")
-    g.text_disabled("~2 GB  |  first time 5-10 min")
-    g.begin_disabled(ST.prw_yt3_state == "running")
-    g.next_width(-1)
-    if g.button("Download YourMT3+ weights") then
-      ST.prw_yt3_state = "running"; ST.prw_yt3_pct = 0; ST.prw_yt3_msg = ""
-      launch("prewarm_yt3", "prewarm-yourmt3")
-    end
-    g.end_disabled()
-    if ST.prw_yt3_state == "running" then
-      g.progress_bar(ST.prw_yt3_pct, nil, t.sc(14),
-        string.format("%d%%", math.floor(ST.prw_yt3_pct * 100)))
-      if ST.prw_yt3_msg ~= "" then
-        g.text_colored(ST.prw_yt3_msg:sub(1,68), "YELLOW")
-      end
-    elseif ST.prw_yt3_state == "done" then
-      g.text_colored("OK  YourMT3+ cached in Modal Volume", "GREEN")
-    elseif ST.prw_yt3_state == "error" then
-      g.text_colored("Error YourMT3+: " .. ST.prw_yt3_msg:sub(1,48), "RED")
-    end
+    g.text("No local dependencies — weights downloaded automatically on first use")
   end
 
   -- ── SECTION: MIDI GENERATOR ─────────────────────────────────────
@@ -512,7 +404,7 @@ function M.draw()
           g.same_line(10); g.text_disabled(c.detail:sub(1, 48))
         end
         if not checking and c.status == "missing" then
-          g.same_line()
+          g.same_line_or_wrap(t.sc(70))
           g.begin_disabled(ST.abcmidi_state == "running")
           if g.button("Install", t.sc(70), t.ITEM_H) then
             ST.abcmidi_state = "running"; ST.abcmidi_msg = ""
@@ -520,9 +412,9 @@ function M.draw()
           end
           g.end_disabled()
           if ST.abcmidi_state == "running" then
-            g.same_line(6); g.text_colored("Installing...", "YELLOW")
+            g.same_line_or_wrap(t.sc(80), 6); g.text_colored("Installing...", "YELLOW")
           elseif ST.abcmidi_state == "error" then
-            g.same_line(6)
+            g.same_line_or_wrap(t.sc(150), 6)
             g.text_colored(ST.abcmidi_msg ~= "" and ST.abcmidi_msg:sub(1,55) or "Error — check the log", "RED")
           end
         end
@@ -532,49 +424,7 @@ function M.draw()
     g.spacing()
     g.text_colored("[OK]", "GREEN")
     g.same_line(6)
-    g.text("No other local dependencies — weights in Modal Volumes")
-    g.spacing()
-    g.text("Pre-load weights in Modal (optional — first time may take 10-20 min)")
-    g.text_disabled("Recommended: Amadeus + MIDI-LLM + Anticipatory. MuseCoco = ~16 GB.")
-    g.spacing()
-
-    local MG_PREWARM = {
-      { key="amadeus",      label="Download Amadeus (~2.5 GB)",      cost="A10G",  state="prw_mg_amadeus_state",      msg="prw_mg_amadeus_msg",      pct="prw_mg_amadeus_pct",      subcmd="prewarm-midigen-amadeus" },
-      { key="midi_llm",     label="Download MIDI-LLM (~3.5 GB)",     cost="A10G",  state="prw_mg_midi_llm_state",     msg="prw_mg_midi_llm_msg",     pct="prw_mg_midi_llm_pct",     subcmd="prewarm-midigen-midi-llm" },
-      { key="text2midi",    label="Download text2midi (~900 MB)",     cost="A10G",  state="prw_mg_text2midi_state",    msg="prw_mg_text2midi_msg",    pct="prw_mg_text2midi_pct",    subcmd="prewarm-midigen-text2midi" },
-      { key="chatmusician", label="Download ChatMusician (~13 GB)",   cost="A10G",  state="prw_mg_chatmusician_state", msg="prw_mg_chatmusician_msg", pct="prw_mg_chatmusician_pct", subcmd="prewarm-midigen-chatmusician" },
-      { key="cm_adapter",   label="Download ChatMusician prompt adapter (~3 GB)", cost="T4", state="prw_mg_cm_adapter_state", msg="prw_mg_cm_adapter_msg", pct="prw_mg_cm_adapter_pct", subcmd="prewarm-midigen-chatmusician-adapter" },
-      { key="musecoco",     label="Download MuseCoco (~16 GB)",       cost="A100",  state="prw_mg_musecoco_state",     msg="prw_mg_musecoco_msg",     pct="prw_mg_musecoco_pct",     subcmd="prewarm-midigen-musecoco" },
-      { key="anticipatory", label="Download Anticipatory (~1.6 GB)",  cost="A10G",  state="prw_mg_anticipatory_state", msg="prw_mg_anticipatory_msg", pct="prw_mg_anticipatory_pct", subcmd="prewarm-midigen-anticipatory" },
-    }
-
-    for _, m in ipairs(MG_PREWARM) do
-      g.begin_disabled(ST[m.state] == "running")
-      g.next_width(-1)
-      if g.button(m.label .. "  [" .. m.cost .. "]") then
-        ST[m.state] = "running"; ST[m.msg] = ""; ST[m.pct] = 0
-        -- launch using the correct PF key
-        local pf_map_key = m.state:gsub("_state$","")
-        local f = io.open(PF[pf_map_key], "w")
-        if f then f:write("running|0.00|Starting..."); f:close() end
-        local log = TMPDIR .. "reaperai_setup.log"
-        local cmd = string.format('%s %s %s --progress %s >>%s 2>&1 &',
-          q(PYTHON), q(HELPER), m.subcmd, q(PF[pf_map_key]), q(log))
-        os.execute(cmd)
-      end
-      g.end_disabled()
-      if ST[m.state] == "running" then
-        g.progress_bar(ST[m.pct], nil, t.sc(12),
-          string.format("%d%%", math.floor(ST[m.pct] * 100)))
-        if ST[m.msg] ~= "" then
-          g.text_colored(ST[m.msg]:sub(1,68), "YELLOW")
-        end
-      elseif ST[m.state] == "done" then
-        g.text_colored("OK  cached", "GREEN")
-      elseif ST[m.state] == "error" then
-        g.text_colored("Error: " .. ST[m.msg]:sub(1,60), "RED")
-      end
-    end
+    g.text("No other local dependencies — weights downloaded automatically on first use")
   end
 
   g.spacing(); g.separator(); g.spacing()

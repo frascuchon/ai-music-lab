@@ -19,8 +19,9 @@ Condiciones oficiales (Kreuk et al., 2022):
   - Sampling rate: 16000 Hz, mono
   - Requiere la librería `audiocraft` de Facebook (no está en transformers)
 
-Setup (descarga pesos al Volume, una vez, ~2 GB):
-    modal run research_audiogen_modal.py::setup
+Los pesos de AudioGen-medium (~2 GB) se descargan automáticamente y se
+cachean en el Volume en la primera llamada real — no requiere un paso de
+setup manual.
 
 Generación libre:
     modal run research_audiogen_modal.py::main \\
@@ -76,21 +77,6 @@ app = modal.App("audiogen-inference", image=image)
 # ---------------------------------------------------------------------------
 # Setup — descarga pesos al Volume
 # ---------------------------------------------------------------------------
-@app.function(volumes={WEIGHTS_MOUNT: weights_vol}, gpu=DEFAULT_GPU, timeout=3600)
-def setup(variant: str = DEFAULT_VARIANT):
-    """
-    Descarga pesos de AudioGen-medium (~2 GB). Ejecutar una vez:
-        modal run research_audiogen_modal.py::setup
-    """
-    from audiocraft.models import AudioGen
-
-    t0 = time.time()
-    AudioGen.get_pretrained(variant)
-    print(f"[setup] {variant} descargado en {time.time()-t0:.0f}s")
-    weights_vol.commit()
-    print("[setup] Volume commiteado.")
-
-
 # ---------------------------------------------------------------------------
 # Función Modal principal — generación por lotes
 # ---------------------------------------------------------------------------
@@ -116,6 +102,12 @@ def generate_batch(
     # inside get_pretrained() itself via its `device` kwarg.
     model = AudioGen.get_pretrained(variant, device="cuda")
     sr_out = model.sample_rate  # 16000 Hz
+    # Persist any weights just downloaded to the Volume — there is no
+    # separate setup() step anymore.
+    try:
+        weights_vol.commit()
+    except Exception as e:
+        print(f"[warning] weights_vol.commit() ignorado: {e}")
     print(f"[load_model] {variant} listo ({time.time()-t0:.1f}s)")
 
     results = []

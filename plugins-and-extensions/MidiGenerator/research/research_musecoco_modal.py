@@ -15,10 +15,13 @@ Dependencias clave: fairseq==0.10.2 + pytorch-fast-transformers (CUDA kernels)
   y se mantiene conda Python 3.8 para la inferencia MuseCoco via subprocess.
 → Los pesos se guardan en un Modal Volume (se descargan solo la primera vez).
 
-Setup (primera vez, descarga ~16 GB al Volume):
-    modal run research_musecoco_modal.py::setup_weights
+Los pesos (~16 GB) se descargan automáticamente (y se cachean en el Volume)
+en la primera llamada real a generate()/main() — no requiere un paso de
+setup manual; la primera ejecución simplemente tarda más (hasta ~40 min
+extra para la descarga, ver el timeout ampliado de generate()).
 
-Inferencia (::main requerido porque hay dos local_entrypoints):
+Inferencia (::main requerido porque hay más de un local_entrypoint — ver
+también recover()):
     modal run research_musecoco_modal.py::main --prompt "jazz piano trio, 120 BPM" --out out_muse.mid
     modal run research_musecoco_modal.py::main --prompt "..." --n_samples 2 --out out_muse.mid
 
@@ -133,16 +136,13 @@ app = modal.App("musecoco-inference", image=image)
 
 
 # ---------------------------------------------------------------------------
-# Función de setup — descarga los pesos al Volume (ejecutar solo una vez)
+# Descarga perezosa de pesos al Volume — llamada desde generate() en lugar
+# de requerir un local_entrypoint de setup manual separado. Cada sub-modelo
+# ya comprobaba su propia presencia y se saltaba si ya estaba cacheado, así
+# que esto es seguro de llamar en cada invocación de generate().
 # ---------------------------------------------------------------------------
-@app.function(
-    cpu=4,
-    memory=8192,
-    timeout=7200,  # 2h para los 16 GB
-    volumes={WEIGHTS_MOUNT: weights_vol},
-)
-def download_weights() -> None:
-    """Descarga ambos modelos MuseCoco al Volume. Ejecutar una sola vez."""
+def _ensure_weights() -> None:
+    """Descarga los modelos MuseCoco al Volume si faltan (no-op si ya están)."""
     import time
     from huggingface_hub import hf_hub_download, snapshot_download
 
@@ -185,7 +185,10 @@ def download_weights() -> None:
     gpu="A100-40GB",
     cpu=4,
     memory=16384,
-    timeout=1800,
+    # 2h: covers a cold-start download of the ~16 GB weights (previously a
+    # separate setup_weights() step, now lazy via _ensure_weights() below)
+    # plus the actual stage1/stage2/stage3 inference (~11 min warm).
+    timeout=7200,
     volumes={WEIGHTS_MOUNT: weights_vol},
 )
 def generate(prompt: str, n_samples: int = 1, instruments: list[int] | None = None) -> list[str]:
@@ -202,12 +205,7 @@ def generate(prompt: str, n_samples: int = 1, instruments: list[int] | None = No
     from copy import deepcopy
 
     weights_vol.reload()
-
-    if not os.path.exists(A2M_CKPT):
-        raise RuntimeError(
-            "Pesos no encontrados. Ejecuta primero:\n"
-            "  modal run research_musecoco_modal.py::setup_weights"
-        )
+    _ensure_weights()
 
     stage2_linear = f"{STAGE2_DIR}/linear_mask"
 
@@ -532,20 +530,6 @@ def generate(prompt: str, n_samples: int = 1, instruments: list[int] | None = No
         print(f"  TOTAL:   {t_s1 + t_pre + t_s2:.1f}s")
 
         return rel_paths
-
-
-# ---------------------------------------------------------------------------
-# Local entrypoint de setup
-# ---------------------------------------------------------------------------
-@app.local_entrypoint()
-def setup_weights() -> None:
-    """Descarga los pesos de MuseCoco al Volume (ejecutar solo una vez)."""
-    print("Descargando pesos de MuseCoco al Modal Volume...")
-    print("  text2attribute: ~1.4 GB (pytorch_model.bin)")
-    print("  attribute2music: ~14.5 GB (attribute2music.pt)")
-    print("  Total: ~16 GB  |  Tiempo estimado: 20-40 min (red depende de Modal)")
-    download_weights.remote()
-    print("Setup completado. Ahora puedes ejecutar inferencias.")
 
 
 # ---------------------------------------------------------------------------

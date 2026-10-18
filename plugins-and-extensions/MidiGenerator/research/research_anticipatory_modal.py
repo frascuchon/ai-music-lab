@@ -24,9 +24,9 @@ Coste estimado por clip de 20s (A10G):
 IMPORTANTE: este script tiene múltiples local_entrypoints. Siempre especificar ::main
 para inferencia. modal run sin ::suffix falla cuando hay más de un entrypoint.
 
-Setup (pre-descarga de pesos al Volume, opcional):
-    modal run research_anticipatory_modal.py::setup
-    modal run research_anticipatory_modal.py::setup --model stanford-crfm/music-large-800k
+Los pesos se descargan automáticamente (y se cachean en el Volume,
+best-effort commit — ver _inference_impl) en la primera llamada real; no
+requiere un paso de setup manual.
 
 Inferencia (modo accompaniment):
     modal run research_anticipatory_modal.py::main \
@@ -271,49 +271,6 @@ def run(midi_bytes: bytes, model_name: str = DEFAULT_MODEL, mode: str = "accompa
     return _inference_impl(midi_bytes, model_name, mode, duration=duration,
                            prompt_length=prompt_length, clip_length=clip_length,
                            top_p=top_p, melody_instrument=melody_instrument, seed=seed)
-
-
-# ---------------------------------------------------------------------------
-# Setup — pre-descarga del modelo al Volume (opcional)
-# ---------------------------------------------------------------------------
-@app.function(
-    cpu=4,
-    memory=8192,
-    timeout=3600,
-    volumes={WEIGHTS_MOUNT: weights_vol},
-)
-def download_model(model_name: str = DEFAULT_MODEL) -> None:
-    """Descarga el modelo Anticipatory Music Transformer al Volume. Ejecutar una sola vez por modelo."""
-    import time
-    from huggingface_hub import snapshot_download
-
-    os.environ["HF_HOME"] = HF_CACHE
-    os.makedirs(HF_CACHE, exist_ok=True)
-    weights_vol.reload()
-
-    print(f"Descargando {model_name} a {HF_CACHE}...")
-    t0 = time.time()
-    snapshot_download(
-        repo_id=model_name,
-        cache_dir=HF_CACHE,
-        ignore_patterns=["*.msgpack", "flax_model*", "tf_model*"],
-    )
-    print(f"Descarga completada en {time.time() - t0:.0f}s")
-    weights_vol.commit()
-    print("Volume sincronizado.")
-
-
-@app.local_entrypoint()
-def setup(model: str = DEFAULT_MODEL) -> None:
-    """Pre-descarga un modelo Anticipatory Music Transformer al Volume (evita cold-start en inferencia).
-
-    Ejemplo:
-        modal run research_anticipatory_modal.py::setup
-        modal run research_anticipatory_modal.py::setup --model stanford-crfm/music-large-800k
-    """
-    print(f"Pre-descargando {model} al Volume 'anticipatory-weights'...")
-    download_model.remote(model_name=model)
-    print("Setup completado.")
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,10 @@ Modal.com inference app for SAM-Audio source separation.
 
 Runs facebook/sam-audio-large (or other sizes) on a GPU cloud instance.
 The HuggingFace model cache is stored in a persistent Modal Volume to avoid
-re-downloading the 14 GB large model on every run (~downloaded once, cached forever).
+re-downloading the 14 GB large model on every run (~downloaded once, cached
+forever). No separate pre-download/setup step: the first real `separate()`
+call for a given model pays the download cost (SAM-Audio weights + ImageBind
+~4.47 GB), every call after that hits the Volume-cached weights.
 
 Usage
 -----
@@ -80,54 +83,6 @@ else:
 DEFAULT_MODEL = "facebook/sam-audio-large"
 
 
-def _download_default_model() -> None:
-    """Pre-download the default SAM-Audio model AND all its dependencies at build time.
-
-    Runs during `modal.Image.run_function()` so it has access to the HF secret.
-    SAMAudio.from_pretrained() triggers downloads of:
-      - SAM-Audio weights (~14 GB) → ~/.cache/huggingface
-      - ImageBind weights (4.47 GB) → .checkpoints/imagebind_huge.pth
-      - RoBERTa / other backbone configs
-
-    All of these land on disk during build and are baked into the image,
-    so the runtime from_pretrained() call hits the local cache.
-    """
-    import gc
-    import inspect
-    import os
-
-    import torch
-
-    os.environ["HF_HOME"] = os.path.expanduser("~/.cache/huggingface")
-    from sam_audio import SAMAudio, SAMAudioProcessor
-    from sam_audio.model.base import BaseModel as _SamBase
-
-    # Same runtime patch as in separate() — newer huggingface_hub no longer
-    # passes proxies/resume_download but sam_audio's _from_pretrained requires them.
-    _orig = _SamBase._from_pretrained.__func__
-    _params = inspect.signature(_orig).parameters
-    if any(
-        p in _params and _params[p].default is inspect.Parameter.empty
-        for p in ("proxies", "resume_download")
-    ):
-        def _patched(cls, *, proxies=None, resume_download=False, **kw):
-            return _orig(cls, proxies=proxies, resume_download=resume_download, **kw)
-        _SamBase._from_pretrained = classmethod(_patched)
-        print("Applied runtime patch: added defaults for proxies/resume_download")
-
-    print(f"Pre-downloading default model: {DEFAULT_MODEL}")
-    model = SAMAudio.from_pretrained(
-        DEFAULT_MODEL,
-        torch_dtype=torch.float16,
-        skip_rankers=True,
-    )
-    SAMAudioProcessor.from_pretrained(DEFAULT_MODEL)
-    # Free memory; the model is only needed to trigger file caching
-    del model
-    gc.collect()
-    print(f"Default model cached in image")
-
-
 def _clap_embed(clap_model, laion_data, audio_48k: "torch.Tensor") -> "torch.Tensor":
     """Compute a CLAP audio embedding for a (channels, time) tensor at 48 kHz.
 
@@ -182,12 +137,6 @@ image = (
         "python3 -c 'import base64; exec(base64.b64decode("
         f'"{base64.b64encode(_patch_base_py.encode()).decode()}"'
         ").decode())'"
-    )
-    # Pre-download the default model (facebook/sam-audio-large, ~14 GB) at build
-    # time so it is baked into the image — no download at runtime for the default.
-    .run_function(
-        _download_default_model,
-        secrets=[hf_secret],
     )
     .env({"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     # Modal 1.x client code (mounted into the container at /pkg/modal/) uses
@@ -258,11 +207,10 @@ def separate(
     import torch
     import torchaudio
 
-    # Use persistent volume cache only for non-default models.
-    # The default model is pre-downloaded in the image during build.
-    cache_in_image = model_name == DEFAULT_MODEL
-    if not cache_in_image:
-        os.environ["HF_HOME"] = "/hf_cache"
+    # All models (default or not) cache into the persistent Volume — the
+    # first call for a given model pays the download cost, every call after
+    # that (any container instance) hits the Volume-cached weights.
+    os.environ["HF_HOME"] = "/hf_cache"
 
     SR = 48_000
 
@@ -500,60 +448,8 @@ def separate(
         buf.seek(0)
         return buf.read()
 
-    if not cache_in_image:
-        hf_cache_vol.commit()   # persist newly cached model files from non-default models
+    hf_cache_vol.commit()   # persist newly cached model files for the next call
     return to_wav_bytes(target_out), to_wav_bytes(residual_out)
-
-
-# ---------------------------------------------------------------------------
-# Pre-download helper — warms up the HF cache volume so the first real run
-# doesn't pay the ~14 GB download + ImageBind download cost.
-# ---------------------------------------------------------------------------
-@app.function(
-    gpu=_gpu_type,
-    timeout=1800,
-    volumes={"/hf_cache": hf_cache_vol},
-    secrets=[hf_secret],
-)
-def download_model(model_name: str = "facebook/sam-audio-large") -> None:
-    """Download model weights to the persistent volume (no separation)."""
-    import inspect
-    import os
-    import time
-
-    import torch
-
-    os.environ["HF_HOME"] = "/hf_cache"
-
-    from sam_audio import SAMAudio, SAMAudioProcessor
-    from sam_audio.model.base import BaseModel as _SamBase
-
-    # Same proxies/resume_download patch as in separate()
-    _orig = _SamBase._from_pretrained.__func__
-    _params = inspect.signature(_orig).parameters
-    if any(
-        p in _params and _params[p].default is inspect.Parameter.empty
-        for p in ("proxies", "resume_download")
-    ):
-        def _patched(cls, *, proxies=None, resume_download=False, **kw):
-            return _orig(cls, proxies=proxies, resume_download=resume_download, **kw)
-        _SamBase._from_pretrained = classmethod(_patched)
-
-    t0 = time.time()
-    print(f"Downloading model: {model_name}")
-    SAMAudio.from_pretrained(model_name, torch_dtype=torch.float16, skip_rankers=True)
-    SAMAudioProcessor.from_pretrained(model_name)
-    print(f"Downloaded in {time.time() - t0:.1f}s")
-
-    hf_cache_vol.commit()
-    print("HF cache volume committed.")
-
-
-@app.local_entrypoint()
-def run_download(model: str = "facebook/sam-audio-large") -> None:
-    """Pre-download the model to the Modal volume."""
-    print(f"Pre-downloading {model} to cache volume…")
-    download_model.remote(model_name=model)
 
 
 # ---------------------------------------------------------------------------

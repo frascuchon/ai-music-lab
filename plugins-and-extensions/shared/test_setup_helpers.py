@@ -84,6 +84,69 @@ class TestChkAbcmidi(TestCase):
         self.assertIn("abc2midi", detail)
 
 
+class TestChkDemucs(TestCase):
+    """demucs 4.x dropped its own `soundfile` dependency (switched to
+    `sphn`), but separate_demucs.py/separate_sam.py still import soundfile
+    directly for section extraction. A user could have demucs importable
+    while soundfile is missing — reproducing "No module named 'soundfile'"
+    at --start/--duration time. _chk_demucs must catch that case too, not
+    just whether `import demucs` succeeds."""
+
+    def test_both_importable_reports_ok(self):
+        with patch.object(sh, "_run", side_effect=[(0, "4.0.1", ""), (0, "", "")]):
+            status, detail = sh._chk_demucs()
+        self.assertEqual(status, "ok")
+        self.assertIn("demucs", detail)
+
+    def test_demucs_missing_reports_missing(self):
+        with patch.object(sh, "_run", return_value=(1, "", "ModuleNotFoundError: No module named 'demucs'")):
+            status, detail = sh._chk_demucs()
+        self.assertEqual(status, "missing")
+        self.assertIn("demucs", detail)
+
+    def test_soundfile_missing_reports_missing_even_though_demucs_ok(self):
+        with patch.object(sh, "_run", side_effect=[
+            (0, "4.0.1", ""),
+            (1, "", "ModuleNotFoundError: No module named 'soundfile'"),
+        ]):
+            status, detail = sh._chk_demucs()
+        self.assertEqual(status, "missing")
+        self.assertIn("soundfile", detail)
+
+
+class TestCmdInstallDemucsIncludesSoundfile(TestCase):
+    """install-demucs must pull in soundfile explicitly since demucs 4.x no
+    longer depends on it — otherwise a fresh install still leaves section
+    extraction broken."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="install_demucs_test_"))
+        self.pf = self.tmpdir / "progress.txt"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_pip_install_command_includes_soundfile(self):
+        args = argparse.Namespace(python="/usr/bin/python3", progress=str(self.pf))
+        with patch.object(sh, "_stream") as mock_stream:
+            sh.cmd_install_demucs(args)
+        mock_stream.assert_called_once()
+        cmd = mock_stream.call_args.args[1]
+        self.assertEqual(
+            cmd,
+            ["/usr/bin/python3", "-m", "pip", "install", "--user",
+             "demucs", "torch", "torchaudio", "soundfile"],
+        )
+
+    def test_defaults_to_sys_executable_when_no_python_given(self):
+        args = argparse.Namespace(python=None, progress=str(self.pf))
+        with patch.object(sh, "_stream") as mock_stream:
+            sh.cmd_install_demucs(args)
+        cmd = mock_stream.call_args.args[1]
+        self.assertEqual(cmd[0], sys.executable)
+        self.assertIn("soundfile", cmd)
+
+
 class TestTailErrorMessage(TestCase):
     """_tail_error_message builds the descriptive text _stream() now writes
     on subprocess failure, replacing the old bare 'Error (code N)'."""
@@ -120,8 +183,8 @@ class TestStream(TestCase):
     """_stream() drives a subprocess and writes the progress protocol.
     These tests exercise a REAL subprocess (no mocking of subprocess.Popen)
     to make sure the progress-file protocol (state|pct|msg\\n + extra lines)
-    is preserved exactly, since panel_setup.lua's poll_simple/poll_prewarm
-    parse it with a strict pattern."""
+    is preserved exactly, since panel_setup.lua's poll_simple parses it with
+    a strict pattern."""
 
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="stream_test_"))
@@ -241,6 +304,40 @@ class TestCmdInstallAbcmidi(TestCase):
         content = self._read_progress()
         self.assertTrue(content.startswith("error|"))
         self.assertIn("manually", content)
+
+
+class TestMainCrashGuard(TestCase):
+    """Regression test for a real "Setup tab hangs forever" report: an
+    uncaught exception in a dispatched subcommand (here, a resolved Python
+    path that doesn't actually exist) used to crash the process without
+    ever writing an 'error' line, leaving the progress file stuck on its
+    initial 'running|0.00|...' forever — panel_setup.lua's poll_*()
+    functions have no timeout, so they wait indefinitely. main() must now
+    write an error line before re-raising."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="main_crash_test_"))
+        self.pf = self.tmpdir / "progress.txt"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_uncaught_exception_still_writes_error_line(self):
+        argv = ["setup_helpers.py", "check", "--progress", str(self.pf)]
+        with patch.object(sys, "argv", argv), \
+             patch.object(sh, "cmd_check", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                sh.main()
+        content = self.pf.read_text()
+        self.assertTrue(content.startswith("error|"))
+        self.assertIn("boom", content)
+
+    def test_exception_is_still_propagated_not_swallowed(self):
+        argv = ["setup_helpers.py", "install-abcmidi", "--progress", str(self.pf)]
+        with patch.object(sys, "argv", argv), \
+             patch.object(sh, "cmd_install_abcmidi", side_effect=ValueError("x")):
+            with self.assertRaises(ValueError):
+                sh.main()
 
 
 if __name__ == "__main__":

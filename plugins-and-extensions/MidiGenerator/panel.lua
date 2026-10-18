@@ -15,6 +15,7 @@ local gui     = require("gui")
 local widgets = require("widgets_extra")
 local track_placement = require("track_placement")
 local model_switch = require("model_switch")
+local model_execution = require("model_execution")
 local smf     = dofile(SCRIPT_DIR .. "smf_writer.lua")
 
 local HOME   = common.HOME
@@ -41,6 +42,13 @@ for _, k in ipairs(MG_MODELS) do
 end
 -- MuseCoco uses a different filename on disk
 MG_SCRIPTS["musecoco"] = SCRIPT_DIR .. "research/research_musecoco_modal.py"
+
+-- Plain (non-Modal) local scripts — only for the models that support
+-- --execution local (see shared/lib/model_execution.lua's M.midigen table).
+local MG_LOCAL_SCRIPTS = {
+  text2midi    = SCRIPT_DIR .. "research/research_text2midi.py",
+  anticipatory = SCRIPT_DIR .. "research/research_anticipatory.py",
+}
 
 local MG_GPUS        = { "A10G", "A100-40GB", "T4", "L4" }
 local MG_GPU_DEFAULT = {
@@ -155,6 +163,10 @@ local S = {
   amt_melody_label = "",
   -- AMT: accompaniment seed tracks
   amt_seed_takes   = {},  -- list of {take=take, label="track name"}
+  -- Execution mode: "remote" (Modal) or "local" (this machine). Forced back
+  -- to "remote" whenever the current model doesn't support local (see
+  -- shared/lib/model_execution.lua's M.midigen registry).
+  execution = "remote",
   -- Common parameters
   n_outputs   = 2,
   temperature = MG_TEMP_DEFAULT[MG_MODELS[1]] or 1.0,
@@ -576,7 +588,7 @@ end
 
 local function launch_generate()
   local mk       = model_key()
-  local script   = MG_SCRIPTS[mk]
+  local script   = (S.execution == "local") and MG_LOCAL_SCRIPTS[mk] or MG_SCRIPTS[mk]
   local is_amt   = (mk == "anticipatory")
   local is_text  = not is_amt
   local has_fields = (mk == "amadeus" or mk == "text2midi")
@@ -615,18 +627,24 @@ local function launch_generate()
   local label = "Starting " .. (MG_LABELS[S.model_idx] or mk) .. "..."
   clear_run(label)
   add_log("Model: " .. (MG_LABELS[S.model_idx] or mk))
-  add_log("GPU: " .. S.gpu)
+  add_log("Execution: " .. (S.execution == "local" and "Local (this machine)" or "Remote (Modal)"))
+  if S.execution ~= "local" then add_log("GPU: " .. S.gpu) end
 
   local run_dir = make_run_dir()
 
-  -- Build base command (not yet backgrounded)
+  -- Build base command (not yet backgrounded). --gpu is omitted for local
+  -- execution: the plain research scripts don't accept it and auto-detect
+  -- their own device (MPS/CPU).
   local base = string.format(
     '%s %s --shared-dir %s --script %s --model %s'
-    .. ' --out-dir %s --gpu %s --n-outputs %d --progress %s',
+    .. ' --out-dir %s --execution %s --n-outputs %d --progress %s',
     q(PYTHON), q(MIDIGEN_PY),
     q(SHARED_DIR), q(script), q(mk),
-    q(run_dir), q(S.gpu), S.n_outputs,
+    q(run_dir), q(S.execution), S.n_outputs,
     q(PROGRESS_F))
+  if S.execution ~= "local" then
+    base = base .. " --gpu " .. q(S.gpu)
+  end
 
   local extra = ""
   if is_text then
@@ -706,11 +724,32 @@ function M.draw()
     local new_mk = MG_MODELS[S.model_idx]
     S.gpu = model_switch.default_for(MG_GPU_DEFAULT, new_mk, "A10G")
     S.temperature = model_switch.default_for(MG_TEMP_DEFAULT, new_mk, 1.0)
+    -- Don't leave a stale "local" selection on a model that doesn't support it.
+    local supported_now, _ = model_execution.is_local_supported("midigen", new_mk)
+    if not supported_now then S.execution = "remote" end
   end
   -- The prompt (and its model-specific phrasing advice) doesn't carry over
   -- meaningfully to a different model — e.g. musecoco's instrument-class
   -- phrasing vs. amadeus's descriptive-sentence style.
   S.prompt = model_switch.next_prompt(old_idx, S.model_idx, S.prompt)
+
+  -- ── EXECUTION: LOCAL vs REMOTE ────────────────────────────────────
+  local exec_supported, exec_reason = model_execution.is_local_supported("midigen", mk)
+  if not exec_supported then S.execution = "remote" end
+  g.row_label("Run on:", t.sc(70))
+  g.next_width(-1)
+  if not exec_supported then g.begin_disabled(true) end
+  local EXEC_OPTIONS = { "Remote (Modal)", "Local (this machine)" }
+  local exec_idx = (S.execution == "local") and 2 or 1
+  local new_exec_idx = widgets.combo("##mg_execution", exec_idx, EXEC_OPTIONS)
+  if exec_supported then
+    S.execution = (new_exec_idx == 2) and "local" or "remote"
+  end
+  if not exec_supported then
+    g.end_disabled()
+    g.text_disabled("  Local unavailable: " .. (exec_reason or "not supported"):sub(1, 110))
+  end
+
   g.spacing()
   g.separator(); g.spacing()
 
@@ -911,7 +950,7 @@ function M.draw()
     text2midi    = "A10G: ~$0.05/min  |  academic baseline, low quality",
     chatmusician = "A10G: ~$0.05/min  |  multi-voice ABC; sometimes generates text instead of ABC",
     musecoco     = "A100: ~$0.14/min  |  stage-2 takes ~11 min, uses spawn+poll",
-    anticipatory = "A10G: ~$0.05/min  |  ~15-45 min on CPU → Modal required",
+    anticipatory = "A10G: ~$0.05/min (remote)  |  ~15-45 min on CPU if run Local",
   }
   g.text_disabled(hints[mk] or "")
 

@@ -16,6 +16,7 @@ local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
 local track_placement = require("track_placement")
+local model_execution = require("model_execution")
 
 local HOME       = common.HOME
 local TMPDIR     = common.TMPDIR
@@ -88,6 +89,9 @@ local S = {
   sam_overlap    = 2.0,
   sam_conf       = 0.0,
   sam_cands      = 1,
+  -- Execution: "local" (this machine, MPS/CPU) or "remote" (Modal cloud).
+  -- Only meaningful for SAM models — Demucs is always local, no toggle.
+  execution      = "remote",
   -- runtime
   running        = false,
   pid            = nil,
@@ -358,20 +362,33 @@ local function launch_sam()
   if S.sam_prompt == "" then
     reaper.MB("Write a prompt for SAM Audio.", "Stem Separator", 0); return
   end
-  local sam_script_path = SAM_DIR .. "/" .. SAM_SCRIPT
-  local f = io.open(sam_script_path, "r")
-  if not f then
-    reaper.MB("Not found: " .. sam_script_path ..
-      "\n\nThe plugin must contain modal_sam_audio.py and pyproject.toml.\n" ..
-      "Check the StemsSeparator plugin installation.",
+  local is_local = (S.execution == "local")
+  if is_local and (S.sam_conf > 0 or S.sam_cands > 1) then
+    reaper.MB(
+      "Confidence > 0 or Candidates > 1 require the CLAP/ImageBind rankers,\n"
+      .. "which are not implemented for Local execution.\n\n"
+      .. "Switch to Remote, or reset Confidence to 0 and Candidates to 1.",
       "Stem Separator", 0)
     return
   end
-  f:close()
+  if not is_local then
+    local sam_script_path = SAM_DIR .. "/" .. SAM_SCRIPT
+    local f = io.open(sam_script_path, "r")
+    if not f then
+      reaper.MB("Not found: " .. sam_script_path ..
+        "\n\nThe plugin must contain modal_sam_audio.py and pyproject.toml.\n" ..
+        "Check the StemsSeparator plugin installation.",
+        "Stem Separator", 0)
+      return
+    end
+    f:close()
+  end
   local sam_model_name = SS_SAM_MODEL_NAME[SS_MODELS[S.model_idx]]
-  clear_run("Starting SAM Audio via Modal...")
+  clear_run(is_local and "Starting SAM Audio locally..." or "Starting SAM Audio via Modal...")
   add_log("Prompt: " .. S.sam_prompt)
-  add_log("Model: " .. sam_model_name .. " | GPU: " .. SAM_GPUS[S.sam_gidx])
+  add_log("Execution: " .. (is_local and "Local (this machine)" or "Remote (Modal)"))
+  add_log("Model: " .. sam_model_name
+    .. (is_local and "" or (" | GPU: " .. SAM_GPUS[S.sam_gidx])))
   local section_args = ""
   if S.src_is_section then
     section_args = string.format(" --start %.6f --duration %.6f",
@@ -382,14 +399,14 @@ local function launch_sam()
   local cmd = string.format(
     '%s %s --sam-dir %s --shared-dir %s --input %s --prompt %s --model %s --gpu %s' ..
     ' --steps %d --ode-method %s --chunk %.1f --overlap %.1f' ..
-    ' --confidence %.2f --candidates %d%s --outdir %s --progress %s >>%s 2>&1 &',
+    ' --confidence %.2f --candidates %d%s --outdir %s --execution %s --progress %s >>%s 2>&1 &',
     q(PYTHON), q(SAM_PY), q(SAM_DIR), q(SHARED_DIR),
     q(S.src), q(S.sam_prompt),
     q(sam_model_name), q(SAM_GPUS[S.sam_gidx]),
     S.sam_steps, ODE_METHODS[S.sam_oidx],
     S.sam_chunk, S.sam_overlap, S.sam_conf, S.sam_cands,
-    section_args, q(S.outdir), q(PROGRESS_F), q(LOG_F))
-  add_log("Launching Modal process...")
+    section_args, q(S.outdir), q(S.execution), q(PROGRESS_F), q(LOG_F))
+  add_log("Launching " .. (is_local and "local" or "Modal") .. " process...")
   S.pid = common.launch_tracked(cmd)
 end
 
@@ -519,6 +536,27 @@ function M.draw()
   g.next_width(-1)
   S.model_idx = widgets.combo("##ss_model", S.model_idx, SS_LABELS)
   g.spacing()
+
+  -- ── EXECUTION (Local / Remote) — SAM Audio only. Demucs is always local
+  -- (no remote backend exists at all), so no toggle is shown for it. ──
+  if is_sam then
+    local sam_key = SS_MODELS[S.model_idx]
+    local exec_ok, exec_reason = model_execution.is_local_supported("stemseparator", sam_key)
+    g.row_label("Execution:", t.sc(68))
+    if not exec_ok then g.begin_disabled(true) end
+    g.next_width(t.sc(150))
+    local EXEC_OPTS = { "remote", "local" }
+    local EXEC_LABELS = { "Remote (Modal)", "Local (MPS/CPU)" }
+    local exec_idx = (S.execution == "local") and 2 or 1
+    local new_exec_idx = widgets.combo("##ss_exec", exec_idx, EXEC_LABELS)
+    if exec_ok then S.execution = EXEC_OPTS[new_exec_idx] else S.execution = "remote" end
+    if not exec_ok then
+      g.end_disabled()
+      g.same_line(t.sc(10))
+      g.text_disabled("Local unavailable: " .. exec_reason)
+    end
+    g.spacing()
+  end
 
   -- ── SOURCE (fixed, directly below Model — same position across every
   -- tab that has a source file to pick) ────────────────────────────

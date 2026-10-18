@@ -16,10 +16,16 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import TestCase
+from unittest import TestCase, mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import midigen  # noqa: E402
+
+# Real shared/ dir (contains pyproject.toml and model_execution.py) — used
+# by the --execution local tests below so midigen.py's
+# `from model_execution import is_local_supported` import succeeds exactly
+# as it would in production, without duplicating the registry in a fixture.
+REAL_SHARED_DIR = Path(__file__).resolve().parent.parent / "shared"
 
 
 def _make_args(**overrides) -> argparse.Namespace:
@@ -130,6 +136,160 @@ class TestPickErrorMessage(TestCase):
         )
         self.assertIn("No .mid files found in /tmp/out", msg)
         self.assertNotIn("Possible cause", msg)
+
+
+class TestBuildLocalCmd(TestCase):
+    """--execution local command building (text2midi, anticipatory only)."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="midigen_local_test_"))
+        self.uv_bin = Path("/usr/bin/uv")
+        self.out_dir = self.tmpdir / "out"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_text2midi_builds_plain_script_command(self):
+        script = self.tmpdir / "research" / "research_text2midi.py"
+        args = _make_args(model="text2midi", temperature=0.9, n_outputs=2)
+        cmd = midigen._build_local_cmd(self.uv_bin, script, self.out_dir, args, args.prompt)
+
+        self.assertIn(str(script), cmd)
+        self.assertIn("--prompt", cmd)
+        self.assertIn(args.prompt, cmd)
+        self.assertIn("--temperature", cmd)
+        self.assertIn("0.9", cmd)
+        self.assertIn("--n_outputs", cmd)
+        self.assertIn("2", cmd)
+        self.assertNotIn("--gpu", cmd)
+        self.assertFalse(any("modal" in c.lower() for c in cmd))
+        # uv project points at the script's own dir (research/), not shared/.
+        self.assertIn("--project", cmd)
+        self.assertEqual(cmd[cmd.index("--project") + 1], str(script.parent))
+
+    def test_anticipatory_missing_seed_raises(self):
+        script = self.tmpdir / "research" / "research_anticipatory.py"
+        args = _make_args(model="anticipatory", seed="", mode="accompaniment")
+        with self.assertRaises(FileNotFoundError):
+            midigen._build_local_cmd(self.uv_bin, script, self.out_dir, args, "")
+
+    def test_anticipatory_accompaniment_builds_command_without_duration(self):
+        script = self.tmpdir / "research" / "research_anticipatory.py"
+        seed = self.tmpdir / "seed.mid"
+        seed.write_bytes(b"fake midi bytes")
+        args = _make_args(
+            model="anticipatory", seed=str(seed), mode="accompaniment",
+            prompt_length=5, clip_length=20, top_p=0.95,
+            melody_instrument=0, n_outputs=3,
+        )
+        cmd = midigen._build_local_cmd(self.uv_bin, script, self.out_dir, args, "")
+
+        self.assertIn(str(script), cmd)
+        self.assertIn("--input", cmd)
+        self.assertEqual(cmd[cmd.index("--input") + 1], str(seed))
+        self.assertIn("--mode", cmd)
+        self.assertEqual(cmd[cmd.index("--mode") + 1], "accompaniment")
+        self.assertIn("--multiplicity", cmd)
+        self.assertEqual(cmd[cmd.index("--multiplicity") + 1], "3")
+        self.assertIn("--clip-length", cmd)
+        self.assertNotIn("--duration", cmd)
+        self.assertNotIn("--gpu", cmd)
+
+    def test_anticipatory_continuation_includes_duration(self):
+        script = self.tmpdir / "research" / "research_anticipatory.py"
+        seed = self.tmpdir / "seed.mid"
+        seed.write_bytes(b"fake midi bytes")
+        args = _make_args(
+            model="anticipatory", seed=str(seed), mode="continuation",
+            clip_length=15,
+        )
+        cmd = midigen._build_local_cmd(self.uv_bin, script, self.out_dir, args, "")
+
+        self.assertIn("--duration", cmd)
+        self.assertEqual(cmd[cmd.index("--duration") + 1], "15")
+
+    def test_unsupported_model_raises_value_error(self):
+        script = self.tmpdir / "research" / "research_musecoco.py"
+        args = _make_args(model="musecoco")
+        with self.assertRaises(ValueError):
+            midigen._build_local_cmd(self.uv_bin, script, self.out_dir, args, "prompt")
+
+
+class TestExecutionDispatch(TestCase):
+    """main()'s --execution local|remote routing, exercised end-to-end
+    through argument parsing (not just the _build_cmd/_build_local_cmd
+    helpers in isolation)."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="midigen_dispatch_test_"))
+        self.out_dir = self.tmpdir / "out"
+        self.progress = self.tmpdir / "progress.txt"
+        self.script = self.tmpdir / "research_amadeus_modal.py"
+        self.script.write_text("# fake")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _argv(self, model, extra=None):
+        argv = [
+            "midigen.py",
+            "--shared-dir", str(REAL_SHARED_DIR),
+            "--script", str(self.script),
+            "--model", model,
+            "--out-dir", str(self.out_dir),
+            "--progress", str(self.progress),
+            "--prompt", "a test prompt",
+        ]
+        return argv + (extra or [])
+
+    def test_local_execution_rejected_for_unsupported_model(self):
+        """musecoco has local_supported=False in shared/model_execution.py —
+        --execution local must fail fast with the registry's reason, and
+        must never reach subprocess.Popen (Modal/local launch)."""
+        with mock.patch.object(sys, "argv", self._argv("musecoco", ["--execution", "local"])), \
+             mock.patch("subprocess.Popen", side_effect=AssertionError("must not launch a subprocess")):
+            rc = midigen.main()
+
+        self.assertEqual(rc, 1)
+        progress_text = self.progress.read_text()
+        self.assertIn("error", progress_text)
+        self.assertIn("Local execution not supported for musecoco", progress_text)
+
+    def test_omitting_execution_defaults_to_remote_build_cmd(self):
+        """Regression guard: with --execution omitted, main() must still
+        route through _build_cmd (the pre-existing Modal path) rather than
+        _build_local_cmd — i.e. this change is purely additive."""
+        with mock.patch.object(sys, "argv", self._argv("amadeus")), \
+             mock.patch.object(midigen, "_find_uv", return_value=Path("/usr/bin/uv")), \
+             mock.patch.object(midigen, "_build_cmd", side_effect=ValueError("stop here")) as m_remote, \
+             mock.patch.object(midigen, "_build_local_cmd") as m_local:
+            rc = midigen.main()
+
+        self.assertEqual(rc, 1)  # ValueError from the mock short-circuits main()
+        m_remote.assert_called_once()
+        m_local.assert_not_called()
+
+    def test_explicit_remote_execution_routes_to_build_cmd(self):
+        with mock.patch.object(sys, "argv", self._argv("amadeus", ["--execution", "remote"])), \
+             mock.patch.object(midigen, "_find_uv", return_value=Path("/usr/bin/uv")), \
+             mock.patch.object(midigen, "_build_cmd", side_effect=ValueError("stop here")) as m_remote, \
+             mock.patch.object(midigen, "_build_local_cmd") as m_local:
+            rc = midigen.main()
+
+        self.assertEqual(rc, 1)
+        m_remote.assert_called_once()
+        m_local.assert_not_called()
+
+    def test_local_execution_for_supported_model_routes_to_build_local_cmd(self):
+        with mock.patch.object(sys, "argv", self._argv("text2midi", ["--execution", "local"])), \
+             mock.patch.object(midigen, "_find_uv", return_value=Path("/usr/bin/uv")), \
+             mock.patch.object(midigen, "_build_cmd") as m_remote, \
+             mock.patch.object(midigen, "_build_local_cmd", side_effect=ValueError("stop here")) as m_local:
+            rc = midigen.main()
+
+        self.assertEqual(rc, 1)
+        m_local.assert_called_once()
+        m_remote.assert_not_called()
 
 
 if __name__ == "__main__":

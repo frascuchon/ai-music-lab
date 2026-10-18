@@ -16,6 +16,10 @@ import unittest
 import wave
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import separate_demucs as sd  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # config
@@ -266,6 +270,50 @@ class TestNonSilentAudio(TestCase):
             len(stems), 0,
             msg=f"No stems produced in {stem_dir}"
         )
+
+
+class TestMissingSoundfileOnSectionExtraction(TestCase):
+    """Regression test: demucs 4.x no longer depends on `soundfile` itself
+    (it switched to `sphn`), so a user who had demucs installed before that
+    change, or whose install skipped it, can hit "No module named
+    'soundfile'" the first time they cut a --start/--duration section — the
+    exact report that prompted this fix. extract_section() is mocked to
+    raise ModuleNotFoundError directly (in-process, via direct import)
+    rather than trying to uninstall soundfile from the real environment, so
+    this passes regardless of whether soundfile happens to be installed
+    here."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="test_demucs_missing_sf_"))
+        self.pf = self.tmpdir / "progress.txt"
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_module_not_found_error_gives_actionable_message(self):
+        src = self.tmpdir / "src.wav"
+        make_sine_wav(src, duration=1.0)
+        argv = [
+            "separate_demucs.py",
+            "--input", str(src),
+            "--model", "htdemucs",
+            "--outdir", str(self.tmpdir / "out"),
+            "--start", "1.0",
+            "--duration", "2.0",
+            "--progress", str(self.pf),
+        ]
+        with patch.object(sys, "argv", argv), \
+             patch.object(sd, "extract_section",
+                          side_effect=ModuleNotFoundError("No module named 'soundfile'", name="soundfile")):
+            rc = sd.main()
+        self.assertEqual(rc, 1)
+        content = self.pf.read_text()
+        self.assertTrue(content.startswith("error|"))
+        self.assertIn("soundfile", content)
+        self.assertIn("Setup", content)
+        # Not just the raw exception text — must be actionable.
+        self.assertNotIn("Error extracting section: No module named", content)
 
 
 class TestInvalidInput(TestCase):
