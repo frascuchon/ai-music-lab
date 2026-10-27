@@ -337,9 +337,11 @@ def generate(
     temperature: float = 1.25,
     threshold: float = 0.99,
     generation_length: int = 1024,
+    base_seed: int = 0,
 ) -> list[list[bytes]]:
     """
-    Genera n_outputs variantes MIDI para cada prompt.
+    Genera n_outputs variantes MIDI para cada prompt. La variante v usa la
+    semilla base_seed + v (base_seed=0 mantiene la evaluación reproducible).
 
     temperature: 1.25 (default demo), rango 0.5-3.0
     threshold: 0.99 (default demo), rango 0.5-1.0 para top_p
@@ -369,7 +371,7 @@ def generate(
                 midi_bytes = _infer_one(
                     config, model, vocab, tokenizer, encoder, device,
                     prompt=prompt,
-                    seed=v,
+                    seed=base_seed + v,
                     temperature=temperature,
                     threshold=threshold,
                     generation_length=generation_length,
@@ -401,9 +403,13 @@ def main(
     threshold: float = 0.99,
     generation_length: int = 1024,
     force: bool = False,
+    base_seed: int = -1,
 ):
     """
     Genera MIDI para un prompt y guarda en out-dir.
+
+    base_seed < 0 (default) elige una semilla aleatoria, de modo que repetir
+    la misma petición produce variantes distintas.
 
     Ejemplos:
         modal run research/research_amadeus_modal.py::main \\
@@ -436,12 +442,18 @@ set in the key of E major and a 4/4 time signature." \\
     print(f"[main] n_outputs={n_outputs}  temperature={temperature}  "
           f"threshold={threshold}  generation_length={generation_length}")
 
+    if base_seed < 0:
+        import random
+        base_seed = random.randrange(2**31)
+    print(f"[main] base_seed={base_seed}")
+
     results = generate.remote(
         [prompt],
         n_outputs=n_outputs,
         temperature=temperature,
         threshold=threshold,
         generation_length=generation_length,
+        base_seed=base_seed,
     )
     output_list = results[0]
 

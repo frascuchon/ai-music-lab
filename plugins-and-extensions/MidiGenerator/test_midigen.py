@@ -56,6 +56,18 @@ class TestBuildCmd(TestCase):
         self.assertIn("--force", cmd)
         self.assertNotIn("--gpu", cmd)
 
+    def test_amadeus_gets_a_fresh_base_seed_each_run(self):
+        """Regression: a fixed seed made repeated generations identical."""
+        args = _make_args(model="amadeus")
+        seeds = set()
+        for _ in range(5):
+            cmd = midigen._build_cmd(
+                self.uv_bin, self.shared_dir, self.script_path, self.out_dir,
+                args, args.prompt,
+            )
+            seeds.add(cmd[cmd.index("--base-seed") + 1])
+        self.assertGreater(len(seeds), 1)
+
     def test_anticipatory_missing_seed_raises(self):
         """Anticipatory needs an existing seed MIDI; a missing one must be a
         hard error rather than a silently unseeded run."""

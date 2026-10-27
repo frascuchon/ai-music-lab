@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 import re
 import shutil
 import sys
@@ -92,6 +93,9 @@ _SUPPORTS_GPU = {"anticipatory"}
 
 # text_dir models that accept --force
 _SUPPORTS_FORCE = {"amadeus"}
+
+# text_dir models whose ::main accepts --base-seed
+_SUPPORTS_BASE_SEED = {"amadeus"}
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +206,10 @@ def _build_cmd(
         ]
         if model in _SUPPORTS_FORCE:
             cmd += ["--force"]
+        if model in _SUPPORTS_BASE_SEED:
+            # Fresh seed per run: a fixed seed made every generation of the
+            # same prompt return the identical MIDI.
+            cmd += ["--base-seed", str(random.randrange(2**31))]
         if model in _SUPPORTS_GPU and args.gpu:
             cmd += ["--gpu", args.gpu]
 
