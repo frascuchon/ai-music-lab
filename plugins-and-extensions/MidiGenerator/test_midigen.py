@@ -1,14 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for midigen.py's command-building and error-message selection —
-covering the seed-file handling for ChatMusician's harmonize/simplify flow.
-
-Regression context: a seed .mid that goes missing between being written by
-smf_writer.lua and the command being built used to be silently dropped
-(--input-file just omitted), leaving the run to proceed unseeded with no
-warning at all. That silent path is now a hard FileNotFoundError, mirroring
-the Anticipatory (seed_file) contract right below it in _build_cmd.
-"""
+"""Tests for midigen.py's command-building, error-message selection and
+--execution local|remote routing (Amadeus and Anticipatory)."""
 
 import argparse
 import shutil
@@ -30,63 +23,47 @@ REAL_SHARED_DIR = Path(__file__).resolve().parent.parent / "shared"
 
 def _make_args(**overrides) -> argparse.Namespace:
     defaults = dict(
-        model="chatmusician", prompt="Simplify this melody.",
-        n_outputs=2, temperature=0.2, gpu="A10G", force=False,
-        seed_file="", seed="", mode="accompaniment",
+        model="amadeus", prompt="A calm piano piece.",
+        n_outputs=2, temperature=1.0, gpu="A10G", force=False,
+        seed="", mode="accompaniment",
         prompt_length=5, clip_length=20, top_p=0.95, melody_instrument=0,
     )
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
 
 
-class TestBuildCmdSeedHandling(TestCase):
+class TestBuildCmd(TestCase):
 
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="midigen_test_"))
         self.uv_bin = Path("/usr/bin/uv")
         self.shared_dir = self.tmpdir / "shared"
-        self.script_path = self.tmpdir / "research_chatmusician_modal.py"
+        self.script_path = self.tmpdir / "research_amadeus_modal.py"
         self.out_dir = self.tmpdir / "out"
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
-    def test_chatmusician_existing_seed_file_is_included(self):
-        seed = self.tmpdir / "seed.mid"
-        seed.write_bytes(b"fake midi bytes")
-        args = _make_args(seed_file=str(seed))
+    def test_amadeus_builds_text_dir_command(self):
+        args = _make_args(model="amadeus", n_outputs=3, temperature=0.8)
         cmd = midigen._build_cmd(
             self.uv_bin, self.shared_dir, self.script_path, self.out_dir,
-            args, args.prompt, "",
+            args, args.prompt,
         )
-        self.assertIn("--input-file", cmd)
-        self.assertEqual(cmd[cmd.index("--input-file") + 1], str(seed))
-
-    def test_chatmusician_missing_seed_file_raises(self):
-        missing = self.tmpdir / "does_not_exist.mid"
-        args = _make_args(seed_file=str(missing))
-        with self.assertRaises(FileNotFoundError):
-            midigen._build_cmd(
-                self.uv_bin, self.shared_dir, self.script_path, self.out_dir,
-                args, args.prompt, "",
-            )
-
-    def test_chatmusician_no_seed_requested_omits_flag(self):
-        args = _make_args(seed_file="")
-        cmd = midigen._build_cmd(
-            self.uv_bin, self.shared_dir, self.script_path, self.out_dir,
-            args, args.prompt, "",
-        )
-        self.assertNotIn("--input-file", cmd)
+        self.assertEqual(cmd[cmd.index("--prompt") + 1], args.prompt)
+        self.assertEqual(cmd[cmd.index("--n-outputs") + 1], "3")
+        self.assertEqual(cmd[cmd.index("--temperature") + 1], "0.8")
+        self.assertIn("--force", cmd)
+        self.assertNotIn("--gpu", cmd)
 
     def test_anticipatory_missing_seed_raises(self):
-        """Regression guard: the pre-existing Anticipatory contract must
-        keep raising exactly like it did before this change."""
+        """Anticipatory needs an existing seed MIDI; a missing one must be a
+        hard error rather than a silently unseeded run."""
         args = _make_args(model="anticipatory", seed="")
         with self.assertRaises(FileNotFoundError):
             midigen._build_cmd(
                 self.uv_bin, self.shared_dir, self.script_path, self.out_dir,
-                args, args.prompt, "",
+                args, args.prompt,
             )
 
 
@@ -95,10 +72,10 @@ class TestPickErrorMessage(TestCase):
     def test_nonzero_exit_prefers_captured_error_line(self):
         msg = midigen._pick_error_message(
             1, Path("/tmp/out"),
-            last_error_line="midi2abc failed:\nno notes found",
+            last_error_line="seed conversion failed:\nno notes found",
             last_warn_line=None,
         )
-        self.assertEqual(msg, "midi2abc failed:\nno notes found")
+        self.assertEqual(msg, "seed conversion failed:\nno notes found")
 
     def test_nonzero_exit_falls_back_to_generic_message(self):
         msg = midigen._pick_error_message(
@@ -116,18 +93,18 @@ class TestPickErrorMessage(TestCase):
         self.assertIn("input_file no existe: /tmp/seed.mid", msg)
 
     def test_zero_exit_no_outputs_prefers_error_over_warn_line(self):
-        """Regression: research_chatmusician_modal.py can legitimately exit 0
+        """Regression: a research_*_modal.py script can legitimately exit 0
         while every candidate failed internally (each logs its own captured
         "ERROR: ..." line but the overall process used to still report
         success). When both an ERROR: and a [warn] line were seen, the more
         specific ERROR: line must win."""
         msg = midigen._pick_error_message(
             0, Path("/tmp/out"),
-            last_error_line="[1/1] v0 generation failed: No ABC notation found",
+            last_error_line="[1/1] v0 generation failed: no notes generated",
             last_warn_line="input_file no existe: /tmp/seed.mid",
         )
         self.assertIn("No .mid files found in /tmp/out", msg)
-        self.assertIn("No ABC notation found", msg)
+        self.assertIn("no notes generated", msg)
         self.assertNotIn("input_file no existe", msg)
 
     def test_zero_exit_no_outputs_no_warn_captured(self):
@@ -139,7 +116,7 @@ class TestPickErrorMessage(TestCase):
 
 
 class TestBuildLocalCmd(TestCase):
-    """--execution local command building (text2midi, anticipatory only)."""
+    """--execution local command building (anticipatory only)."""
 
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="midigen_local_test_"))
@@ -148,24 +125,6 @@ class TestBuildLocalCmd(TestCase):
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
-
-    def test_text2midi_builds_plain_script_command(self):
-        script = self.tmpdir / "research" / "research_text2midi.py"
-        args = _make_args(model="text2midi", temperature=0.9, n_outputs=2)
-        cmd = midigen._build_local_cmd(self.uv_bin, script, self.out_dir, args, args.prompt)
-
-        self.assertIn(str(script), cmd)
-        self.assertIn("--prompt", cmd)
-        self.assertIn(args.prompt, cmd)
-        self.assertIn("--temperature", cmd)
-        self.assertIn("0.9", cmd)
-        self.assertIn("--n_outputs", cmd)
-        self.assertIn("2", cmd)
-        self.assertNotIn("--gpu", cmd)
-        self.assertFalse(any("modal" in c.lower() for c in cmd))
-        # uv project points at the script's own dir (research/), not shared/.
-        self.assertIn("--project", cmd)
-        self.assertEqual(cmd[cmd.index("--project") + 1], str(script.parent))
 
     def test_anticipatory_missing_seed_raises(self):
         script = self.tmpdir / "research" / "research_anticipatory.py"
@@ -209,8 +168,8 @@ class TestBuildLocalCmd(TestCase):
         self.assertEqual(cmd[cmd.index("--duration") + 1], "15")
 
     def test_unsupported_model_raises_value_error(self):
-        script = self.tmpdir / "research" / "research_musecoco.py"
-        args = _make_args(model="musecoco")
+        script = self.tmpdir / "research" / "research_amadeus.py"
+        args = _make_args(model="amadeus")
         with self.assertRaises(ValueError):
             midigen._build_local_cmd(self.uv_bin, script, self.out_dir, args, "prompt")
 
@@ -243,17 +202,17 @@ class TestExecutionDispatch(TestCase):
         return argv + (extra or [])
 
     def test_local_execution_rejected_for_unsupported_model(self):
-        """musecoco has local_supported=False in shared/model_execution.py —
+        """amadeus has local_supported=False in shared/model_execution.py —
         --execution local must fail fast with the registry's reason, and
         must never reach subprocess.Popen (Modal/local launch)."""
-        with mock.patch.object(sys, "argv", self._argv("musecoco", ["--execution", "local"])), \
+        with mock.patch.object(sys, "argv", self._argv("amadeus", ["--execution", "local"])), \
              mock.patch("subprocess.Popen", side_effect=AssertionError("must not launch a subprocess")):
             rc = midigen.main()
 
         self.assertEqual(rc, 1)
         progress_text = self.progress.read_text()
         self.assertIn("error", progress_text)
-        self.assertIn("Local execution not supported for musecoco", progress_text)
+        self.assertIn("Local execution not supported for amadeus", progress_text)
 
     def test_omitting_execution_defaults_to_remote_build_cmd(self):
         """Regression guard: with --execution omitted, main() must still
@@ -281,7 +240,10 @@ class TestExecutionDispatch(TestCase):
         m_local.assert_not_called()
 
     def test_local_execution_for_supported_model_routes_to_build_local_cmd(self):
-        with mock.patch.object(sys, "argv", self._argv("text2midi", ["--execution", "local"])), \
+        seed = self.tmpdir / "seed.mid"
+        seed.write_bytes(b"fake midi bytes")
+        with mock.patch.object(sys, "argv", self._argv(
+                 "anticipatory", ["--execution", "local", "--seed", str(seed)])), \
              mock.patch.object(midigen, "_find_uv", return_value=Path("/usr/bin/uv")), \
              mock.patch.object(midigen, "_build_cmd") as m_remote, \
              mock.patch.object(midigen, "_build_local_cmd", side_effect=ValueError("stop here")) as m_local:

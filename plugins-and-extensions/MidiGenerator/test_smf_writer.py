@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Tests for smf_writer.lua (write_midi_from_take / write_combined_midi) —
-the Lua SMF exporter used for the ChatMusician "Harmonize seed" and the
-Anticipatory melody/accompaniment seed when the source is an in-project
-MIDI take rather than a .mid file on disk (panel.lua's _export_take_to_tmp
-and the AMT seed-combining path).
+the Lua SMF exporter used for the Anticipatory melody/accompaniment seed
+when the source is an in-project MIDI take rather than a .mid file on disk
+(panel.lua's AMT seed-combining path).
 
 Runs gen_test_smf.lua (a REAPER-API mock + harness, see that file) via the
 system `lua` interpreter, then validates the resulting .mid with mido/
-pretty_midi — the same real MIDI parsers ChatMusician's local pipeline
-(tools/midi_abc.py -> midi2abc) and REAPER's InsertMedia ultimately rely on.
+pretty_midi — the same real MIDI parsers the Anticipatory pipeline and
+REAPER's InsertMedia ultimately rely on.
 
 Requires the Lua interpreter (`lua`) on PATH; skips otherwise.
 """
@@ -89,7 +88,7 @@ class TestWriteMidiFromTake(TestCase):
         self.assertAlmostEqual(mido.tempo2bpm(tempo_msgs[0].tempo), 96.0, places=1)
 
     def test_output_is_parseable_abc_via_midi2abc(self):
-        """Integration guard for the actual ChatMusician seed pipeline: the
+        """Integration guard: the
         exported take must survive a real midi2abc pass (not just mido's
         lenient parser) and produce ABC with a key field, since abc2midi
         cannot determine pitches without one."""
@@ -112,7 +111,7 @@ class TestWriteMidiFromTakeRejectsEmptyTake(TestCase):
     """Regression for a real user report: a seed exported from a REAPER item
     with zero MIDI notes (wrong item/track selected) used to be written as a
     'successful' but content-free .mid, which panel.lua then logged as
-    'Seed exported: ...' — the ChatMusician run would later fail with a
+    'Seed exported: ...' — the generation run would later fail with a
     misleading 'No .mid files found' error with no hint the seed was empty.
     write_midi_from_take must now reject this at export time instead."""
 

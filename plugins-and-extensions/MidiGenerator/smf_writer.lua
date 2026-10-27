@@ -1,6 +1,6 @@
 -- MidiGenerator/smf_writer.lua — Standard MIDI File (SMF) writer used to
--- export in-project REAPER MIDI takes (ChatMusician seed harmonization,
--- Anticipatory melody+accompaniment seed) to disk as .mid files.
+-- export in-project REAPER MIDI takes (Anticipatory melody+accompaniment
+-- seed) to disk as .mid files.
 --
 -- Extracted from panel.lua into its own module so it can be exercised by
 -- test_smf_writer.lua without loading the whole GUI panel (gfx/theme/gui

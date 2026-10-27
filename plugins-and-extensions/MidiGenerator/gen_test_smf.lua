@@ -3,8 +3,8 @@
 -- Mocks the `reaper` global (Master_GetTempo, MIDI_GetProjTimeFromPPQPos,
 -- MIDI_CountEvts, MIDI_GetNote) with a synthetic MIDI take, runs
 -- smf_writer.lua's write_midi_from_take()/write_combined_midi() exactly as
--- panel.lua does when exporting an in-project MIDI take (ChatMusician
--- "Harmonize seed" and Anticipatory melody/accompaniment seed), and writes
+-- panel.lua does when exporting an in-project MIDI take (Anticipatory
+-- melody/accompaniment seed), and writes
 -- the resulting .mid to disk so the Python test can validate it with
 -- mido/pretty_midi.
 --
