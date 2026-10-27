@@ -11,7 +11,7 @@ A collection of REAPER plugins that bring AI-powered audio and MIDI tools direct
 | **Text2Audio** | Generate or edit audio from a text description | Stable Audio Open, Foundation-1, ACE-Step, MusicGen, and more |
 | **StemsSeparator** | Separate any audio into stems (vocals, drums, bass, other…) | Demucs (local), SAM Audio (Modal) |
 
-A shared **Setup** wizard handles the full environment configuration — Python, uv, Modal auth, HF secrets, and optional weight pre-loading — for all plugins from a single UI.
+A shared **Setup** wizard handles the full environment configuration — Python, uv, Modal auth, HF secrets — for all plugins from a single UI.
 
 ---
 
@@ -83,8 +83,7 @@ The wizard checks and configures everything in one place:
 |---|---|
 | **Common environment** | REAPER's Python path · uv · Modal CLI · Modal authentication |
 | **StemsSeparator** | demucs (local pip) · Hugging Face secret for SAM Audio |
-| **Audio2Midi** | Optional pre-load of MIROS and YourMT3+ weights to Modal Volume |
-| **MidiGenerator** | Optional pre-load of any of the 6 model weights to Modal Volume |
+| **Audio2Midi**, **MidiGenerator** | Nothing extra to install locally; model weights are downloaded to a Modal Volume automatically on first use |
 
 Work through the sections top to bottom:
 
@@ -93,7 +92,7 @@ Work through the sections top to bottom:
 3. **Modal CLI** — click **Install deps** once uv is installed.
 4. **Modal authenticated** — click **Login** to open the browser auth flow. The token is saved automatically to `~/.modal.toml`.
 5. *(StemsSeparator only)* **demucs** — click **Install** to install it locally. **HF Token** — paste a Hugging Face token (starting with `hf_`) and click **Save** to create the Modal secret used by SAM Audio.
-6. *(Optional)* Use the pre-load buttons to download model weights to Modal Volumes. First-time Modal cold starts are slower; pre-loading eliminates that wait.
+6. The first run of each model is slower because Modal downloads its weights into a Volume. Later runs reuse them.
 
 Click **Re-check all** at any time to refresh the status of every check.
 
