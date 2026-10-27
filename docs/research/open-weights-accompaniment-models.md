@@ -1,7 +1,7 @@
 # Modelos de pesos abiertos para acompañar o armonizar una melodía MIDI
 
 Investigación del 2026-10-27. Fuentes: README y páginas de arXiv de cada proyecto, consultados ese día.
-Marcado como **no verificado** lo que no pude confirmar. No se ha ejecutado ninguno de los candidatos nuevos.
+Marcado como **no verificado** lo que no pude confirmar. MIDI-GPT se probó después (ver «Prueba de MIDI-GPT»); el resto no se ha ejecutado.
 
 ## Resumen
 
@@ -20,6 +20,20 @@ Marcado como **no verificado** lo que no pude confirmar. No se ha ejecutado ning
 2. **Probar MIDI-GPT como segunda opinión.** Es el que mejor combina tarea (nueva pista condicionada por las demás), instalación sencilla y relación con REAPER. Limitaciones: los pesos son solo para uso no comercial (válido para una charla, no para distribuir el plugin comercialmente) y requiere aceptar la licencia en Hugging Face con la cuenta del usuario. No se ha probado con la melodía del usuario.
 3. **AccoMontage-3** solo si interesa un acompañamiento de piano de más calidad a partir de una progresión de acordes: exige lead sheet y un entorno antiguo.
 4. **Descartados por ahora:** GETMusic (sin pesos localizables), MMT (condicionamiento no documentado), Moonbeam y Function Alignment (otras tareas).
+
+## Prueba de MIDI-GPT (2026-10-27)
+
+Script: `plugins-and-extensions/MidiGenerator/research/research_midigpt_modal.py` (Modal, usa el secret `huggingface-secret`).
+Modelo `yellow_medium`, melodía de guitarra del usuario (49 notas, 8 compases, 100,4 BPM), dos pistas nuevas (bajo, teclado) generadas con la melodía como contexto.
+
+- **La API sí permite el caso de uso**: `TrackPrompt(bars=[...], autoregressive=True)` genera una pista nueva y las demás cuentan como contexto. Admite además restringir las notas a un conjunto de clases de altura o a un registro (`controls["pitch_mask"]`) y fijar densidad y polifonía.
+- **Sin restricciones de registro** el bajo bajaba hasta la nota MIDI 20 y el teclado hasta la 27 (inaudible). Con `pitch_mask.shape` (bajo 33–52, teclado 52–76) quedó bien.
+- **Irregularidad** (6 candidatos con registro corregido): cobertura de la melodía 29–97 %, densidad 2–25 notas/s. Anticipatory con el arranque automático, en 8 candidatos: 89–99 % y 3,5–5,7 notas/s (el estilo `pad` es más escaso, 1,8 notas/s).
+- Consonancia con la melodía al inicio de cada nota: 58–85 % (MIDI-GPT) frente a 64–84 % (Anticipatory). Métrica burda.
+- **No se ha comparado a oído**. Audios de comparación generados en el scratchpad de la sesión.
+- Sin controles de densidad MIDI-GPT es menos predecible; la API ofrece `attributes` (densidad, polifonía, duración) para acotarlo, sin probar.
+
+**Conclusión provisional:** MIDI-GPT funciona y es viable técnicamente, pero hoy da resultados más irregulares que Anticipatory con el arranque automático y sus pesos son solo no comerciales. Merece la pena como segunda opción si el oído del usuario prefiere sus candidatos; hacerlo fiable exige ajustar densidad/polifonía.
 
 ## Fuentes
 - MIDI-GPT: <https://github.com/Metacreation-Lab/MIDI-GPT>, <https://arxiv.org/abs/2501.17011>
