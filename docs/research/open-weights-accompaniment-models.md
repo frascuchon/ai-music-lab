@@ -1,0 +1,30 @@
+# Modelos de pesos abiertos para acompañar o armonizar una melodía MIDI
+
+Investigación del 2026-10-27. Fuentes: README y páginas de arXiv de cada proyecto, consultados ese día.
+Marcado como **no verificado** lo que no pude confirmar. No se ha ejecutado ninguno de los candidatos nuevos.
+
+## Resumen
+
+| Modelo | Qué hace con una melodía | Pesos y licencia | Validación | Coste de integrarlo |
+|---|---|---|---|---|
+| **Anticipatory Music Transformer** (el actual) | Acompañamiento condicionado por la melodía | En HF (`stanford-crfm/music-*-800k`); Apache 2.0 según nuestro script, no reverificado | TMLR; evaluadores humanos juzgaron la musicalidad de sus acompañamientos de 20 s «similar» a la de música compuesta por humanos (según el resumen consultado; protocolo y cifras no verificados) | Ya integrado |
+| **MIDI-GPT** (Metacreation, AAAI 2025) | Genera una pista nueva o rellena compases teniendo las otras pistas como contexto; controles de densidad, polifonía y duración | HF `Metacreation/MIDI-GPT` (acceso con aceptación de licencia). Código MIT, **pesos de uso no comercial** (investigación y educación) | AAAI 2025; el resumen solo dice que evita copiar el entrenamiento, se parece al corpus y respeta los controles (detalles de la evaluación no verificados) | Bajo: `pip install "midigpt[inference]"`, API Python, wheels macOS/Linux/Windows. Existe un plugin de REAPER del mismo laboratorio |
+| **Structured Accompaniment Arrangement / AccoMontage-3** (NeurIPS 2024) | Partitura de acordes (lead sheet) → acompañamiento de piano → arreglo multipista | Checkpoints en Google Drive; MIT | NeurIPS 2024 | Alto: Python 3.8, PyTorch 1.10 con CUDA 11.1, se usa mediante notebooks, entrada en formato lead sheet |
+| **GETMusic** (Microsoft, IJCAI 2025) | Genera pistas (bajo, batería, guitarra, piano, cuerdas) a partir de pistas de condición, p. ej. melodía + acordes | **El README no enlaza checkpoints**; el repositorio está archivado y no publican los datos | IJCAI 2025 | Inviable si no hay pesos (**no verificado** si existen en otro sitio) |
+| **Multitrack Music Transformer** (ICASSP 2023) | Generación multipista; el modo de condicionar por una melodía no está documentado en el README | Modelos en una carpeta SharePoint de UCSD; MIT | ICASSP 2023 | Medio-alto: entorno conda, datos preprocesados, repo antiguo |
+| Moonbeam, Function Alignment (ISMIR 2025) | Infilling, generación de melodía a partir de acordes, batería, reconocimiento de acordes | Pesos abiertos según los autores; licencia **no verificada** | ISMIR 2025 / arXiv 2025 | No cubren acompañamiento armónico de una melodía |
+
+## Recomendación
+
+1. **Mantener Anticipatory** para la demo. Con el arranque automático ya produce un acompañamiento razonable (confirmado por el usuario), es de pesos permisivos y es el único con validación humana explícita para esta tarea.
+2. **Probar MIDI-GPT como segunda opinión.** Es el que mejor combina tarea (nueva pista condicionada por las demás), instalación sencilla y relación con REAPER. Limitaciones: los pesos son solo para uso no comercial (válido para una charla, no para distribuir el plugin comercialmente) y requiere aceptar la licencia en Hugging Face con la cuenta del usuario. No se ha probado con la melodía del usuario.
+3. **AccoMontage-3** solo si interesa un acompañamiento de piano de más calidad a partir de una progresión de acordes: exige lead sheet y un entorno antiguo.
+4. **Descartados por ahora:** GETMusic (sin pesos localizables), MMT (condicionamiento no documentado), Moonbeam y Function Alignment (otras tareas).
+
+## Fuentes
+- MIDI-GPT: <https://github.com/Metacreation-Lab/MIDI-GPT>, <https://arxiv.org/abs/2501.17011>
+- Anticipatory Music Transformer: <https://arxiv.org/abs/2306.08620>
+- Structured Accompaniment Arrangement: <https://github.com/zhaojw1998/AccoMontage-3>
+- GETMusic: <https://github.com/microsoft/muzic/tree/main/getmusic>, <https://arxiv.org/abs/2305.10841>
+- MMT: <https://github.com/salu133445/mmt>, <https://arxiv.org/abs/2207.06983>
+- Function Alignment: <https://arxiv.org/abs/2506.15548>; Moonbeam: <https://arxiv.org/abs/2505.15559>

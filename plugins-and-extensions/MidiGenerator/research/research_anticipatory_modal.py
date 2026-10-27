@@ -51,7 +51,7 @@ Recovery (si el cliente cae durante spawn+poll):
 
 Referencias:
   Repo:  https://github.com/jthickstun/anticipation
-  Paper: arXiv:2306.03128 (ICML 2023)
+  Paper: arXiv:2306.08620 (TMLR)
   Issue #18 (prompt_length): https://github.com/jthickstun/anticipation/issues/18
 """
 
