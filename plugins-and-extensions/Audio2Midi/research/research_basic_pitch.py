@@ -53,6 +53,52 @@ def load_normalised(path: Path):
     return mono * gain, sr, 20 * np.log10(gain)
 
 
+# Intervals (semitones) between a real note and the sub-harmonic "ghost" that
+# Basic Pitch often adds below it on distorted guitar: 1 octave, octave+fifth
+# (3rd harmonic), 2 octaves.
+GHOST_INTERVALS = (12, 19, 24)
+TAIL_DB = 14.0   # a note this far below the typical note level is reverb/noise tail
+
+
+def _overlap(a, b) -> float:
+    return max(0.0, min(a.end, b.end) - max(a.start, b.start))
+
+
+def drop_ghost_notes(notes):
+    """Remove sub-octave ghosts: a note is dropped when a louder-or-equal note
+    exactly 12/19/24 semitones above it sounds over at least half of it."""
+    kept = []
+    for n in notes:
+        dur = max(n.end - n.start, 1e-6)
+        ghost = any(
+            (m.pitch - n.pitch) in GHOST_INTERVALS
+            and m.velocity >= n.velocity
+            and _overlap(n, m) >= 0.5 * dur
+            for m in notes if m is not n
+        )
+        if not ghost:
+            kept.append(n)
+    return kept
+
+
+def drop_tail_notes(notes, y, sr):
+    """Remove notes whose audio is far quieter than the typical note, i.e. the
+    reverb/delay tail or noise after the performance ends."""
+    import numpy as np
+
+    if len(notes) < 8:
+        return notes
+    levels = []
+    for n in notes:
+        seg = y[int(n.start * sr):max(int(n.end * sr), int(n.start * sr) + 1)]
+        levels.append(float(np.sqrt(np.mean(seg ** 2))) if seg.size else 0.0)
+    ref = float(np.median(levels))
+    if ref <= 0:
+        return notes
+    floor = ref * 10 ** (-TAIL_DB / 20)
+    return [n for n, lv in zip(notes, levels) if lv >= floor]
+
+
 def estimate_bpm(y, sr) -> float:
     import librosa
     import numpy as np
@@ -83,6 +129,10 @@ def main() -> int:
                    help="General MIDI program of the output track (25 = steel guitar).")
     p.add_argument("--name", default="Transcription")
     p.add_argument("--no-beat-tracking", action="store_true", dest="no_beat")
+    p.add_argument("--bpm", type=float, default=None,
+                   help="Use this tempo instead of estimating it (e.g. the project's).")
+    p.add_argument("--no-cleanup", action="store_true", dest="no_cleanup",
+                   help="Keep sub-octave ghost notes and tail noise.")
     args = p.parse_args()
 
     in_path, out_path = Path(args.input), Path(args.out)
@@ -128,7 +178,18 @@ def main() -> int:
         return 1
 
     print("[3/3] Writing MIDI...", flush=True)
-    bpm = 120.0 if args.no_beat else estimate_bpm(y, sr)
+    if not args.no_cleanup:
+        raw = len(notes)
+        notes = drop_tail_notes(drop_ghost_notes(notes), y, sr)
+        print(f"[basic-pitch] cleanup removed {raw - len(notes)} of {raw} notes "
+              "(sub-octave ghosts, tail noise)", flush=True)
+        if not notes:
+            print("ERROR: no notes left after cleanup.", flush=True)
+            return 1
+    if args.bpm and args.bpm > 0:
+        bpm = args.bpm
+    else:
+        bpm = 120.0 if args.no_beat else estimate_bpm(y, sr)
     print(f"[basic-pitch] {len(notes)} notes, tempo {bpm:.1f} BPM", flush=True)
 
     # Re-create the file with the estimated tempo; note times stay in seconds.

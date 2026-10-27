@@ -173,6 +173,9 @@ def main() -> int:
     p.add_argument("--no-beat-tracking", action="store_true",
                    dest="no_beat_tracking",
                    help="Disable beat tracking (only for models that support it).")
+    p.add_argument("--bpm",        type=float, default=None,
+                   help="Local models only: write the MIDI at this tempo "
+                        "(e.g. the REAPER project's) instead of estimating it.")
     p.add_argument("--progress",   default="",
                    help="Path to the progress file (state|pct|msg protocol).")
     args = p.parse_args()
@@ -256,6 +259,9 @@ def main() -> int:
             "--out-dir",    str(out_dir),
             "--force",
         ]
+
+    if is_local and args.bpm:
+        cmd += ["--bpm", str(args.bpm)]
 
     # --no-beat-tracking only if the model supports it
     if args.no_beat_tracking and args.model.lower() in SUPPORTS_NO_BEAT_TRACKING:

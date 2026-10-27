@@ -388,7 +388,14 @@ local function launch_transcribe()
       S.src_start_offs, S.src_start_offs + S.src_section_dur))
   end
 
+  -- Beat tracking off: local models adopt the project tempo (their own tempo
+  -- estimate can be off by several BPM); Modal models just skip the tracking.
   local beat_arg = S.beat_tracking and "" or " --no-beat-tracking"
+  if A2M_LOCAL[model_key] and not S.beat_tracking then
+    local bpm = reaper.Master_GetTempo()
+    beat_arg = beat_arg .. string.format(" --bpm %.3f", bpm)
+    add_log(string.format("Tempo: project (%.1f BPM)", bpm))
+  end
   local run_dir  = make_run_dir()
 
   local cmd = string.format(
@@ -497,6 +504,9 @@ function M.draw()
   if cur_model == "yourmt3" then  -- YourMT3+ has no flag
     g.same_line(t.sc(8))
     g.text_disabled("(N/A for YourMT3+)")
+  elseif A2M_LOCAL[cur_model] and not S.beat_tracking then
+    g.same_line(t.sc(8))
+    g.text_disabled("(uses project tempo)")
   end
 
   g.spacing()
