@@ -182,7 +182,7 @@ class TestEndToEndSeparation(TestCase):
         state, pct, msg = parse_progress()
         self.assertEqual(state, "done")
         self.assertAlmostEqual(pct, 1.0, places=2)
-        self.assertIn("Completado", msg)
+        self.assertIn("Completed", msg)
 
 
 class TestStemsSubset(TestCase):
