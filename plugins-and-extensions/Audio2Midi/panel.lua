@@ -251,7 +251,8 @@ import_midi = function()
 
   -- Land the transcribed track(s) right below the source track/clip
   -- instead of always at the very end of the project's track list.
-  local tcnt_before = track_placement.insert_index(S.src_track_idx, reaper.CountTracks(0))
+  local count_before = reaper.CountTracks(0)
+  local tcnt_before = track_placement.insert_index(S.src_track_idx, count_before)
 
   -- Insert a new track and position the cursor
   reaper.InsertTrackAtIndex(tcnt_before, true)
@@ -263,8 +264,7 @@ import_midi = function()
   reaper.InsertMedia(mid_path, 0)
 
   -- Detect how many tracks REAPER created (multi-track MIDI can open several)
-  local tcnt_after = reaper.CountTracks(0)
-  local delta = tcnt_after - tcnt_before
+  local delta = track_placement.imported_track_count(count_before, reaper.CountTracks(0))
 
   if delta <= 0 then
     -- No tracks created — InsertMedia failed or went to an existing track

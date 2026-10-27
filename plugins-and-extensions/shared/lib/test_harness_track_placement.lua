@@ -153,6 +153,23 @@ case_("plan_candidate_import: chained candidates stack contiguously without over
   assert(plan2.folder_index > plan1.instrument_end)
 end)
 
+case_("imported_track_count: appended import (insert index == track count)", function()
+  assert(tp.imported_track_count(5, 8) == 3)
+end)
+
+case_("imported_track_count: mid-project import ignores tracks already below the insertion point", function()
+  -- 5 existing tracks, candidate inserted at index 2 (below track 2), InsertMedia
+  -- yields 2 instruments: project goes 5 -> 7. The old index-based arithmetic
+  -- (7 - 2) reported 5 and wrapped three unrelated tracks in the folder.
+  assert(tp.imported_track_count(5, 7) == 2)
+  assert(7 - 2 == 5)
+end)
+
+case_("imported_track_count: nothing added yields 0 (plan returns nil)", function()
+  assert(tp.imported_track_count(5, 5) == 0)
+  assert(tp.plan_candidate_import(2, tp.imported_track_count(5, 5)) == nil)
+end)
+
 if failures > 0 then
   print(failures .. " failure(s)")
   os.exit(1)

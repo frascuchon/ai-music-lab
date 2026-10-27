@@ -203,8 +203,9 @@ local function _import_one(mid_path, folder_name, insert_at)
   if not f then add_log("Error: cannot read " .. mid_path); return insert_at end
   f:close()
 
-  local cursor      = reaper.GetCursorPosition()
-  local tcnt_before = insert_at
+  local cursor       = reaper.GetCursorPosition()
+  local tcnt_before  = insert_at
+  local count_before = reaper.CountTracks(0)
 
   -- Snapshot existing markers: InsertMedia can create markers from MIDI
   -- meta-events (type 0x06/0x07), adding visual noise to the timeline.
@@ -238,7 +239,7 @@ local function _import_one(mid_path, folder_name, insert_at)
     end
   end
 
-  local delta = reaper.CountTracks(0) - tcnt_before
+  local delta = track_placement.imported_track_count(count_before, reaper.CountTracks(0))
   local plan = track_placement.plan_candidate_import(tcnt_before, delta)
   if not plan then
     add_log("Warning: InsertMedia did not add tracks for " .. mid_path:match("[^/\\]+$"))

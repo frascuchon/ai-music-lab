@@ -53,6 +53,22 @@ function M.max_track_number(numbers)
   return best
 end
 
+-- Number of instrument tracks an import produced. Callers insert a
+-- placeholder/anchor track and then call InsertMedia, which reuses the anchor
+-- for the first instrument and adds the rest, so the count is simply how many
+-- tracks the project gained since BEFORE the anchor was inserted.
+--
+-- count_before : reaper.CountTracks(0) BEFORE inserting the anchor track.
+-- count_after  : reaper.CountTracks(0) right after InsertMedia.
+--
+-- Do NOT derive this from the insertion INDEX (CountTracks - insert_at): when
+-- candidates are placed mid-project (e.g. right below a melody track), that
+-- also counts every pre-existing track below the insertion point, so the
+-- folder swallows unrelated tracks and their items get shifted.
+function M.imported_track_count(count_before, count_after)
+  return (count_after or 0) - (count_before or 0)
+end
+
 -- Plans the folder-wrapping layout for one imported MIDI candidate, given:
 --   tcnt_before : 0-based index where the candidate's instrument track(s)
 --                 were inserted (reused from the placeholder/anchor track).
