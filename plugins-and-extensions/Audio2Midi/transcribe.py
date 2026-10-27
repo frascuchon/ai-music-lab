@@ -41,6 +41,12 @@ from pathlib import Path
 # Models that accept --no-beat-tracking in their Modal entrypoint
 SUPPORTS_NO_BEAT_TRACKING = {"miros"}
 
+# Env var each research_*_modal.py reads to choose its Modal GPU.
+GPU_ENV_VARS = {"miros": "MIROS_GPU", "yourmt3": "YOURMT3_GPU"}
+
+# GPUs a model cannot run on (MIROS needs flash-attn, which requires Ampere+).
+UNSUPPORTED_GPUS = {"miros": {"T4"}}
+
 
 # ---------------------------------------------------------------------------
 # Progress protocol
@@ -216,6 +222,12 @@ def main() -> int:
             write_progress(pf, "error", 0, f"Error extracting section: {exc}")
             return 1
 
+    if args.gpu in UNSUPPORTED_GPUS.get(args.model.lower(), ()):
+        write_progress(pf, "error", 0,
+                       f"{args.model} cannot run on {args.gpu} (flash-attn needs "
+                       "an Ampere or newer GPU). Choose A10G or A100.")
+        return 1
+
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Build modal run command ----------------------------------------------
@@ -235,6 +247,11 @@ def main() -> int:
         cmd.append("--no-beat-tracking")
 
     env = os.environ.copy()
+    # The Modal scripts pick their GPU at import time from an env var (the
+    # `gpu=` argument of the @app.function decorator), not from a CLI flag.
+    gpu_env = GPU_ENV_VARS.get(args.model.lower())
+    if gpu_env and args.gpu:
+        env[gpu_env] = args.gpu
 
     print(f"[transcribe] Command: {' '.join(cmd)}", flush=True)
 

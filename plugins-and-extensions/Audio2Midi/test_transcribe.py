@@ -240,6 +240,70 @@ class TestTempoReportedEndToEnd(TestCase):
         self.assertEqual(len(instr_lines), 1)
 
 
+class TestGpuSelection(TestCase):
+    """The panel's GPU combo must reach the Modal script: those scripts read
+    MIROS_GPU / YOURMT3_GPU at import time, so transcribe.py has to export
+    the chosen GPU into the subprocess environment."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="a2m_gpu_"))
+        self.progress_file = self.tmpdir / "progress.txt"
+        self.input_wav = self.tmpdir / "input.wav"
+        self.input_wav.write_bytes(b"\x00" * 8000)
+        self.outdir = self.tmpdir / "out"
+        self.outdir.mkdir()
+        self.shared_dir = self.tmpdir / "shared"
+        self.shared_dir.mkdir()
+        (self.shared_dir / "pyproject.toml").write_text("[project]\nname='shared'\n")
+        self.script = self.tmpdir / "research_stub_modal.py"
+        self.script.write_text(textwrap.dedent(f"""\
+            import argparse, os, sys
+            sys.path.insert(0, {str(SCRIPT.parent)!r})
+            from test_transcribe import make_midi
+            from pathlib import Path
+            p = argparse.ArgumentParser()
+            p.add_argument("--audio-path"); p.add_argument("--out-dir")
+            p.add_argument("--force", action="store_true")
+            p.add_argument("--no-beat-tracking", action="store_true")
+            a = p.parse_args()
+            out = Path(a.out_dir)
+            (out / "gpu_seen.txt").write_text(
+                os.environ.get("MIROS_GPU", "-") + "," + os.environ.get("YOURMT3_GPU", "-"))
+            make_midi(out / "transcribed_cuda.mid", tempo_bpm=120)
+        """))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _seen(self, model, gpu):
+        subprocess.run(
+            [sys.executable, str(SCRIPT),
+             "--shared-dir", str(self.shared_dir), "--script", str(self.script),
+             "--input", str(self.input_wav), "--out-dir", str(self.outdir),
+             "--model", model, "--gpu", gpu, "--progress", str(self.progress_file)],
+            capture_output=True, text=True, timeout=30)
+        return (self.outdir / "gpu_seen.txt").read_text()
+
+    def test_miros_gpu_is_exported(self):
+        self.assertEqual(self._seen("miros", "A100"), "A100,-")
+
+    def test_miros_on_t4_is_rejected_before_launching_modal(self):
+        self._seen_no_output("miros", "T4")
+        self.assertIn("cannot run on T4", self.progress_file.read_text())
+        self.assertFalse((self.outdir / "gpu_seen.txt").exists())
+
+    def _seen_no_output(self, model, gpu):
+        subprocess.run(
+            [sys.executable, str(SCRIPT),
+             "--shared-dir", str(self.shared_dir), "--script", str(self.script),
+             "--input", str(self.input_wav), "--out-dir", str(self.outdir),
+             "--model", model, "--gpu", gpu, "--progress", str(self.progress_file)],
+            capture_output=True, text=True, timeout=30)
+
+    def test_yourmt3_gpu_is_exported(self):
+        self.assertEqual(self._seen("yourmt3", "T4"), "-,T4")
+
+
 class TestErrorReporting(TestCase):
     """Covers the reported bug: when the Modal subprocess fails, the
     progress file used to only get "Modal failed with code 1. Check the
