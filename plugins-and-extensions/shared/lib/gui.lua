@@ -211,7 +211,7 @@ end
 -- fit before the row's right edge (ctx.row_x0 + ctx.content_w) — otherwise
 -- wraps to a new line instead. Use this before a button/status label that
 -- follows a variable-length label/detail string on the same row (e.g.
--- Setup's demucs/abcmidi check rows): with plain same_line(), a long detail
+-- Setup's demucs check row): with plain same_line(), a long detail
 -- string plus an icon plus a label can push x past the panel's right edge,
 -- and everything placed after it (the Install button, the "Installing..."
 -- status text) renders outside the visible Setup area instead of wrapping.

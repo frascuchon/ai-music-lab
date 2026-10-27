@@ -54,8 +54,8 @@ end)
 -- ── default_for ──────────────────────────────────────────────────
 
 case_("default_for: returns the model's own default when present", function()
-  local t = { amadeus = "A10G", midi_llm = "H100" }
-  assert(ms.default_for(t, "midi_llm", "T4") == "H100")
+  local t = { amadeus = "A10G", anticipatory = "H100" }
+  assert(ms.default_for(t, "anticipatory", "T4") == "H100")
 end)
 
 case_("default_for: falls back when the model has no entry", function()

@@ -11,28 +11,9 @@ Keep this in sync with ``lib/model_execution.lua`` — same model keys, same
 from __future__ import annotations
 
 MIDIGEN: dict[str, dict] = {
-    "text2midi": {
-        "local_supported": True,
-        "reason": "MPS/CPU local script (research_text2midi.py).",
-    },
     "anticipatory": {
         "local_supported": True,
         "reason": "CPU-only PyTorch, no GPU required (research_anticipatory.py).",
-    },
-    "midi_llm": {
-        "local_supported": False,
-        "reason": ("Known MPS bfloat16 bug: output collapses to drums-only. "
-                   "CUDA required for correct output (see MIDI-LLM evaluation)."),
-    },
-    "chatmusician": {
-        "local_supported": False,
-        "reason": ("7B LLaMA model; no local backend implemented "
-                   "(ABC->MIDI toolchain + VRAM requirements assume Modal CUDA)."),
-    },
-    "musecoco": {
-        "local_supported": False,
-        "reason": ("fairseq + pytorch-fast-transformers require CUDA + Python 3.8, "
-                   "incompatible with Apple Silicon."),
     },
     "amadeus": {
         "local_supported": False,
@@ -57,10 +38,6 @@ TEXT2AUDIO: dict[str, dict] = {
     "musicgen_gen": {
         "local_supported": True,
         "reason": "audiocraft MusicGen runs on MPS/CPU (slow, autoregressive).",
-    },
-    "musicgen": {
-        "local_supported": True,
-        "reason": "audiocraft MusicGen melody conditioning, MPS/CPU capable.",
     },
     "magnet": {
         "local_supported": True,

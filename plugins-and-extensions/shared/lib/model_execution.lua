@@ -7,34 +7,14 @@
 -- for that model, with `reason` shown to the user.
 --
 -- Sources: MidiGenerator/RESEARCH.md and Text2Audio/RESEARCH.md (Mac MPS/CPU
--- feasibility columns per model), and the MIDI-LLM evaluation memory (MPS
--- bfloat16 output-collapse bug — see project_midi_llm_eval memory).
+-- feasibility columns per model).
 
 local M = {}
 
 M.midigen = {
-  text2midi = {
-    local_supported = true,
-    reason = "MPS/CPU local script (research_text2midi.py).",
-  },
   anticipatory = {
     local_supported = true,
     reason = "CPU-only PyTorch, no GPU required (research_anticipatory.py).",
-  },
-  midi_llm = {
-    local_supported = false,
-    reason = "Known MPS bfloat16 bug: output collapses to drums-only. "
-      .. "CUDA required for correct output (see MIDI-LLM evaluation).",
-  },
-  chatmusician = {
-    local_supported = false,
-    reason = "7B LLaMA model; no local backend implemented "
-      .. "(ABC→MIDI toolchain + VRAM requirements assume Modal CUDA).",
-  },
-  musecoco = {
-    local_supported = false,
-    reason = "fairseq + pytorch-fast-transformers require CUDA + Python 3.8, "
-      .. "incompatible with Apple Silicon.",
   },
   amadeus = {
     local_supported = false,
@@ -59,10 +39,6 @@ M.text2audio = {
   musicgen_gen = {
     local_supported = true,
     reason = "audiocraft MusicGen runs on MPS/CPU (slow, autoregressive).",
-  },
-  musicgen = {
-    local_supported = true,
-    reason = "audiocraft MusicGen melody conditioning, MPS/CPU capable.",
   },
   magnet = {
     local_supported = true,
