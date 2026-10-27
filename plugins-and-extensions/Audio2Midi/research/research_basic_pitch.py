@@ -119,7 +119,8 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--input", required=True)
     p.add_argument("--out", required=True, help="Output .mid path.")
-    p.add_argument("--onset-threshold", type=float, default=0.5, dest="onset")
+    p.add_argument("--onset-threshold", type=float, default=0.7, dest="onset",
+                   help="Higher = fewer, more confident notes (0.7 was best on a guitar clip).")
     p.add_argument("--frame-threshold", type=float, default=0.4, dest="frame")
     p.add_argument("--min-note-ms", type=float, default=100.0, dest="min_ms")
     p.add_argument("--min-freq", type=float, default=70.0, dest="fmin",

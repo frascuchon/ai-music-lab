@@ -365,6 +365,15 @@ class TestLocalModel(TestCase):
         self._run(["--bpm", "87"])
         self.assertIn("TEMPO|87", self.progress_file.read_text())
 
+    def test_onset_threshold_is_forwarded_to_the_local_script(self):
+        self._write_script(n_notes=3)
+        self.script.write_text(self.script.read_text().replace(
+            'p.add_argument("--no-beat-tracking", action="store_true")',
+            'p.add_argument("--no-beat-tracking", action="store_true"); p.add_argument("--onset-threshold", type=float)').replace(
+            'tempo_bpm=100', 'tempo_bpm=int(a.onset_threshold * 100)'))
+        self._run(["--onset-threshold", "0.8"])
+        self.assertIn("TEMPO|80", self.progress_file.read_text())
+
     def test_empty_transcription_is_an_error_not_completed(self):
         self._write_script(n_notes=0)
         self._run()

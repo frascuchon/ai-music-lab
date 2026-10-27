@@ -59,6 +59,7 @@ local S = {
   model_idx       = 1,
   gpu_idx         = A2M_GPU_DEFAULT[A2M_MODELS[1]],
   beat_tracking   = true,
+  onset           = 0.7,   -- Basic Pitch note threshold (higher = fewer notes)
   -- runtime
   running         = false,
   pid             = nil,
@@ -391,6 +392,10 @@ local function launch_transcribe()
   -- Beat tracking off: local models adopt the project tempo (their own tempo
   -- estimate can be off by several BPM); Modal models just skip the tracking.
   local beat_arg = S.beat_tracking and "" or " --no-beat-tracking"
+  if A2M_LOCAL[model_key] then
+    beat_arg = beat_arg .. string.format(" --onset-threshold %.2f", S.onset)
+    add_log(string.format("Note threshold: %.2f", S.onset))
+  end
   if A2M_LOCAL[model_key] and not S.beat_tracking then
     local bpm = reaper.Master_GetTempo()
     beat_arg = beat_arg .. string.format(" --bpm %.3f", bpm)
@@ -510,6 +515,14 @@ function M.draw()
   end
 
   g.spacing()
+
+  if A2M_LOCAL[cur_model] then
+    g.row_label("Threshold:", t.sc(68))
+    g.next_width(-1)
+    local chg, nv = g.slider_float("##a2m_onset", S.onset, 0.3, 0.9, "%.2f  (higher = fewer notes)")
+    if chg then S.onset = nv end
+    g.spacing()
+  end
 
   -- Cost hint
   local hints = {

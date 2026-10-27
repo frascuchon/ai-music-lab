@@ -12,7 +12,7 @@ Plugin REAPER para transcribir audio a MIDI usando modelos de IA en la nube.
 
 **Qué modelo elegir:** para un instrumento solo, Basic Pitch; para una mezcla con varios instrumentos, YourMT3+ o MIROS. En una guitarra distorsionada solista, Basic Pitch coincidió con una referencia pYIN en ~66 % de los fotogramas, frente a ~35 % (YourMT3+) y ~19 % (MIROS), y los dos modelos grandes repartían la guitarra en varias pistas.
 
-**Limpieza de Basic Pitch:** con guitarra distorsionada el modelo añade "notas fantasma" una octava (o octava+quinta) por debajo de la nota real, y notas sueltas en la cola de eco tras terminar la música. Se eliminan automáticamente (en un clip real: 12 de 82 notas, sin perder ninguna correcta). Desmarcar **Beat tracking** hace que use el tempo del proyecto en lugar de estimarlo.
+**Limpieza de Basic Pitch:** con guitarra distorsionada el modelo añade "notas fantasma" una octava (o octava+quinta) por debajo de la nota real, y notas sueltas en la cola de eco tras terminar la música. Se eliminan automáticamente (en un clip real: 12 de 82 notas, sin perder ninguna correcta). Desmarcar **Beat tracking** hace que use el tempo del proyecto en lugar de estimarlo. El control **Threshold** (0,3–0,9, por defecto 0,7) fija cuántas notas se aceptan: más alto, menos notas y más seguras. Sobre una guitarra real, subir de 0,5 a 0,7 llevó la F por nota (±50 ms, frente a pYIN) de 0,46 a 0,64.
 
 **Nivel de entrada:** antes de transcribir se normaliza el pico a -1 dBFS (máx. +30 dB de ganancia). Un render de guitarra con pico en -22 dBFS hacía que MIROS devolviera un MIDI vacío. Si no se detecta ninguna nota, el plugin lo indica como error.
 
