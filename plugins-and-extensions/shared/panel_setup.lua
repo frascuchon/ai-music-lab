@@ -5,7 +5,7 @@
 -- Manages the common environment (uv, Modal) and plugin-specific extras
 -- (StemsSeparator: demucs, HF secret).
 -- Note: this used to also offer "pre-load weights" buttons per model
--- (StemsSeparator/SAM, Audio2Midi/MIROS+YourMT3+, MidiGenerator/7 models).
+-- (StemsSeparator/SAM, Audio2Midi/YourMT3+, MidiGenerator models).
 -- Removed — every model's real generate/transcribe/separate Modal function
 -- now downloads+caches its own weights lazily on first real use, so a
 -- separate manual pre-warm step is pure redundancy; the first real

@@ -24,7 +24,7 @@
         <description><![CDATA[Single REAPER window with a tab per tool, replacing the 4 previous standalone
 plugins plus the standalone Setup wizard:
 
-  · Audio2Midi — audio to MIDI transcription (MIROS, YourMT3+)
+  · Audio2Midi — audio to MIDI transcription (Basic Pitch, YourMT3+)
   · MidiGenerator — MIDI generation from text or seed MIDI (6 models)
   · Text2Audio — text to audio generation and audio editing (14+ models)
   · Stems Separator — stem separation with Demucs (local) and SAM Audio (cloud)

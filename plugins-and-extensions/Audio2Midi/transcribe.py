@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Backend CLI for Audio2Midi.lua — transcribes audio to MIDI via Modal cloud
-(YourMT3+, MIROS) or locally (Basic Pitch, single-instrument).
+(YourMT3+) or locally (Basic Pitch, single-instrument).
 
 Called by Audio2Midi.lua as a background process:
     python3 transcribe.py --shared-dir <shared/> --script <research_*.py>
-        --input <audio> --out-dir <dir> --model <basicpitch|miros|yourmt3>
+        --input <audio> --out-dir <dir> --model <basicpitch|yourmt3>
         --gpu <A10G|A100|T4> [--start S] [--duration D]
         [--no-beat-tracking] --progress <pf> >> <log> 2>&1 &
 
@@ -40,17 +40,14 @@ from pathlib import Path
 
 
 # Models that accept --no-beat-tracking in their Modal entrypoint
-SUPPORTS_NO_BEAT_TRACKING = {"miros", "basicpitch"}
+SUPPORTS_NO_BEAT_TRACKING = {"basicpitch"}
 
 # Models that run on this machine through `uv run <script>` (PEP 723 inline
 # dependencies) instead of `modal run`. They need no shared/ project and no GPU.
 LOCAL_MODELS = {"basicpitch"}
 
 # Env var each research_*_modal.py reads to choose its Modal GPU.
-GPU_ENV_VARS = {"miros": "MIROS_GPU", "yourmt3": "YOURMT3_GPU"}
-
-# GPUs a model cannot run on (MIROS needs flash-attn, which requires Ampere+).
-UNSUPPORTED_GPUS = {"miros": {"T4"}}
+GPU_ENV_VARS = {"yourmt3": "YOURMT3_GPU"}
 
 
 # ---------------------------------------------------------------------------
@@ -162,8 +159,8 @@ def main() -> int:
                    help="shared/ directory containing pyproject.toml (modal CLI).")
     p.add_argument("--script",     required=True,
                    help="Path to the Modal script to run (research_*_modal.py).")
-    p.add_argument("--model",      default="miros",
-                   help="Model name (miros | yourmt3).")
+    p.add_argument("--model",      default="basicpitch",
+                   help="Model name (basicpitch | yourmt3).")
     p.add_argument("--gpu",        default="A10G",
                    help="GPU to use on Modal (A10G | A100 | T4).")
     p.add_argument("--start",      type=float, default=None,
@@ -172,7 +169,7 @@ def main() -> int:
                    help="Duration of the section (seconds).")
     p.add_argument("--no-beat-tracking", action="store_true",
                    dest="no_beat_tracking",
-                   help="Disable beat tracking (only for models that support it).")
+                   help="Local models only: skip the automatic tempo estimate.")
     p.add_argument("--bpm",        type=float, default=None,
                    help="Local models only: write the MIDI at this tempo "
                         "(e.g. the REAPER project's) instead of estimating it.")
@@ -233,12 +230,6 @@ def main() -> int:
         except Exception as exc:
             write_progress(pf, "error", 0, f"Error extracting section: {exc}")
             return 1
-
-    if args.gpu in UNSUPPORTED_GPUS.get(args.model.lower(), ()):
-        write_progress(pf, "error", 0,
-                       f"{args.model} cannot run on {args.gpu} (flash-attn needs "
-                       "an Ampere or newer GPU). Choose A10G or A100.")
-        return 1
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -309,15 +300,6 @@ def main() -> int:
             n, total = int(m.group(1)), int(m.group(2))
             if total > 0:
                 pct = 0.1 + (n / total) * 0.8
-        # Pattern "Chunk n/m" (MIROS)
-        elif "Chunk" in line and "/" in line:
-            try:
-                part = line.split("Chunk")[1].split(":")[0].strip()
-                n, total = int(part.split("/")[0]), int(part.split("/")[1])
-                if total > 0:
-                    pct = 0.1 + (n / total) * 0.8
-            except (ValueError, IndexError):
-                pass
 
         write_progress(pf, "running", pct, line[:80])
 

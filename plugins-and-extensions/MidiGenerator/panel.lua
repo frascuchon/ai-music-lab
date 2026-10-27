@@ -14,6 +14,7 @@ local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
 local track_placement = require("track_placement")
+local midi_import = require("midi_import")
 local model_switch = require("model_switch")
 local model_execution = require("model_execution")
 local smf     = dofile(SCRIPT_DIR .. "smf_writer.lua")
@@ -80,7 +81,6 @@ local S = {
   prompt_example = { idx = 1 },
   -- Optional MidiCaps fields (amadeus)
   field_key         = "",
-  field_bpm         = "",
   field_instruments = "",
   field_chords      = "",
   -- AMT parameters
@@ -198,117 +198,26 @@ end
 -- reaper.CountTracks(0). Returns the insert_at index the NEXT candidate
 -- should use, so multiple candidates stack below each other right under
 -- the source instead of all landing at the end of the project.
+--
+-- Tracks and clips are created explicitly (lib/midi_import.lua) rather than
+-- through reaper.InsertMedia, so existing tracks and MIDI clips are never
+-- wrapped in the new folder, moved or overwritten.
 local function _import_one(mid_path, folder_name, insert_at)
   local f = io.open(mid_path, "rb")
   if not f then add_log("Error: cannot read " .. mid_path); return insert_at end
   f:close()
 
-  local cursor       = reaper.GetCursorPosition()
-  local tcnt_before  = insert_at
-  local count_before = reaper.CountTracks(0)
-
-  -- Snapshot existing markers: InsertMedia can create markers from MIDI
-  -- meta-events (type 0x06/0x07), adding visual noise to the timeline.
-  local marker_snap = {}
-  for i = 0, reaper.CountProjectMarkers(0) - 1 do
-    local _, _, _, _, _, idx = reaper.EnumProjectMarkers(i)
-    marker_snap[idx] = true
-  end
-
-  -- Create + select a placeholder track AT the desired position before
-  -- calling InsertMedia: with nothing selected, REAPER's "add to new
-  -- track" mode always appends at reaper.CountTracks(0), which is the bug
-  -- being fixed here. With exactly one track selected, InsertMedia anchors
-  -- the import there (reusing it for the first instrument, and inserting
-  -- any extra instruments from a multi-track SMF immediately after it).
-  for i = 0, reaper.CountTracks(0) - 1 do
-    reaper.SetTrackSelected(reaper.GetTrack(0, i), false)
-  end
-  reaper.InsertTrackAtIndex(tcnt_before, true)
-  local anchor_tr = reaper.GetTrack(0, tcnt_before)
-  reaper.SetOnlyTrackSelected(anchor_tr)
-
-  reaper.SetEditCurPos(cursor, false, false)
-  reaper.InsertMedia(mid_path, 0)
-
-  -- Remove markers added by the import
-  for i = reaper.CountProjectMarkers(0) - 1, 0, -1 do
-    local _, isrgn, _, _, _, idx = reaper.EnumProjectMarkers(i)
-    if not isrgn and not marker_snap[idx] then
-      reaper.DeleteProjectMarker(0, idx, false)
-    end
-  end
-
-  local delta = track_placement.imported_track_count(count_before, reaper.CountTracks(0))
-  local plan = track_placement.plan_candidate_import(tcnt_before, delta)
-  if not plan then
-    add_log("Warning: InsertMedia did not add tracks for " .. mid_path:match("[^/\\]+$"))
-    reaper.DeleteTrack(anchor_tr)
+  local res, err = midi_import.import_file(mid_path, {
+    insert_at = insert_at, position = reaper.GetCursorPosition(),
+    name = folder_name, always_folder = true,
+  })
+  if not res then
+    add_log("Warning: could not import " .. mid_path:match("[^/\\]+$") .. ": " .. tostring(err))
     return insert_at
   end
-  add_log(string.format("DEBUG: delta=%d tcnt_before=%d tcnt_after=%d", delta, tcnt_before, reaper.CountTracks(0)))
-
-  -- Fix position: multi-track MIDI InsertMedia may ignore SetEditCurPos and
-  -- insert items at position 0. Detect and offset if needed.
-  local min_pos = math.huge
-  for i = tcnt_before, tcnt_before + delta - 1 do
-    local tr = reaper.GetTrack(0, i)
-    if tr then
-      for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
-        local it = reaper.GetTrackMediaItem(tr, j)
-        if it then
-          local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
-          if p < min_pos then min_pos = p end
-        end
-      end
-    end
-  end
-  if min_pos ~= math.huge and math.abs(min_pos - cursor) > 0.001 then
-    local offset = cursor - min_pos
-    for i = tcnt_before, tcnt_before + delta - 1 do
-      local tr = reaper.GetTrack(0, i)
-      if tr then
-        for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
-          local it = reaper.GetTrackMediaItem(tr, j)
-          if it then
-            local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
-            reaper.SetMediaItemInfo_Value(it, "D_POSITION", p + offset)
-          end
-        end
-      end
-    end
-  end
-
-  -- Always create folder structure (regardless of track count)
-  reaper.InsertTrackAtIndex(plan.folder_index, true)
-  local folder_tr = reaper.GetTrack(0, plan.folder_index)
-  add_log(string.format("DEBUG: folder_tr created at index %d, name='%s'", plan.folder_index, folder_name))
-  reaper.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", folder_name, true)
-  reaper.SetMediaTrackInfo_Value(folder_tr, "I_FOLDERDEPTH", 1)
-  for i = plan.instrument_start, plan.instrument_end do
-    local tr = reaper.GetTrack(0, i)
-    if tr then
-      local _, existing = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
-      if existing == "" then
-        reaper.GetSetMediaTrackInfo_String(tr, "P_NAME",
-          folder_name .. " " .. (i - plan.instrument_start + 1), true)
-      end
-    end
-  end
-  local last_tr = reaper.GetTrack(0, plan.instrument_end)
-  if last_tr then reaper.SetMediaTrackInfo_Value(last_tr, "I_FOLDERDEPTH", -1) end
   add_log(string.format("Imported into folder '%s' (%d track%s)",
-    folder_name, delta, delta == 1 and "" or "s"))
-
-  -- Next candidate (if any) must land right below THIS candidate's whole
-  -- folder (1 folder track + delta instrument tracks), not back at
-  -- reaper.CountTracks(0). Clamp defensively to the live track count: if
-  -- any assumption above drifts (e.g. InsertMedia behaving unexpectedly for
-  -- a given multi-track SMF), a stale/overshooting index must never be
-  -- carried into the next InsertTrackAtIndex call — that is what lets
-  -- "versions"/candidates land on top of each other or on top of
-  -- already-existing tracks instead of failing loudly.
-  return math.min(plan.next_insert_at, reaper.CountTracks(0))
+    folder_name, res.instruments, res.instruments == 1 and "" or "s"))
+  return res.next_insert_at
 end
 
 -- Reference track number (1-based IP_TRACKNUMBER) for AMT generations that

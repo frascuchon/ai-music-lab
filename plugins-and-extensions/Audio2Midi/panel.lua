@@ -16,29 +16,27 @@ local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
 local track_placement = require("track_placement")
+local midi_import = require("midi_import")
 
 local HOME      = common.HOME
 local TMPDIR    = common.TMPDIR
 local PYTHON, PYTHON_ERR = common.detect_reaper_python()
 
 -- ── CONSTANTS ────────────────────────────────────────────────────
--- Ordered by real-world popularity (community adoption); YourMT3+ is public/open,
--- MIROS is internal-use only
-local A2M_MODELS  = { "basicpitch", "yourmt3", "miros" }
+-- Basic Pitch: one instrument, runs locally. YourMT3+: full mixes, runs on Modal.
+local A2M_MODELS  = { "basicpitch", "yourmt3" }
 local A2M_LABELS  = {
   "Basic Pitch  (single instrument, local, Apache 2.0)",
   "YourMT3+  (multi-instr., Apache 2.0)",
-  "MIROS  (multi-instr., A10G, internal use)",
 }
 local A2M_SCRIPTS = {
   basicpitch = SCRIPT_DIR .. "research/research_basic_pitch.py",
-  miros      = SCRIPT_DIR .. "research/research_miros_modal.py",
   yourmt3    = SCRIPT_DIR .. "research/research_yourmt3_modal.py",
 }
 -- Models that run on this machine (no Modal, no GPU choice)
 local A2M_LOCAL = { basicpitch = true }
--- Minimum recommended GPU per model (A10G for MIROS; T4 sufficient for YourMT3+)
-local A2M_GPU_DEFAULT = { basicpitch = 1, miros = 1, yourmt3 = 3 }  -- index in A2M_GPUS
+-- Default GPU per Modal model (T4 is enough for YourMT3+); index in A2M_GPUS
+local A2M_GPU_DEFAULT = { basicpitch = 1, yourmt3 = 3 }
 local A2M_GPUS   = { "A10G", "A100", "T4" }
 
 local TRANSCRIBE_PY = SCRIPT_DIR .. "transcribe.py"
@@ -58,7 +56,7 @@ local S = {
   -- model
   model_idx       = 1,
   gpu_idx         = A2M_GPU_DEFAULT[A2M_MODELS[1]],
-  beat_tracking   = true,
+  estimate_tempo  = true,  -- local models: false = use the project tempo
   onset           = 0.7,   -- Basic Pitch note threshold (higher = fewer notes)
   -- runtime
   running         = false,
@@ -235,15 +233,9 @@ import_midi = function()
   reaper.Undo_BeginBlock()
   local cursor = S.src_item_pos or reaper.GetCursorPosition()
 
-  -- Force the project tempo to match the MIDI's embedded tempo BEFORE
-  -- InsertMedia. REAPER's MIDI import does not reliably adopt a file's own
-  -- tempo map — it can interpret the file's ticks against whatever tempo
-  -- the project already has. When that differs from the tempo the
-  -- transcription encoded (e.g. beat-tracked BPM from MIROS), every note
-  -- lands at the wrong QN: played back faster/slower with correct pitches
-  -- but wrong timing, exactly the "sped up, items too short" symptom.
-  -- Inserting/updating a tempo marker at the insertion point removes that
-  -- ambiguity regardless of the user's REAPER MIDI-import preferences.
+  -- Make the project tempo match the MIDI's embedded tempo at the insertion
+  -- point so the REAPER grid lines up with the transcription's beats. Notes
+  -- are placed by absolute time below, so they land correctly either way.
   if S.midi_tempo and S.midi_tempo > 0 then
     reaper.SetTempoTimeSigMarker(0, -1, cursor, -1, -1, S.midi_tempo, 0, 0, false)
     add_log(string.format("Project tempo set to %.1f BPM (from MIDI)", S.midi_tempo))
@@ -253,70 +245,21 @@ import_midi = function()
   local base_name = S.src_track_name ~= "" and S.src_track_name
     or (S.src:match("([^/\\]+)%.%w+$") or "audio")
   local model_tag = A2M_MODELS[S.model_idx] or "midi"
+  local name = base_name .. " [MIDI " .. model_tag .. "]"
 
-  -- Land the transcribed track(s) right below the source track/clip
-  -- instead of always at the very end of the project's track list.
-  local count_before = reaper.CountTracks(0)
-  local tcnt_before = track_placement.insert_index(S.src_track_idx, count_before)
-
-  -- Insert a new track and position the cursor
-  reaper.InsertTrackAtIndex(tcnt_before, true)
-  local new_track = reaper.GetTrack(0, tcnt_before)
-  reaper.SetOnlyTrackSelected(new_track)
-  reaper.SetEditCurPos(cursor, false, false)
-
-  -- InsertMedia on the selected track
-  reaper.InsertMedia(mid_path, 0)
-
-  -- Detect how many tracks REAPER created (multi-track MIDI can open several)
-  local delta = track_placement.imported_track_count(count_before, reaper.CountTracks(0))
-
-  if delta <= 0 then
-    -- No tracks created — InsertMedia failed or went to an existing track
-    add_log("Warning: InsertMedia did not add new tracks.")
-    reaper.DeleteTrack(new_track)
-    reaper.Undo_EndBlock("Audio2Midi: import MIDI", -1)
-    return
-  end
-
-  if delta == 1 then
-    -- Mono-instrument: name the track cleanly
-    local track_name = base_name .. " [MIDI " .. model_tag .. "]"
-    reaper.GetSetMediaTrackInfo_String(new_track, "P_NAME", track_name, true)
-    add_log("Imported: " .. track_name)
+  -- Land the transcribed track(s) right below the source track/clip. The
+  -- tracks and clips are created explicitly (see lib/midi_import.lua), so
+  -- nothing already in the project is wrapped, moved or overwritten.
+  local insert_at = track_placement.insert_index(S.src_track_idx, reaper.CountTracks(0))
+  local res, err = midi_import.import_file(mid_path, {
+    insert_at = insert_at, position = cursor, name = name,
+  })
+  if not res then
+    add_log("Error importing MIDI: " .. tostring(err))
+  elseif res.instruments == 1 then
+    add_log("Imported: " .. name)
   else
-    -- Multi-instrument: wrap in a folder with an EMPTY parent.
-    local folder_name = base_name .. " [MIDI " .. model_tag .. "]"
-
-    -- Insert an empty folder track BEFORE the imported block.
-    -- InsertMedia already placed the first instrument in new_track (tcnt_before);
-    -- inserting here at tcnt_before shifts that track to tcnt_before+1,
-    -- making it the first child, not the folder.
-    reaper.InsertTrackAtIndex(tcnt_before, true)
-    local folder_tr = reaper.GetTrack(0, tcnt_before)
-    reaper.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", folder_name, true)
-    reaper.SetMediaTrackInfo_Value(folder_tr, "I_FOLDERDEPTH", 1)
-
-    -- Name the instrument tracks (now at tcnt_before+1 .. tcnt_before+delta).
-    -- Preserve the name InsertMedia may have taken from the SMF if it exists.
-    for i = 1, delta do
-      local tr = reaper.GetTrack(0, tcnt_before + i)
-      if tr then
-        local _, existing = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
-        if existing == "" then
-          reaper.GetSetMediaTrackInfo_String(tr, "P_NAME",
-            folder_name .. " " .. i, true)
-        end
-      end
-    end
-
-    -- Close the folder on the last child track.
-    local last_tr = reaper.GetTrack(0, tcnt_before + delta)
-    if last_tr then
-      reaper.SetMediaTrackInfo_Value(last_tr, "I_FOLDERDEPTH", -1)
-    end
-
-    add_log(string.format("Imported into folder '%s' (%d tracks)", folder_name, delta))
+    add_log(string.format("Imported into folder '%s' (%d tracks)", name, res.instruments))
   end
 
   reaper.UpdateArrange()
@@ -379,7 +322,6 @@ local function launch_transcribe()
   else
     add_log("GPU: " .. A2M_GPUS[S.gpu_idx])
   end
-  add_log("Beat tracking: " .. (S.beat_tracking and "yes" or "no"))
 
   local section_args = ""
   if S.src_is_section then
@@ -389,17 +331,19 @@ local function launch_transcribe()
       S.src_start_offs, S.src_start_offs + S.src_section_dur))
   end
 
-  -- Beat tracking off: local models adopt the project tempo (their own tempo
-  -- estimate can be off by several BPM); Modal models just skip the tracking.
-  local beat_arg = S.beat_tracking and "" or " --no-beat-tracking"
+  -- Local-model options. With "Estimate tempo" off the MIDI is written at the
+  -- project tempo (the automatic estimate can be off by several BPM).
+  local beat_arg = ""
   if A2M_LOCAL[model_key] then
-    beat_arg = beat_arg .. string.format(" --onset-threshold %.2f", S.onset)
+    beat_arg = string.format(" --onset-threshold %.2f", S.onset)
     add_log(string.format("Note threshold: %.2f", S.onset))
-  end
-  if A2M_LOCAL[model_key] and not S.beat_tracking then
-    local bpm = reaper.Master_GetTempo()
-    beat_arg = beat_arg .. string.format(" --bpm %.3f", bpm)
-    add_log(string.format("Tempo: project (%.1f BPM)", bpm))
+    if S.estimate_tempo then
+      add_log("Tempo: estimated from the audio")
+    else
+      local bpm = reaper.Master_GetTempo()
+      beat_arg = beat_arg .. string.format(" --no-beat-tracking --bpm %.3f", bpm)
+      add_log(string.format("Tempo: project (%.1f BPM)", bpm))
+    end
   end
   local run_dir  = make_run_dir()
 
@@ -427,7 +371,6 @@ function M.init()
   add_log("Audio2Midi ready.")
   add_log("Python: " .. PYTHON)
   add_log("Basic Pitch: " .. A2M_SCRIPTS.basicpitch)
-  add_log("MIROS:  " .. A2M_SCRIPTS.miros)
   add_log("YourMT3+: " .. A2M_SCRIPTS.yourmt3)
 end
 
@@ -502,16 +445,15 @@ function M.draw()
   S.gpu_idx = widgets.combo("##a2m_gpu", S.gpu_idx, A2M_GPUS)
   if A2M_LOCAL[cur_model] then g.end_disabled() end
 
-  -- Beat tracking (only shows a note for YourMT3+ which doesn't use it)
-  g.same_line(t.sc(18))
-  local bt_changed, bt_new = g.checkbox("Beat tracking##bt", S.beat_tracking)
-  if bt_changed then S.beat_tracking = bt_new end
-  if cur_model == "yourmt3" then  -- YourMT3+ has no flag
-    g.same_line(t.sc(8))
-    g.text_disabled("(N/A for YourMT3+)")
-  elseif A2M_LOCAL[cur_model] and not S.beat_tracking then
-    g.same_line(t.sc(8))
-    g.text_disabled("(uses project tempo)")
+  -- Tempo source (local models only)
+  if A2M_LOCAL[cur_model] then
+    g.same_line(t.sc(18))
+    local et_changed, et_new = g.checkbox("Estimate tempo##et", S.estimate_tempo)
+    if et_changed then S.estimate_tempo = et_new end
+    if not S.estimate_tempo then
+      g.same_line(t.sc(8))
+      g.text_disabled("(uses project tempo)")
+    end
   end
 
   g.spacing()
@@ -527,7 +469,6 @@ function M.draw()
   -- Cost hint
   local hints = {
     basicpitch = "Runs on this machine, free  |  best for ONE instrument (guitar, voice, piano)",
-    miros      = "A10G: ~$0.05/min  |  MIROS requires A10G minimum (flash-attn Ampere+)",
     yourmt3    = "A10G: ~$0.05/min  |  YourMT3+ works on T4 and above  |  for full mixes",
   }
   g.text_disabled(hints[cur_model] or "")

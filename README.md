@@ -6,7 +6,7 @@ A collection of REAPER plugins that bring AI-powered audio and MIDI tools direct
 
 | Plugin | What it does | Models |
 |---|---|---|
-| **Audio2Midi** | Transcribe any audio to MIDI (single instrument locally, or polyphonic multi-instrument in the cloud) | Basic Pitch, YourMT3+, MIROS |
+| **Audio2Midi** | Transcribe any audio to MIDI (single instrument locally, or polyphonic multi-instrument in the cloud) | Basic Pitch, YourMT3+ |
 | **MidiGenerator** | Generate MIDI from a text prompt or a seed MIDI file | Amadeus, Anticipatory MT |
 | **Text2Audio** | Generate or edit audio from a text description | Stable Audio Open, Foundation-1, ACE-Step, MusicGen, and more |
 | **StemsSeparator** | Separate any audio into stems (vocals, drums, bass, other…) | Demucs (local), SAM Audio (Modal) |
@@ -148,7 +148,7 @@ Lua plugin  →  imports result into REAPER project
 ```
 
 All cloud inference costs are billed to your Modal account. Typical costs:
-- Audio2Midi (MIROS, A10G): ~$0.03–0.08 per transcription
+- Audio2Midi (YourMT3+, A10G): ~$0.03–0.08 per transcription; Basic Pitch runs locally for free
 - MidiGenerator (most models, A10G): ~$0.05–0.15 per generation
 - Text2Audio (SAO, A10G): ~$0.05–0.10 per generation
 - StemsSeparator SAM (A100): ~$0.14 per track

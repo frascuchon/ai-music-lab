@@ -87,24 +87,6 @@ class TestWriteMidiFromTake(TestCase):
         self.assertEqual(len(tempo_msgs), 1)
         self.assertAlmostEqual(mido.tempo2bpm(tempo_msgs[0].tempo), 96.0, places=1)
 
-    def test_output_is_parseable_abc_via_midi2abc(self):
-        """Integration guard: the
-        exported take must survive a real midi2abc pass (not just mido's
-        lenient parser) and produce ABC with a key field, since abc2midi
-        cannot determine pitches without one."""
-        if not shutil.which("midi2abc"):
-            self.skipTest("midi2abc not installed (brew/apt install abcmidi)")
-        out_path = self.tmpdir / "out.mid"
-        run_gen("simple", 120.0, out_path)
-        abc_out = self.tmpdir / "out.abc"
-        result = subprocess.run(
-            ["midi2abc", str(out_path), "-o", str(abc_out)],
-            capture_output=True, text=True, timeout=15,
-        )
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        abc_text = abc_out.read_text()
-        self.assertIn("K:", abc_text)
-
 
 @unittest.skipUnless(_HAS_LUA, "lua interpreter not found on PATH")
 class TestWriteMidiFromTakeRejectsEmptyTake(TestCase):

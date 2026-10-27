@@ -191,7 +191,7 @@ class TestTempoReportedEndToEnd(TestCase):
         """))
         return script
 
-    def _run(self, script, model="miros"):
+    def _run(self, script, model="yourmt3"):
         args = [
             sys.executable, str(SCRIPT),
             "--shared-dir", str(self.shared_dir),
@@ -242,8 +242,8 @@ class TestTempoReportedEndToEnd(TestCase):
 
 class TestGpuSelection(TestCase):
     """The panel's GPU combo must reach the Modal script: those scripts read
-    MIROS_GPU / YOURMT3_GPU at import time, so transcribe.py has to export
-    the chosen GPU into the subprocess environment."""
+    YOURMT3_GPU at import time, so transcribe.py has to export the chosen GPU
+    into the subprocess environment."""
 
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="a2m_gpu_"))
@@ -268,7 +268,7 @@ class TestGpuSelection(TestCase):
             a = p.parse_args()
             out = Path(a.out_dir)
             (out / "gpu_seen.txt").write_text(
-                os.environ.get("MIROS_GPU", "-") + "," + os.environ.get("YOURMT3_GPU", "-"))
+                os.environ.get("YOURMT3_GPU", "-"))
             make_midi(out / "transcribed_cuda.mid", tempo_bpm=120)
         """))
 
@@ -284,24 +284,11 @@ class TestGpuSelection(TestCase):
             capture_output=True, text=True, timeout=30)
         return (self.outdir / "gpu_seen.txt").read_text()
 
-    def test_miros_gpu_is_exported(self):
-        self.assertEqual(self._seen("miros", "A100"), "A100,-")
-
-    def test_miros_on_t4_is_rejected_before_launching_modal(self):
-        self._seen_no_output("miros", "T4")
-        self.assertIn("cannot run on T4", self.progress_file.read_text())
-        self.assertFalse((self.outdir / "gpu_seen.txt").exists())
-
-    def _seen_no_output(self, model, gpu):
-        subprocess.run(
-            [sys.executable, str(SCRIPT),
-             "--shared-dir", str(self.shared_dir), "--script", str(self.script),
-             "--input", str(self.input_wav), "--out-dir", str(self.outdir),
-             "--model", model, "--gpu", gpu, "--progress", str(self.progress_file)],
-            capture_output=True, text=True, timeout=30)
-
     def test_yourmt3_gpu_is_exported(self):
-        self.assertEqual(self._seen("yourmt3", "T4"), "-,T4")
+        self.assertEqual(self._seen("yourmt3", "T4"), "T4")
+
+    def test_gpu_choice_reaches_the_modal_script(self):
+        self.assertEqual(self._seen("yourmt3", "A100"), "A100")
 
 
 class TestLocalModel(TestCase):
@@ -330,7 +317,7 @@ class TestLocalModel(TestCase):
             p.add_argument("--no-beat-tracking", action="store_true")
             a = p.parse_args()
             make_midi(a.out, tempo_bpm=100, n_notes={n_notes})
-            print("[stub] gpu env:", os.environ.get("MIROS_GPU"), os.environ.get("YOURMT3_GPU"))
+            print("[stub] gpu env:", os.environ.get("YOURMT3_GPU"))
         """))
 
     def _run(self, extra=()):
@@ -354,7 +341,7 @@ class TestLocalModel(TestCase):
     def test_local_model_does_not_export_gpu_env(self):
         self._write_script(n_notes=4)
         res = self._run(["--gpu", "A100"])
-        self.assertIn("gpu env: None None", res.stdout)
+        self.assertIn("gpu env: None", res.stdout)
 
     def test_bpm_is_forwarded_to_the_local_script(self):
         self._write_script(n_notes=3)
@@ -435,7 +422,7 @@ class TestBasicPitchCleanup(TestCase):
 
 class TestLevelling(TestCase):
     """research_basic_pitch.load_normalised: quiet recordings (a Guitar Rig
-    render peaking at -22 dBFS made MIROS return an empty MIDI) must be
+    render peaking at -22 dBFS made a transcription model return an empty MIDI) must be
     brought up to -1 dBFS; silence must be rejected."""
 
     def setUp(self):
@@ -502,7 +489,7 @@ class TestErrorReporting(TestCase):
         """))
         return script
 
-    def _run(self, script, model="miros"):
+    def _run(self, script, model="yourmt3"):
         args = [
             sys.executable, str(SCRIPT),
             "--shared-dir", str(self.shared_dir),

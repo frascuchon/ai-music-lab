@@ -34,7 +34,7 @@ Subcommands:
   modal-secret-list                      Report whether huggingface-secret exists.
   modal-secret-create --token <tok>      Create/update huggingface-secret.
 
-Note: there used to be prewarm-sam / prewarm-miros / prewarm-yourmt3 /
+Note: there used to be prewarm-sam / prewarm-yourmt3 /
 prewarm-midigen-* subcommands here that manually pre-downloaded each model's
 weights into its Modal Volume before first real use. Removed — every real
 generate/transcribe/separate Modal function now downloads+caches its own
