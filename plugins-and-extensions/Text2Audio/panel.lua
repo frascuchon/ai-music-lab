@@ -59,12 +59,11 @@ local GEN_MAX_SEC = {
 -- Edit models (source audio + prompt → transformed audio)
 -- Ordered by real-world popularity of the underlying base model (verified via GitHub
 -- stars / official announcements); AudioLDM2's own repo has only ~6★
-local EDIT_MODELS  = { "musicgen", "acestep", "sao_edit",
+local EDIT_MODELS  = { "sao_edit", "acestep",
                        "melodyflow", "zeta", "inspiremusic" }
 local EDIT_LABELS  = {
-  "MusicGen-melody  (A10G, melodic conditioning, CC-BY-NC)",
-  "ACE-Step 1.5  (A10G, cover/re-style, Apache 2.0)",
   "SAO Style Transfer  (A10G, SDEdit init_audio)",
+  "ACE-Step 1.5  (A10G, cover/re-style, Apache 2.0)",
   "MelodyFlow  (A10G, ≤30 s, flow matching, MIT/CC-BY-NC)",
   "ZETA/AudioLDM2  (A10G, ≤10 s, zero-shot, Apache/CC-BY-SA)",
   "InspireMusic continuation  (A10G, ≤30 s, Apache 2.0)",
@@ -72,14 +71,9 @@ local EDIT_LABELS  = {
 local EDIT_SCRIPTS = {
   sao_edit    = SCRIPT_DIR .. "research/research_sao_edit_modal.py",
   acestep     = SCRIPT_DIR .. "research/research_acestep_edit_modal.py",
-  musicgen    = SCRIPT_DIR .. "research/research_musicgen_melody_modal.py",
   melodyflow  = SCRIPT_DIR .. "research/research_melodyflow_modal.py",
   zeta        = SCRIPT_DIR .. "research/research_zeta_edit_modal.py",
   inspiremusic= SCRIPT_DIR .. "research/research_inspiremusic_modal.py",
-}
-local EDIT_NEEDS_SECONDS = {
-  sao_edit = false, acestep = false, musicgen = true,
-  melodyflow = false, zeta = false, inspiremusic = false,
 }
 
 local GPUS        = { "A10G", "A100", "T4" }
@@ -210,14 +204,6 @@ local EDIT_EXAMPLE_PROMPTS = {
     { label = "Dark ambient, heavy reverb, ominous mood",
       text = "dark ambient version, heavy reverb, ominous and haunting mood" },
   },
-  musicgen = {
-    { label = "Same melody played by a string quartet",
-      text = "the same melody played by a string quartet" },
-    { label = "Acoustic drum kit, same rhythm, 90 BPM",
-      text = "acoustic drum kit playing the same rhythm, tight studio recording, 90 BPM" },
-    { label = "Same chords on grand piano, jazz voicings",
-      text = "the same chord progression played on a grand piano, jazz voicings, warm and intimate" },
-  },
   melodyflow = {
     { label = "Soft dreamy ambient, gentle synth pads",
       text = "soft dreamy ambient rendition with gentle synth pads" },
@@ -280,7 +266,6 @@ local S = {
   src_is_section    = false,
   edit_prompt       = "",
   edit_prompt_example = { idx = 1 },
-  edit_duration     = 10.0,
   intensity_idx     = 2,   -- "moderate"
   edit_model_idx    = 1,
   -- Execution: "local" (this machine, MPS/CPU) or "remote" (Modal cloud)
@@ -616,22 +601,16 @@ local function launch_t2a()
         S.src_start_offs, S.src_start_offs + S.src_section_dur))
     end
 
-    -- MusicGen needs --seconds
-    local seconds_arg = ""
-    if EDIT_NEEDS_SECONDS[model_key] then
-      seconds_arg = string.format(" --seconds %.2f", S.edit_duration)
-    end
-
     add_log("Execution: " .. S.execution)
     local cmd = string.format(
       '%s %s --shared-dir %s --script %s --model %s --mode edit'
       .. ' --input %s --prompt %s --intensity %s --gpu %s --execution %s'
-      .. ' --out-dir %s%s%s --progress %s >>%s 2>&1 &',
+      .. ' --out-dir %s%s --progress %s >>%s 2>&1 &',
       q(PYTHON), q(TEXT2AUDIO_PY),
       q(SHARED_DIR), q(script),
       q(model_key),
       q(S.src), q(prompt), q(INTENSITIES[S.intensity_idx]), q(GPUS[S.gpu_idx]), q(S.execution),
-      q(run_dir), section_args, seconds_arg,
+      q(run_dir), section_args,
       q(PROGRESS_F), q(LOG_F))
 
     add_log("Launching " .. (S.execution == "local" and "local" or "Modal") .. " process...")
@@ -962,9 +941,9 @@ function M.draw()
     end
     g.spacing()
 
-    -- Intensity (not applicable to MusicGen or InspireMusic continuation)
+    -- Intensity (not applicable to InspireMusic continuation)
     local cur_edit_model = EDIT_MODELS[S.edit_model_idx]
-    local EDIT_NO_INTENSITY = { musicgen = true, inspiremusic = true }
+    local EDIT_NO_INTENSITY = { inspiremusic = true }
     if not EDIT_NO_INTENSITY[cur_edit_model] then
       g.row_label("Intensity:", t.sc(80))
       g.next_width(t.sc(170))
@@ -979,17 +958,6 @@ function M.draw()
       g.spacing()
     end
 
-    -- Duration (MusicGen only)
-    if EDIT_NEEDS_SECONDS[cur_edit_model] then
-      g.row_label("Duration:", t.sc(80))
-      g.next_width(-(t.sc(50) + t.SPACING_X))
-      local ch_ed, new_ed = g.slider_float("##edit_dur", S.edit_duration, 1.0, 30.0, "%.1f s")
-      if ch_ed then S.edit_duration = new_ed end
-      g.same_line()
-      g.text(string.format("%.1fs", S.edit_duration))
-      g.spacing()
-    end
-
     -- GPU
     g.row_label("GPU:", t.sc(80))
     g.next_width(t.sc(90))
@@ -1000,7 +968,6 @@ function M.draw()
     local model_hints = {
       sao_edit    = "SAO SDEdit: reuses weights already downloaded from SAO 1.0 (no extra setup cost)",
       acestep     = "ACE-Step: requires initial setup (~5 GB). Apache 2.0, commercial use allowed.",
-      musicgen    = "MusicGen-melody: melodic conditioning. CC-BY-NC, non-commercial use only.",
       melodyflow  = "MelodyFlow: flow matching with latent inversion. High fidelity. ≤30 s.",
       zeta        = "ZETA/AudioLDM2: DDIM inversion zero-shot. Output 16 kHz mono ≤10 s.",
       inspiremusic= "InspireMusic: continues the audio with the style from the prompt. ≤30 s.",

@@ -5,7 +5,7 @@
 Called by Text2Audio.lua as a background process:
     python3 text2audio.py
         --shared-dir <shared/>  --script <research_*.py>
-        --model <sao|foundation1|sao_edit|acestep|musicgen|...>
+        --model <sao|foundation1|sao_edit|acestep|...>
         --mode  <generate|edit>
         --out-dir <dir>  --progress <pf>
         [--prompt <text>]
@@ -32,8 +32,6 @@ Model entrypoint contracts (modal run <script>::main):
       --source-audio  --prompt  --noise-level  --out-dir  --force
   audio_edit_strength (acestep):
       --source-audio  --prompt  --strength  --out-dir  --force
-  melody_edit (musicgen):
-      --source-audio  --prompt  --seconds  --out-dir  --force
   audio_edit_flowstep (melodyflow):
       --source-audio  --prompt  --flowstep  --out-dir  --force
   audio_edit_tstart (zeta):
@@ -70,10 +68,6 @@ from model_execution import is_local_supported  # noqa: E402
 
 LOCAL_SCRIPT = Path(__file__).resolve().parent / "text2audio_local.py"
 
-# Edit-mode models whose local backend (text2audio_local.py) needs --seconds
-# explicitly (mirrors panel.lua's EDIT_NEEDS_SECONDS for the remote path).
-_LOCAL_EDIT_NEEDS_SECONDS = {"musicgen"}
-
 
 # ---------------------------------------------------------------------------
 # Model contract type per model key
@@ -91,7 +85,6 @@ MODEL_KIND: dict[str, str] = {
     # Editing (source audio + prompt → transformed audio)
     "sao_edit":    "audio_edit_noise",
     "acestep":     "audio_edit_strength",
-    "musicgen":    "melody_edit",
     "melodyflow":  "audio_edit_flowstep",
     "zeta":        "audio_edit_tstart",
     "inspiremusic":"audio_continuation",
@@ -166,7 +159,7 @@ def main() -> int:
     p.add_argument("--model",       required=True,
                    help="Model key (sao|foundation1|acestep_gen|inspiremusic_gen|"
                         "mustango|audiogen|musicgen_gen|magnet|"
-                        "sao_edit|acestep|musicgen|melodyflow|zeta|inspiremusic).")
+                        "sao_edit|acestep|melodyflow|zeta|inspiremusic).")
     p.add_argument("--mode",        required=True, choices=["generate", "edit"],
                    help="Operation mode.")
     p.add_argument("--out-dir",     required=True, dest="out_dir",
@@ -287,8 +280,6 @@ def main() -> int:
         else:
             cmd += ["--mode", "edit", "--input", str(process_path),
                    "--intensity", args.intensity]
-            if args.model in _LOCAL_EDIT_NEEDS_SECONDS:
-                cmd += ["--seconds", str(args.seconds)]
         env = os.environ.copy()
         print(f"[text2audio] Command (local): {' '.join(cmd)}", flush=True)
         return _run_and_collect(cmd, env, pf, out_dir, args, temp_dir)
@@ -351,14 +342,6 @@ def main() -> int:
             "--source-audio", str(process_path),
             "--prompt",       args.prompt,
             "--strength",     str(strength),
-            "--out-dir",      str(out_dir),
-            "--force",
-        ]
-    elif kind == "melody_edit":
-        cmd += [
-            "--source-audio", str(process_path),
-            "--prompt",       args.prompt,
-            "--seconds",      str(args.seconds),
             "--out-dir",      str(out_dir),
             "--force",
         ]
