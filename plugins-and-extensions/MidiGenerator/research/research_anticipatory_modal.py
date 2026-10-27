@@ -1,9 +1,9 @@
 """
 Modal.com inference app para Anticipatory Music Transformer (Stanford CRFM, Apache 2.0).
 
-Modos:
-  - continuation:   genera continuación libre de un MIDI existente
-  - accompaniment:  genera acompañamiento dado una melodía como control
+Genera un acompañamiento para una melodía MIDI (canal 0). No hace falta aportar
+acompañamiento previo: si el MIDI solo trae la melodía, se construye
+automáticamente un "prompt" de bajo + acordes con harmony.py (ver accompaniment.py).
 
 Modelos disponibles (HuggingFace):
   stanford-crfm/music-small-800k    (~100M params,  ~400 MB)
@@ -28,30 +28,23 @@ Los pesos se descargan automáticamente (y se cachean en el Volume,
 best-effort commit — ver _inference_impl) en la primera llamada real; no
 requiere un paso de setup manual.
 
-Inferencia (modo accompaniment):
+Inferencia:
     modal run research_anticipatory_modal.py::main \
-        --input ../evaluation/anticipatory/test2/input_fixture.mid \
-        --mode accompaniment --prompt-length 5 --clip-length 20 \
-        --out ../evaluation/anticipatory/test2/generated.mid
+        --input melody.mid --clip-length 0 --out generated.mid
 
-    # con modelo grande y GPU T4:
+    # estilo del prompt automático (pop | pad | arp) y 3 candidatos:
     modal run research_anticipatory_modal.py::main \
-        --model stanford-crfm/music-large-800k --gpu T4 \
-        --input ../evaluation/anticipatory/test2/input_fixture.mid \
-        --mode accompaniment --clip-length 20 \
-        --out /tmp/generated_large.mid
+        --input melody.mid --style arp --multiplicity 3 --out generated.mid
 
-    # 3 candidatos (multiplicity):
+    # con acompañamiento propio en otros canales (sin prompt automático):
     modal run research_anticipatory_modal.py::main \
-        --input ../evaluation/anticipatory/test2/input_fixture.mid \
-        --mode accompaniment --multiplicity 3 \
-        --out ../evaluation/anticipatory/test2/generated.mid
+        --input melody_y_semilla.mid --no-auto-history --out generated.mid
 
-Inferencia (modo continuation):
+    # modelo grande y GPU T4:
     modal run research_anticipatory_modal.py::main \
-        --input ../evaluation/anticipatory/test1/input_fixture.mid \
-        --mode continuation --duration 20 \
-        --out ../evaluation/anticipatory/test1/generated.mid
+        --model stanford-crfm/music-large-800k --gpu T4 --input melody.mid --out generated.mid
+
+    --clip-length 0 (por defecto en el plugin) = duración de la melodía.
 
 Recovery (si el cliente cae durante spawn+poll):
     modal run research_anticipatory_modal.py::recover
@@ -99,6 +92,11 @@ image = (
     .run_commands(
         "pip install 'git+https://github.com/jthickstun/anticipation.git'",
     )
+    # Melody-only accompaniment: automatic prompt + channel->instrument mapping
+    .add_local_file(str(Path(__file__).resolve().parent.parent / "harmony.py"),
+                    "/root/harmony.py")
+    .add_local_file(str(Path(__file__).resolve().parent.parent / "accompaniment.py"),
+                    "/root/accompaniment.py")
 )
 
 app = modal.App("amt-inference", image=image)
@@ -110,15 +108,15 @@ app = modal.App("amt-inference", image=image)
 def _inference_impl(
     midi_bytes: bytes,
     model_name: str,
-    mode: str,
-    duration: int,
     prompt_length: int,
     clip_length: int,
     top_p: float,
     melody_instrument: int,
     seed: int,
+    auto_history: bool = True,
+    style: str = "pop",
 ) -> bytes:
-    """Carga el modelo, ejecuta continuation o accompaniment, retorna bytes MIDI."""
+    """Carga el modelo, genera el acompañamiento y retorna bytes MIDI (solo el acompañamiento)."""
     import time
 
     import numpy as np
@@ -133,7 +131,7 @@ def _inference_impl(
     os.makedirs(HF_CACHE, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"[info] device={device}  model={model_name}  mode={mode}")
+    print(f"[info] device={device}  model={model_name}")
 
     t0 = time.time()
     model = AutoModelForCausalLM.from_pretrained(
@@ -159,84 +157,65 @@ def _inference_impl(
 
     t1 = time.time()
     with torch.no_grad():
-        if mode == "continuation":
-            from anticipation.ops import clip, sort
-            from anticipation.sample import generate
+        from anticipation.ops import clip, combine
+        from anticipation.sample import generate
+        from anticipation.tokenize import extract_instruments
 
-            events = midi_to_events(input_path)
-            if not events:
-                raise ValueError(
-                    "El seed MIDI no contiene eventos. "
-                    "Asegúrate de que el item seleccionado tiene notas MIDI."
-                )
-            # Usa prompt_length para la ventana de historia (no hardcoded 5s)
-            history = clip(events, 0, prompt_length)
-            if not history:
-                raise ValueError(
-                    f"El seed MIDI no tiene eventos en los primeros {prompt_length}s. "
-                    f"Usa un item más largo o reduce prompt_length ({prompt_length}s)."
-                )
-            new_events = generate(model, prompt_length, prompt_length + duration,
-                                  inputs=history, top_p=top_p)
-            if not new_events:
-                raise ValueError("AMT no generó ningún evento MIDI. Prueba con otro seed o aumenta duration.")
-            # Solo exportar la continuación (sin la historia) para no solapar
-            # la pista original al importar en REAPER. La historia ya existe.
-            midi_out = events_to_midi(new_events)
+        import sys
+        sys.path.insert(0, "/root")
+        import accompaniment
 
-        elif mode == "accompaniment":
-            from anticipation.ops import clip, combine
-            from anticipation.sample import generate
-            from anticipation.tokenize import extract_instruments
+        np.random.seed(seed)
+        torch.manual_seed(seed)
 
-            np.random.seed(seed)
-            torch.manual_seed(seed)
+        # Channel 0 = melody (-> melody_instrument), other channels = accompaniment
+        # history; builds the history from the melody when there is none.
+        prep = accompaniment.prepare(midi_bytes, melody_instrument, prompt_length,
+                                     auto_history=auto_history, style=style)
+        lead, melody_end = prep.lead, prep.melody_end
+        with open(input_path, "wb") as f:
+            f.write(prep.midi)
+        if prep.auto_history:
+            print(f"[prompt] acompañamiento automático ({style}): {prep.harmony}")
+        if lead > 0.05:
+            print(f"[input] silencio inicial recortado: {lead:.2f}s")
 
-            events = midi_to_events(input_path)
-            events, controls = extract_instruments(events, [melody_instrument])
+        # A short melody cannot supply a full prompt plus something to generate.
+        eff_prompt = min(float(prompt_length), max(2.0, melody_end * 0.35))
+        eff_clip = clip_length if clip_length > 0 else int(melody_end) + 2
+        eff_clip = max(eff_clip, int(eff_prompt) + 2)
+        print(f"[input] melodía {melody_end:.1f}s  prompt={eff_prompt:.1f}s  clip={eff_clip}s")
 
-            if not events:
-                print("[warning] sin eventos non-melody — AMT generará REST tokens.")
+        events = midi_to_events(input_path)
+        events, controls = extract_instruments(events, [melody_instrument])
 
-            prompt = clip(events, 0, prompt_length, clip_duration=False)
-            generated = generate(
-                model,
-                prompt_length,
-                clip_length,
-                inputs=prompt,
-                controls=controls,
-                top_p=top_p,
-            )
-            output = clip(combine(generated, controls), 0, clip_length)
-            midi_out = events_to_midi(output)
+        if not events:
+            print("[warning] sin eventos non-melody — AMT generará REST tokens.")
 
-        else:
-            raise ValueError(f"modo desconocido: {mode!r}")
+        prompt = clip(events, 0, eff_prompt, clip_duration=False)
+        generated = generate(
+            model,
+            eff_prompt,
+            eff_clip,
+            inputs=prompt,
+            controls=controls,
+            top_p=top_p,
+        )
+        output = clip(combine(generated, controls), 0, eff_clip)
+        midi_out = events_to_midi(output)
 
     t_infer = time.time() - t1
     print(f"[timing] inferencia: {t_infer:.1f}s")
 
     midi_out.save(output_path)
 
-    # Continuación: desplazar notas a t=0 (AMT genera desde prompt_length en adelante)
-    if mode == "continuation":
-        import pretty_midi
-        pm_raw = pretty_midi.PrettyMIDI(output_path)
-        pm_shifted = pretty_midi.PrettyMIDI()
-        for instr in pm_raw.instruments:
-            ni = pretty_midi.Instrument(program=instr.program, is_drum=instr.is_drum, name=instr.name)
-            for note in instr.notes:
-                ni.notes.append(pretty_midi.Note(
-                    velocity=note.velocity,
-                    pitch=note.pitch,
-                    start=max(0.0, note.start - prompt_length),
-                    end=max(0.001, note.end - prompt_length),
-                ))
-            if ni.notes:
-                pm_shifted.instruments.append(ni)
-        pm_shifted.write(output_path)
-        n_notes = sum(len(i.notes) for i in pm_shifted.instruments)
-        print(f"[continuation] desplazado -{prompt_length}s → {n_notes} notas, {len(pm_shifted.instruments)} pistas")
+    # Only the accompaniment goes back (the user already has the melody),
+    # shifted to the melody's original start time and not outlasting it.
+    with open(output_path, "rb") as f:
+        final = accompaniment.finalize(f.read(), lead, melody_instrument,
+                                       trim_after=melody_end + 0.5)
+    with open(output_path, "wb") as f:
+        f.write(final)
 
     # Persistir pesos descargados (best-effort: xet puede tener log files abiertos)
     try:
@@ -265,12 +244,14 @@ _FN_KWARGS = dict(cpu=2, memory=6144, timeout=3600, volumes={WEIGHTS_MOUNT: weig
 
 
 @app.function(gpu=DEFAULT_GPU, **_FN_KWARGS)
-def run(midi_bytes: bytes, model_name: str = DEFAULT_MODEL, mode: str = "accompaniment",
-        duration: int = 10, prompt_length: int = 5, clip_length: int = 20,
-        top_p: float = 0.95, melody_instrument: int = 0, seed: int = 0) -> bytes:
-    return _inference_impl(midi_bytes, model_name, mode, duration=duration,
+def run(midi_bytes: bytes, model_name: str = DEFAULT_MODEL,
+        prompt_length: int = 5, clip_length: int = 0,
+        top_p: float = 0.95, melody_instrument: int = 0, seed: int = 0,
+        auto_history: bool = True, style: str = "pop") -> bytes:
+    return _inference_impl(midi_bytes, model_name,
                            prompt_length=prompt_length, clip_length=clip_length,
-                           top_p=top_p, melody_instrument=melody_instrument, seed=seed)
+                           top_p=top_p, melody_instrument=melody_instrument, seed=seed,
+                           auto_history=auto_history, style=style)
 
 
 # ---------------------------------------------------------------------------
@@ -280,32 +261,30 @@ def run(midi_bytes: bytes, model_name: str = DEFAULT_MODEL, mode: str = "accompa
 def main(
     input: str = "",
     out: str = "out_anticipatory.mid",
-    mode: str = "accompaniment",
     model: str = DEFAULT_MODEL,
     gpu: str = "A10G",
-    # continuation
-    duration: int = 10,
-    # accompaniment
     prompt_length: int = 5,
-    clip_length: int = 20,
+    clip_length: int = 0,
     top_p: float = 0.95,
-    seed: int = 0,
+    seed: int = -1,
     melody_instrument: int = 0,
     multiplicity: int = 1,
+    auto_history: bool = True,
+    style: str = "pop",
 ) -> None:
     """
     Genera MIDI con Anticipatory Music Transformer en Modal GPU.
 
     Ejemplos:
         modal run research_anticipatory_modal.py \\
-            --input ../evaluation/anticipatory/test2/input_fixture.mid \\
-            --mode accompaniment --clip-length 20 --out /tmp/generated.mid
+            --input melody.mid --out /tmp/generated.mid
 
         modal run research_anticipatory_modal.py \\
             --model stanford-crfm/music-large-800k --gpu L4 \\
-            --input ../evaluation/anticipatory/test2/input_fixture.mid \\
-            --mode accompaniment --multiplicity 3 \\
-            --out ../evaluation/anticipatory/test2/generated.mid
+            --input melody.mid --multiplicity 3 --out /tmp/generated.mid
+
+    seed < 0 (por defecto) elige una semilla aleatoria; con una semilla fija el
+    resultado es reproducible. El candidato i usa la semilla base + i.
     """
     import time
 
@@ -325,14 +304,12 @@ def main(
     midi_bytes = input_path.read_bytes()
     fn = run.with_options(gpu=gpu_key)
 
-    mode_info = (
-        f"prompt_length={prompt_length}s, clip_length={clip_length}s, "
-        f"top_p={top_p}, seed={seed}"
-        if mode == "accompaniment"
-        else f"duration={duration}s"
-    )
+    if seed < 0:
+        import random
+        seed = random.randrange(2**31)
     print(
-        f"[modal] gpu={gpu_key}  model={model}  mode={mode}  {mode_info}"
+        f"[modal] gpu={gpu_key}  model={model}  style={style}  "
+        f"prompt_length={prompt_length}s, clip_length={clip_length}s, top_p={top_p}, seed={seed}"
         + (f"  multiplicity={multiplicity}" if multiplicity > 1 else "")
     )
 
@@ -351,13 +328,13 @@ def main(
         call = fn.spawn(
             midi_bytes=midi_bytes,
             model_name=model,
-            mode=mode,
-            duration=duration,
             prompt_length=prompt_length,
             clip_length=clip_length,
             top_p=top_p,
             melody_instrument=melody_instrument,
             seed=seed_i,
+            auto_history=auto_history,
+            style=style,
         )
         print(f"[spawned] object_id={call.object_id}")
 

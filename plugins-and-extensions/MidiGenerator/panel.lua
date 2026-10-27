@@ -50,8 +50,10 @@ local MG_GPU_RELEVANT = { anticipatory=true }
 local MG_TEMP_DEFAULT = { amadeus=1.0 }
 local MG_TEMP_RANGE_DEFAULT = { 0.5, 2.0 }
 
-local AMT_MODES = { "accompaniment", "continuation" }
-local AMT_MODE_LABELS = { "Accompaniment", "Continuation" }
+-- Style of the automatic bass + chords prompt Anticipatory continues from
+-- (only used when no accompaniment tracks are added)
+local AMT_STYLES = { "pop", "pad", "arp" }
+local AMT_STYLE_LABELS = { "Pop (bass + chord stabs)", "Pad (bass + sustained chords)", "Arpeggio (bass + arpeggiated chords)" }
 
 -- Example prompts per text model, selectable from a dropdown next to the
 -- prompt box. Written in MidiCaps style, the dialect Amadeus expects (see
@@ -84,9 +86,8 @@ local S = {
   field_instruments = "",
   field_chords      = "",
   -- AMT parameters
-  amt_mode_idx     = 1,   -- 1=accompaniment, 2=continuation
-  amt_duration     = 20,  -- clip_length (accompaniment) or duration (continuation)
-  amt_prompt_len   = 5,   -- prompt_length (accompaniment only)
+  amt_style_idx    = 1,   -- index in AMT_STYLES
+  amt_prompt_len   = 5,   -- seconds of accompaniment the model continues from
   -- AMT: melody track
   amt_melody_item  = nil,   -- REAPER item (for position/length on import)
   amt_melody_take  = nil,
@@ -243,15 +244,12 @@ import_midi_all = function()
   local mk    = model_key()
   local label = "[MIDI " .. mk .. "]"
 
-  -- For AMT continuation: position cursor at the end of the melody item
-  -- so the continuation is inserted right after (not overlapping the seed).
-  if mk == "anticipatory"
-      and AMT_MODES[S.amt_mode_idx] == "continuation"
-      and S.amt_melody_item then
+  -- The accompaniment is timed relative to the start of the melody item, so
+  -- import it at that position (not wherever the edit cursor happens to be).
+  if mk == "anticipatory" and S.amt_melody_item then
     local pos = reaper.GetMediaItemInfo_Value(S.amt_melody_item, "D_POSITION")
-    local len = reaper.GetMediaItemInfo_Value(S.amt_melody_item, "D_LENGTH")
-    reaper.SetEditCurPos(pos + len, false, false)
-    add_log(string.format("Cursor → %.2fs (end of melody item)", pos + len))
+    reaper.SetEditCurPos(pos, false, false)
+    add_log(string.format("Cursor → %.2fs (start of the melody item)", pos))
   end
 
   -- Land the generated folder(s) right below the melody/seed tracks this
@@ -367,14 +365,6 @@ local function launch_generate()
       "MidiGenerator", 0)
     return
   end
-  local amt_mode_is_acc = is_amt and (AMT_MODES[S.amt_mode_idx] == "accompaniment")
-  if amt_mode_is_acc and #S.amt_seed_takes == 0 then
-    reaper.MB(
-      "Accompaniment mode needs at least one seed track.\n"
-      .. "Select MIDI items in REAPER and click '+' next to 'Seed acc.'.",
-      "MidiGenerator", 0)
-    return
-  end
 
   local f = io.open(script, "r")
   if not f then
@@ -417,24 +407,26 @@ local function launch_generate()
     if S.field_instruments ~= "" then extra = extra .. " --field-instruments " .. q(S.field_instruments) end
     if S.field_chords      ~= "" then extra = extra .. " --field-chords "      .. q(S.field_chords)      end
   else
-    -- AMT: build combined MIDI (melody channel 0 + seed channels 1..N)
-    -- Write to TMPDIR (outside run_dir) so _collect_outputs doesn't pick it up
-    local seed_path = TMPDIR .. "combined_seed.mid"
-    local ok_s, err_s = write_combined_midi(S.amt_melody_take, S.amt_seed_takes, seed_path)
+    -- AMT: build one MIDI with the melody on channel 0 and the optional
+    -- accompaniment tracks on channels 1..N. Written to TMPDIR (outside
+    -- run_dir) so _collect_outputs doesn't pick it up.
+    local melody_path = TMPDIR .. "combined_melody.mid"
+    local ok_s, err_s = write_combined_midi(S.amt_melody_take, S.amt_seed_takes, melody_path)
     if not ok_s then
-      reaper.MB("Error building seed MIDI: " .. (err_s or "?"), "MidiGenerator", 0)
+      reaper.MB("Error building the melody MIDI: " .. (err_s or "?"), "MidiGenerator", 0)
       S.running = false; S.pid = nil
       return
     end
-    local mode = AMT_MODES[S.amt_mode_idx]
-    add_log("AMT mode: " .. mode)
     add_log("Melody: " .. S.amt_melody_label)
-    add_log("Seed tracks: " .. #S.amt_seed_takes)
-    add_log("Combined seed MIDI: " .. seed_path)
-    extra = extra .. " --seed "              .. q(seed_path)
-    extra = extra .. " --mode "              .. q(mode)
+    if #S.amt_seed_takes > 0 then
+      add_log("Accompaniment tracks given: " .. #S.amt_seed_takes)
+    else
+      add_log("No accompaniment given: building a " .. AMT_STYLES[S.amt_style_idx] .. " prompt from the melody")
+    end
+    extra = extra .. " --melody "            .. q(melody_path)
+    extra = extra .. " --style "             .. q(AMT_STYLES[S.amt_style_idx])
     extra = extra .. " --prompt-length "     .. tostring(S.amt_prompt_len)
-    extra = extra .. " --clip-length "       .. tostring(S.amt_duration)
+    extra = extra .. " --clip-length 0"     -- 0 = length of the melody
     extra = extra .. " --melody-instrument 0"
     -- --n-outputs is already in base; midigen.py maps it internally to --multiplicity
   end
@@ -580,55 +572,38 @@ function M.draw()
     if g.button("R", t.sc(44), t.ITEM_H) then grab_melody_item() end
     g.text_disabled("  Select the melody item in REAPER and click R.")
 
+    -- Optional accompaniment tracks (they steer the style of the result)
     g.spacing()
-    g.row_label("Mode:", lw_amt)
-    g.next_width(t.sc(160))
-    S.amt_mode_idx = widgets.combo("##amt_mode", S.amt_mode_idx, AMT_MODE_LABELS)
-    local amt_mode_key = AMT_MODES[S.amt_mode_idx]
-
-    -- Accompaniment seed tracks (only in accompaniment mode)
-    if amt_mode_key == "accompaniment" then
-      g.spacing()
-      g.row_label("Seed acc.:", lw_amt)
-      if g.button("+", t.sc(44), t.ITEM_H) then add_seed_items_from_reaper() end
-      g.same_line(t.sc(8))
-      if g.button("Clear", t.sc(70), t.ITEM_H) then
-        S.amt_seed_takes = {}
-        add_log("Accompaniment seed cleared.")
+    g.row_label("Accomp.:", lw_amt)
+    if g.button("+", t.sc(44), t.ITEM_H) then add_seed_items_from_reaper() end
+    g.same_line(t.sc(8))
+    if g.button("Clear", t.sc(70), t.ITEM_H) then
+      S.amt_seed_takes = {}
+      add_log("Accompaniment tracks cleared.")
+    end
+    if #S.amt_seed_takes == 0 then
+      g.text_disabled("  (optional) Select tracks in REAPER and click '+' to steer the style.")
+    else
+      for _, entry in ipairs(S.amt_seed_takes) do
+        g.text_disabled("  • " .. entry.label)
       end
-      if #S.amt_seed_takes == 0 then
-        g.text_disabled("  (no tracks added)")
-      else
-        for _, entry in ipairs(S.amt_seed_takes) do
-          g.text_disabled("  • " .. entry.label)
-        end
-      end
-      g.text_disabled("  Select accompaniment tracks in REAPER and click '+'.")
     end
 
+    -- Style of the automatic prompt (only when no accompaniment was given)
     g.spacing()
-    local lw = t.sc(110)
-    g.row_label("Duration (s):", lw)
+    g.row_label("Style:", lw_amt)
+    g.next_width(-1)
+    if #S.amt_seed_takes > 0 then g.begin_disabled(true) end
+    S.amt_style_idx = widgets.combo("##amt_style", S.amt_style_idx, AMT_STYLE_LABELS)
+    if #S.amt_seed_takes > 0 then g.end_disabled() end
+
+    g.row_label("Prompt (s):", lw_amt)
     g.next_width(t.sc(120))
-    local rv, nv = g.slider_int("##amt_dur", S.amt_duration, 5, 120)
-    if rv then S.amt_duration = nv end
-
-    if amt_mode_key == "continuation" then
-      g.same_line(t.sc(14)); g.text_disabled("Temp. not supported by AMT")
-    end
-
-    if amt_mode_key == "accompaniment" then
-      g.same_line(t.sc(14)); g.inline_text("Hist. (s):")
-      g.same_line(t.sc(6))
-      g.next_width(t.sc(90))
-      rv, nv = g.slider_int("##amt_plen", S.amt_prompt_len, 1, 15)
-      if rv then S.amt_prompt_len = nv end
-
-      g.spacing()
-      g.text_colored(
-        "⚠  Accompaniment seed must contain ≥" .. S.amt_prompt_len ..
-        "s of history for dense results.", "YELLOW")
-    end
+    local rv, nv = g.slider_int("##amt_plen", S.amt_prompt_len, 2, 15)
+    if rv then S.amt_prompt_len = nv end
+    g.same_line(t.sc(14))
+    g.text_disabled("Length follows the melody.")
+    g.text_disabled("  Without accompaniment tracks, a bass + chords prompt is built from your melody.")
   end
 
   g.spacing(); g.separator(); g.spacing()
@@ -670,7 +645,7 @@ function M.draw()
   g.spacing()
   local hints = {
     amadeus      = "A10G: ~$0.05/min  |  multi-track, variable duration",
-    anticipatory ="A10G: ~$0.05/min (remote)  |  ~15-45 min on CPU if run Local",
+    anticipatory = "A10G: ~$0.05/min (remote)  |  Local runs on CPU: slower but free",
   }
   g.text_disabled(hints[mk] or "")
 

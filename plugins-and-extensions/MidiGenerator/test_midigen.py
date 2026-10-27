@@ -25,8 +25,8 @@ def _make_args(**overrides) -> argparse.Namespace:
     defaults = dict(
         model="amadeus", prompt="A calm piano piece.",
         n_outputs=2, temperature=1.0, gpu="A10G", force=False,
-        seed="", mode="accompaniment",
-        prompt_length=5, clip_length=20, top_p=0.95, melody_instrument=0,
+        melody="", style="pop",
+        prompt_length=5, clip_length=0, top_p=0.95, melody_instrument=0,
     )
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
@@ -68,15 +68,29 @@ class TestBuildCmd(TestCase):
             seeds.add(cmd[cmd.index("--base-seed") + 1])
         self.assertGreater(len(seeds), 1)
 
-    def test_anticipatory_missing_seed_raises(self):
-        """Anticipatory needs an existing seed MIDI; a missing one must be a
-        hard error rather than a silently unseeded run."""
-        args = _make_args(model="anticipatory", seed="")
+    def test_anticipatory_missing_melody_raises(self):
+        """Anticipatory needs the melody MIDI; a missing file must be a hard error."""
+        args = _make_args(model="anticipatory", melody="")
         with self.assertRaises(FileNotFoundError):
             midigen._build_cmd(
                 self.uv_bin, self.shared_dir, self.script_path, self.out_dir,
                 args, args.prompt,
             )
+
+    def test_anticipatory_builds_the_accompaniment_command(self):
+        melody = self.tmpdir / "melody.mid"
+        melody.write_bytes(b"fake midi bytes")
+        args = _make_args(model="anticipatory", melody=str(melody), style="arp",
+                          n_outputs=3, gpu="A100-40GB")
+        cmd = midigen._build_cmd(
+            self.uv_bin, self.shared_dir, self.script_path, self.out_dir, args, "")
+        self.assertEqual(cmd[cmd.index("--input") + 1], str(melody))
+        self.assertEqual(cmd[cmd.index("--style") + 1], "arp")
+        self.assertEqual(cmd[cmd.index("--gpu") + 1], "A100-40GB")
+        self.assertEqual(cmd[cmd.index("--multiplicity") + 1], "3")
+        self.assertEqual(cmd[cmd.index("--clip-length") + 1], "0")   # 0 = length of the melody
+        for gone in ("--mode", "--duration"):
+            self.assertNotIn(gone, cmd)
 
 
 class TestPickErrorMessage(TestCase):
@@ -138,46 +152,27 @@ class TestBuildLocalCmd(TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
-    def test_anticipatory_missing_seed_raises(self):
+    def test_anticipatory_missing_melody_raises(self):
         script = self.tmpdir / "research" / "research_anticipatory.py"
-        args = _make_args(model="anticipatory", seed="", mode="accompaniment")
+        args = _make_args(model="anticipatory", melody="")
         with self.assertRaises(FileNotFoundError):
             midigen._build_local_cmd(self.uv_bin, script, self.out_dir, args, "")
 
-    def test_anticipatory_accompaniment_builds_command_without_duration(self):
+    def test_anticipatory_local_command(self):
         script = self.tmpdir / "research" / "research_anticipatory.py"
-        seed = self.tmpdir / "seed.mid"
-        seed.write_bytes(b"fake midi bytes")
-        args = _make_args(
-            model="anticipatory", seed=str(seed), mode="accompaniment",
-            prompt_length=5, clip_length=20, top_p=0.95,
-            melody_instrument=0, n_outputs=3,
-        )
+        melody = self.tmpdir / "melody.mid"
+        melody.write_bytes(b"fake midi bytes")
+        args = _make_args(model="anticipatory", melody=str(melody), style="pad",
+                          prompt_length=5, clip_length=0, top_p=0.95, n_outputs=3)
         cmd = midigen._build_local_cmd(self.uv_bin, script, self.out_dir, args, "")
 
         self.assertIn(str(script), cmd)
-        self.assertIn("--input", cmd)
-        self.assertEqual(cmd[cmd.index("--input") + 1], str(seed))
-        self.assertIn("--mode", cmd)
-        self.assertEqual(cmd[cmd.index("--mode") + 1], "accompaniment")
-        self.assertIn("--multiplicity", cmd)
+        self.assertEqual(cmd[cmd.index("--input") + 1], str(melody))
+        self.assertEqual(cmd[cmd.index("--style") + 1], "pad")
         self.assertEqual(cmd[cmd.index("--multiplicity") + 1], "3")
-        self.assertIn("--clip-length", cmd)
-        self.assertNotIn("--duration", cmd)
-        self.assertNotIn("--gpu", cmd)
-
-    def test_anticipatory_continuation_includes_duration(self):
-        script = self.tmpdir / "research" / "research_anticipatory.py"
-        seed = self.tmpdir / "seed.mid"
-        seed.write_bytes(b"fake midi bytes")
-        args = _make_args(
-            model="anticipatory", seed=str(seed), mode="continuation",
-            clip_length=15,
-        )
-        cmd = midigen._build_local_cmd(self.uv_bin, script, self.out_dir, args, "")
-
-        self.assertIn("--duration", cmd)
-        self.assertEqual(cmd[cmd.index("--duration") + 1], "15")
+        self.assertEqual(cmd[cmd.index("--clip-length") + 1], "0")
+        for gone in ("--mode", "--duration", "--gpu"):
+            self.assertNotIn(gone, cmd)
 
     def test_unsupported_model_raises_value_error(self):
         script = self.tmpdir / "research" / "research_amadeus.py"
@@ -252,10 +247,10 @@ class TestExecutionDispatch(TestCase):
         m_local.assert_not_called()
 
     def test_local_execution_for_supported_model_routes_to_build_local_cmd(self):
-        seed = self.tmpdir / "seed.mid"
-        seed.write_bytes(b"fake midi bytes")
+        melody = self.tmpdir / "melody.mid"
+        melody.write_bytes(b"fake midi bytes")
         with mock.patch.object(sys, "argv", self._argv(
-                 "anticipatory", ["--execution", "local", "--seed", str(seed)])), \
+                 "anticipatory", ["--execution", "local", "--melody", str(melody)])), \
              mock.patch.object(midigen, "_find_uv", return_value=Path("/usr/bin/uv")), \
              mock.patch.object(midigen, "_build_cmd") as m_remote, \
              mock.patch.object(midigen, "_build_local_cmd", side_effect=ValueError("stop here")) as m_local:

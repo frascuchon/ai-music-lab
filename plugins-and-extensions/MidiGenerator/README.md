@@ -13,7 +13,7 @@ Genera MIDI desde texto (Amadeus) o a partir de un MIDI semilla (Anticipatory) u
 | Modelo | Tipo de input | Output | Notas |
 |--------|--------------|--------|-------|
 | **Amadeus** | Texto libre (MidiCaps recomendado) | Multi-track (1-13 pistas) | Mejor calidad multi-instrumento evaluada (~2.8/5) |
-| **Anticipatory** | Seed MIDI (obligatorio) | Multi-track (2-3 pistas) | Acompañamiento/continuación sobre MIDI existente; también puede ejecutarse en local (CPU, lento) |
+| **Anticipatory** | Una melodía MIDI (basta con eso) | Acompañamiento multi-track (bajo, teclado y, a veces, más) | Genera el acompañamiento de tu melodía; Modal o local (CPU) |
 
 Amadeus corre en Modal cloud (CUDA); Anticipatory puede ejecutarse en Modal o en local.
 
@@ -29,23 +29,26 @@ Amadeus corre en Modal cloud (CUDA); Anticipatory puede ejecutarse en Modal o en
 4. Ajusta candidatos (1-4) y temperatura.
 5. Pulsa **GENERAR MIDI**. El MIDI se importa como pistas nuevas.
 
-### Modo acompañamiento (Anticipatory)
+### Acompañamiento de una melodía (Anticipatory)
 
 1. Selecciona "Anticipatory" en el dropdown.
-2. Prepara el seed MIDI:
-   - Selecciona un item MIDI en REAPER y pulsa **R** (captura automática).
-   - O pulsa **...** para cargar un fichero `.mid` desde disco.
-3. El seed debe contener **≥5 segundos de historia** (no solo melodía) para resultados densos.
-4. Selecciona el modo: **Acompañamiento** (fija la melodía y genera partes nuevas) o **Continuación** (extiende el clip).
-5. Ajusta duración, pista de melodía (índice de canal) y número de candidatos.
-6. Pulsa **GENERAR MIDI**.
+2. Selecciona el item MIDI con tu melodía en REAPER y pulsa **R** junto a «Melody».
+3. Elige el **Style** del acompañamiento inicial (pop, pad o arpegio) y el número de candidatos.
+4. Pulsa **GENERAR MIDI**. El resultado (solo el acompañamiento, no repite tu melodía) aparece en una carpeta justo debajo de la melodía, alineado con ella.
+
+**Cómo funciona.** Anticipatory necesita unos segundos de acompañamiento previo para continuarlo; con una melodía sola arrancaba en frío y escribía casi nada (12 notas en una melodía de 17 s, 14 % de cobertura). El plugin construye ese arranque solo: detecta la tonalidad, elige un acorde cada dos tiempos y escribe un bajo y un teclado (`harmony.py`). Anticipatory lo continúa a lo largo de toda la melodía, siguiéndola. Con una melodía real: 89–99 % de cobertura y 4–6 notas por segundo.
+
+- **Acompañamiento propio (opcional):** si añades pistas con **+** (por ejemplo un bajo que ya tengas), se usan como arranque en lugar del automático.
+- **Duración:** sigue a la melodía; el silencio inicial se recorta y se restituye.
+- **Cada pulsación da un resultado distinto** (semilla aleatoria).
+- El acorde del arranque puede no ser el «correcto» (la armonía automática es un heurístico); el modelo lo corrige al continuar. Para alternativas, genera varios candidatos.
 
 ## Traducción de prompts por modelo
 
 El plugin aplica adaptaciones rule-based por modelo (sin LLM externo):
 
 - **Amadeus**: si rellenas los campos opcionales, el backend los ensambla en una caption estilo MidiCaps: `"<prompt>, featuring <instrumentos>, in <tonalidad>, at <BPM> BPM, with chord progression <acordes>."`.
-- **Anticipatory**: sin prompt de texto; solo usa el seed MIDI.
+- **Anticipatory**: sin prompt de texto; usa la melodía MIDI (y, opcionalmente, pistas de acompañamiento).
 
 ## Parámetros Modal
 

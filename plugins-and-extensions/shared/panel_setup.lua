@@ -72,7 +72,6 @@ end
 -- ── STATE ────────────────────────────────────────────────────────
 -- Core checks always present; plugin extras detected at runtime
 local CORE_NAMES = { "python", "uv", "modal-cli", "modal-auth" }
-local STEMS_NAMES = { "demucs", "hf-secret" }
 
 local CHECKS = {}  -- filled dynamically from CHECK| lines
 local CHECK_IDX = {}

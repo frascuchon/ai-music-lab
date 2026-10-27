@@ -22,10 +22,10 @@ Called by MidiGenerator.lua as a background process:
         [--gpu   <A10G|A100|T4|L4>]
         [--force]
         # Anticipatory (AMT) only:
-        [--seed       <path.mid>]
-        [--mode       <accompaniment|continuation>]
+        [--melody     <path.mid>]   (channel 0 = melody; other channels = optional accompaniment)
+        [--style      <pop|pad|arp>]
         [--prompt-length   <int>]
-        [--clip-length     <int>]
+        [--clip-length     <int>]   (0 = length of the melody)
         [--top-p           <float>]
         [--multiplicity    <int>]
         [--melody-instrument <int>]
@@ -40,21 +40,20 @@ text_dir  (amadeus):
     ::main --prompt … --out-dir … [--n-outputs] [--temperature] [--gpu] [--force]
     Output: generated_cuda_v*.mid  (glob in out-dir)
 
-seed_file (anticipatory):
-    ::main --input <seed.mid> --out <out-dir>/generated.mid
-           --mode <accompaniment|continuation> --gpu …
+melody_file (anticipatory):
+    ::main --input <melody.mid> --out <out-dir>/generated.mid --gpu … --style …
            [--prompt-length] [--clip-length] [--top-p]
            [--multiplicity] [--melody-instrument]
+    Output: only the accompaniment (the melody is not returned).
     Output: generated.mid (mult=1) or generated_v0.mid … generated_v{N-1}.mid (mult>1)
 
 Local entrypoint contracts (--execution local; only anticipatory —
 see shared/model_execution.py MIDIGEN registry for the full feasibility list)
 -------------------------------------------------------------------------------
 anticipatory (research_anticipatory.py, plain — no Modal, CPU-only):
-    --input <seed.mid> --out <out-dir>/generated.mid --mode <accompaniment|continuation>
+    --input <melody.mid> --out <out-dir>/generated.mid --style …
            [--prompt-length] [--clip-length] [--top-p] [--multiplicity] [--melody-instrument]
-    Output: generated.mid (mult=1) or generated_v0.mid … (mult>1, accompaniment only —
-    the local script's continuation mode always produces a single file)
+    Output: generated.mid (mult=1) or generated_v0.mid … (mult>1)
 """
 
 from __future__ import annotations
@@ -85,7 +84,7 @@ from prompt_adapters import adapt  # noqa: E402
 # ---------------------------------------------------------------------------
 _MODEL_KIND: dict[str, str] = {
     "amadeus":      "text_dir",
-    "anticipatory": "seed_file",
+    "anticipatory": "melody_file",
 }
 
 # Models whose ::main accepts --gpu (others ignore it)
@@ -142,7 +141,7 @@ def _collect_outputs(out_dir: Path) -> list[Path]:
     """Collect all generated .mid files in out_dir, sorted.
     Filters files that are too small (< 64 bytes) — usually empty or invalid
     MIDIs produced when the model generates text instead of ABC notation.
-    For AMT (seed_file), expects the generated*.mid pattern."""
+    For AMT (melody_file), expects the generated*.mid pattern."""
     mids = [m for m in sorted(out_dir.glob("*.mid")) if m.stat().st_size >= 64]
     return mids
 
@@ -213,28 +212,24 @@ def _build_cmd(
         if model in _SUPPORTS_GPU and args.gpu:
             cmd += ["--gpu", args.gpu]
 
-    elif kind == "seed_file":
-        if not args.seed or not Path(args.seed).exists():
+    elif kind == "melody_file":
+        if not args.melody or not Path(args.melody).exists():
             raise FileNotFoundError(
-                f"Anticipatory requires a seed MIDI (--seed). "
-                f"Specified path: {args.seed!r}"
+                f"Anticipatory requires the melody MIDI (--melody). "
+                f"Specified path: {args.melody!r}"
             )
         out_path = out_dir / "generated.mid"
         cmd = base + [
-            "--input",          args.seed,
+            "--input",          args.melody,
             "--out",            str(out_path),
-            "--mode",           args.mode,
             "--gpu",            args.gpu or "A10G",
+            "--style",          args.style,
             "--prompt-length",  str(args.prompt_length),
+            "--clip-length",    str(args.clip_length),
             "--top-p",          str(args.top_p),
             "--multiplicity",   str(args.n_outputs),
             "--melody-instrument", str(args.melody_instrument),
         ]
-        # continuation uses --duration, accompaniment uses --clip-length
-        if args.mode == "continuation":
-            cmd += ["--duration", str(args.clip_length)]
-        else:
-            cmd += ["--clip-length", str(args.clip_length)]
 
     else:
         raise ValueError(f"Unknown contract type: {kind!r}")
@@ -270,26 +265,22 @@ def _build_local_cmd(
     base = [str(uv_bin), "run", "--project", str(research_dir), str(script_path)]
 
     if model == "anticipatory":
-        if not args.seed or not Path(args.seed).exists():
+        if not args.melody or not Path(args.melody).exists():
             raise FileNotFoundError(
-                f"Anticipatory requires a seed MIDI (--seed). "
-                f"Specified path: {args.seed!r}"
+                f"Anticipatory requires the melody MIDI (--melody). "
+                f"Specified path: {args.melody!r}"
             )
         out_path = out_dir / "generated.mid"
         cmd = base + [
-            "--mode",             args.mode,
-            "--input",            args.seed,
+            "--input",            args.melody,
             "--out",              str(out_path),
+            "--style",            args.style,
             "--prompt-length",    str(args.prompt_length),
             "--clip-length",      str(args.clip_length),
             "--top-p",            str(args.top_p),
             "--melody-instrument", str(args.melody_instrument),
             "--multiplicity",     str(args.n_outputs),
         ]
-        # research_anticipatory.py's continuation mode ignores --multiplicity
-        # and always writes a single file; --duration only applies there.
-        if args.mode == "continuation":
-            cmd += ["--duration", str(args.clip_length)]
 
     else:
         # Defensive only: main() already rejects unsupported models via
@@ -333,11 +324,11 @@ def main() -> int:
     p.add_argument("--gpu",         default="A10G")
     p.add_argument("--force",       action="store_true")
 
-    # Anticipatory (AMT): seed + mode parameters
-    p.add_argument("--seed",             default="")
-    p.add_argument("--mode",             default="accompaniment")
+    # Anticipatory (AMT): melody file + accompaniment parameters
+    p.add_argument("--melody",           default="")
+    p.add_argument("--style",            choices=["pop", "pad", "arp"], default="pop")
     p.add_argument("--prompt-length",    type=int,   default=5, dest="prompt_length")
-    p.add_argument("--clip-length",      type=int,   default=20, dest="clip_length")
+    p.add_argument("--clip-length",      type=int,   default=0, dest="clip_length")
     p.add_argument("--top-p",            type=float, default=0.95, dest="top_p")
     p.add_argument("--melody-instrument",type=int,   default=0, dest="melody_instrument")
 
@@ -371,10 +362,10 @@ def main() -> int:
                        "This model requires a text prompt (--prompt).")
         return 1
 
-    if kind == "seed_file" and not args.seed:
+    if kind == "melody_file" and not args.melody:
         write_progress(pf, "error", 0,
-                       "Anticipatory requires a seed MIDI (select a MIDI item "
-                       "in REAPER or choose a .mid file).")
+                       "Anticipatory requires the melody MIDI (select a MIDI item "
+                       "in REAPER and click R next to 'Melody').")
         return 1
 
     if args.execution == "local":
