@@ -24,6 +24,10 @@ Called by MidiGenerator.lua as a background process:
         # Anticipatory (AMT) only:
         [--melody     <path.mid>]   (channel 0 = melody; other channels = optional accompaniment)
         [--style      <pop|pad|arp>]
+        [--parts bass,keys,strings,guitar,drums] [--density 0|1|2]
+        [--bass-program N] [--keys-program N] [--creativity 0..1]
+        [--chords "C#m G# A# F"] [--beats-per-chord N]      (Anticipatory)
+        [--stay-in-key]                                      (MIDI-GPT)
         [--prompt-length   <int>]
         [--clip-length     <int>]   (0 = length of the melody)
         [--top-p           <float>]
@@ -42,9 +46,15 @@ text_dir  (amadeus):
 
 melody_file (anticipatory):
     ::main --input <melody.mid> --out <out-dir>/generated.mid --gpu … --style …
+           --parts … --density … --bass-program … --keys-program … [--chords …]
            [--prompt-length] [--clip-length] [--top-p]
            [--multiplicity] [--melody-instrument]
     Output: only the accompaniment (the melody is not returned).
+
+melody_file (midigpt):
+    ::main --input <melody.mid> --out <out-dir>/generated.mid --spec <spec.json>
+           --multiplicity N          (spec built by midigpt_spec.build_spec)
+    Output: only the generated parts.
     Output: generated.mid (mult=1) or generated_v0.mid … generated_v{N-1}.mid (mult>1)
 
 Local entrypoint contracts (--execution local; only anticipatory —
@@ -59,6 +69,7 @@ anticipatory (research_anticipatory.py, plain — no Modal, CPU-only):
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import random
 import re
@@ -77,6 +88,7 @@ _LOG_TAIL_LINES = 20
 _THIS_DIR = Path(__file__).parent
 sys.path.insert(0, str(_THIS_DIR))
 from prompt_adapters import adapt  # noqa: E402
+import midigpt_spec  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -85,10 +97,14 @@ from prompt_adapters import adapt  # noqa: E402
 _MODEL_KIND: dict[str, str] = {
     "amadeus":      "text_dir",
     "anticipatory": "melody_file",
+    "midigpt":      "melody_file",
 }
 
-# Models whose ::main accepts --gpu (others ignore it)
+# Models whose ::main accepts --gpu (others ignore it; MIDI-GPT's GPU is fixed in its script)
 _SUPPORTS_GPU = {"anticipatory"}
+
+# Accompaniment engines that take a melody MIDI, and the display name used in errors
+_MELODY_ENGINES = {"anticipatory": "Anticipatory", "midigpt": "MIDI-GPT"}
 
 # text_dir models that accept --force
 _SUPPORTS_FORCE = {"amadeus"}
@@ -175,6 +191,43 @@ def _pick_error_message(
 
 
 # ---------------------------------------------------------------------------
+# Accompaniment controls -> per-engine arguments
+# ---------------------------------------------------------------------------
+
+def _parts(args) -> list:
+    return [p.strip() for p in args.parts.split(",") if p.strip()]
+
+
+def _top_p(args) -> float:
+    """Creativity 0..1 -> nucleus-sampling top_p 0.80..1.00 (measured: at 1.0 the model
+    adds instruments of its own; at 0.8 it sticks to the ones in the prompt)."""
+    return round(0.80 + 0.20 * args.creativity, 3)
+
+
+def _anticipatory_flags(args) -> list:
+    flags = [
+        "--style",           args.style,
+        "--parts",           ",".join(_parts(args)),
+        "--density",         str(args.density),
+        "--bass-program",    str(args.bass_program),
+        "--keys-program",    str(args.keys_program),
+        "--beats-per-chord", str(args.beats_per_chord),
+        "--top-p",           str(_top_p(args)),
+    ]
+    if args.chords.strip():
+        flags += ["--chords", args.chords]
+    return flags
+
+
+def _midigpt_spec(args) -> dict:
+    return midigpt_spec.build_spec(
+        parts=tuple(_parts(args)), style=args.style, density=args.density,
+        programs={"bass": args.bass_program, "keys": args.keys_program},
+        creativity=args.creativity, stay_in_key=args.stay_in_key,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Build modal run command per model
 # ---------------------------------------------------------------------------
 
@@ -215,21 +268,29 @@ def _build_cmd(
     elif kind == "melody_file":
         if not args.melody or not Path(args.melody).exists():
             raise FileNotFoundError(
-                f"Anticipatory requires the melody MIDI (--melody). "
+                f"{_MELODY_ENGINES.get(model, model)} requires the melody MIDI (--melody). "
                 f"Specified path: {args.melody!r}"
             )
         out_path = out_dir / "generated.mid"
-        cmd = base + [
-            "--input",          args.melody,
-            "--out",            str(out_path),
-            "--gpu",            args.gpu or "A10G",
-            "--style",          args.style,
-            "--prompt-length",  str(args.prompt_length),
-            "--clip-length",    str(args.clip_length),
-            "--top-p",          str(args.top_p),
-            "--multiplicity",   str(args.n_outputs),
-            "--melody-instrument", str(args.melody_instrument),
-        ]
+        if model == "midigpt":
+            spec_path = out_dir / "spec.json"
+            spec_path.write_text(json.dumps(_midigpt_spec(args)))
+            cmd = base + [
+                "--input",        args.melody,
+                "--out",          str(out_path),
+                "--spec",         str(spec_path),
+                "--multiplicity", str(args.n_outputs),
+            ]
+        else:
+            cmd = base + [
+                "--input",          args.melody,
+                "--out",            str(out_path),
+                "--gpu",            args.gpu or "A10G",
+                "--prompt-length",  str(args.prompt_length),
+                "--clip-length",    str(args.clip_length),
+                "--multiplicity",   str(args.n_outputs),
+                "--melody-instrument", str(args.melody_instrument),
+            ] + _anticipatory_flags(args)
 
     else:
         raise ValueError(f"Unknown contract type: {kind!r}")
@@ -274,13 +335,11 @@ def _build_local_cmd(
         cmd = base + [
             "--input",            args.melody,
             "--out",              str(out_path),
-            "--style",            args.style,
             "--prompt-length",    str(args.prompt_length),
             "--clip-length",      str(args.clip_length),
-            "--top-p",            str(args.top_p),
             "--melody-instrument", str(args.melody_instrument),
             "--multiplicity",     str(args.n_outputs),
-        ]
+        ] + _anticipatory_flags(args)
 
     else:
         # Defensive only: main() already rejects unsupported models via
@@ -329,8 +388,22 @@ def main() -> int:
     p.add_argument("--style",            choices=["pop", "pad", "arp"], default="pop")
     p.add_argument("--prompt-length",    type=int,   default=5, dest="prompt_length")
     p.add_argument("--clip-length",      type=int,   default=0, dest="clip_length")
-    p.add_argument("--top-p",            type=float, default=0.95, dest="top_p")
     p.add_argument("--melody-instrument",type=int,   default=0, dest="melody_instrument")
+
+    # Accompaniment controls (Anticipatory and MIDI-GPT)
+    p.add_argument("--parts",            default="bass,keys",
+                   help="comma list of: bass, keys, strings, guitar, drums")
+    p.add_argument("--density",          type=int,   choices=[0, 1, 2], default=1,
+                   help="0 sparse | 1 normal | 2 busy")
+    p.add_argument("--bass-program",     type=int,   default=33, dest="bass_program")
+    p.add_argument("--keys-program",     type=int,   default=4,  dest="keys_program")
+    p.add_argument("--chords",           default="",
+                   help="your own progression, e.g. 'C#m G# A# F' (Anticipatory only)")
+    p.add_argument("--beats-per-chord",  type=int,   default=4,  dest="beats_per_chord")
+    p.add_argument("--creativity",       type=float, default=0.5,
+                   help="0..1: more variety (top_p for Anticipatory, temperature for MIDI-GPT)")
+    p.add_argument("--stay-in-key",      action="store_true", dest="stay_in_key",
+                   help="MIDI-GPT: only use the pitch classes of the melody")
 
     args = p.parse_args()
 
@@ -364,8 +437,8 @@ def main() -> int:
 
     if kind == "melody_file" and not args.melody:
         write_progress(pf, "error", 0,
-                       "Anticipatory requires the melody MIDI (select a MIDI item "
-                       "in REAPER and click R next to 'Melody').")
+                       f"{_MELODY_ENGINES.get(model_key, model_key)} requires the melody MIDI "
+                       "(select a MIDI item in REAPER and click R next to 'Melody').")
         return 1
 
     if args.execution == "local":

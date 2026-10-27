@@ -102,6 +102,23 @@ image = (
 app = modal.App("amt-inference", image=image)
 
 
+def _arrangement_kwargs(a: dict | None) -> dict:
+    """JSON-friendly arrangement dict -> harmony.Arrangement kwargs."""
+    a = a or {}
+    kw = {}
+    if a.get("parts"):
+        kw["parts"] = tuple(a["parts"])
+    if "density" in a:
+        kw["density"] = int(a["density"])
+    if a.get("programs"):
+        kw["programs"] = tuple((k, int(v)) for k, v in a["programs"].items())
+    if a.get("chords"):
+        kw["chords"] = a["chords"]
+    if a.get("beats_per_chord"):
+        kw["beats_per_chord"] = int(a["beats_per_chord"])
+    return kw
+
+
 # ---------------------------------------------------------------------------
 # Núcleo de inferencia — función regular (no Modal), llamada por run()
 # ---------------------------------------------------------------------------
@@ -115,6 +132,7 @@ def _inference_impl(
     seed: int,
     auto_history: bool = True,
     style: str = "pop",
+    arrangement: dict | None = None,
 ) -> bytes:
     """Carga el modelo, genera el acompañamiento y retorna bytes MIDI (solo el acompañamiento)."""
     import time
@@ -170,13 +188,16 @@ def _inference_impl(
 
         # Channel 0 = melody (-> melody_instrument), other channels = accompaniment
         # history; builds the history from the melody when there is none.
+        import harmony
+        arr = harmony.Arrangement(style=style, **_arrangement_kwargs(arrangement))
         prep = accompaniment.prepare(midi_bytes, melody_instrument, prompt_length,
-                                     auto_history=auto_history, style=style)
+                                     auto_history=auto_history, style=style, arrangement=arr)
         lead, melody_end = prep.lead, prep.melody_end
         with open(input_path, "wb") as f:
             f.write(prep.midi)
         if prep.auto_history:
-            print(f"[prompt] acompañamiento automático ({style}): {prep.harmony}")
+            print(f"[prompt] acompañamiento automático ({style}, partes: {', '.join(arr.parts)}, "
+                  f"densidad {arr.density}): {prep.harmony}")
         if lead > 0.05:
             print(f"[input] silencio inicial recortado: {lead:.2f}s")
 
@@ -247,11 +268,11 @@ _FN_KWARGS = dict(cpu=2, memory=6144, timeout=3600, volumes={WEIGHTS_MOUNT: weig
 def run(midi_bytes: bytes, model_name: str = DEFAULT_MODEL,
         prompt_length: int = 5, clip_length: int = 0,
         top_p: float = 0.95, melody_instrument: int = 0, seed: int = 0,
-        auto_history: bool = True, style: str = "pop") -> bytes:
+        auto_history: bool = True, style: str = "pop", arrangement: dict | None = None) -> bytes:
     return _inference_impl(midi_bytes, model_name,
                            prompt_length=prompt_length, clip_length=clip_length,
                            top_p=top_p, melody_instrument=melody_instrument, seed=seed,
-                           auto_history=auto_history, style=style)
+                           auto_history=auto_history, style=style, arrangement=arrangement)
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +292,12 @@ def main(
     multiplicity: int = 1,
     auto_history: bool = True,
     style: str = "pop",
+    parts: str = "bass,keys",
+    density: int = 1,
+    bass_program: int = 33,
+    keys_program: int = 4,
+    chords: str = "",
+    beats_per_chord: int = 4,
 ) -> None:
     """
     Genera MIDI con Anticipatory Music Transformer en Modal GPU.
@@ -307,6 +334,13 @@ def main(
     if seed < 0:
         import random
         seed = random.randrange(2**31)
+    arrangement = {
+        "parts": [p.strip() for p in parts.split(",") if p.strip()],
+        "density": density,
+        "programs": {"bass": bass_program, "keys": keys_program},
+        "chords": chords,
+        "beats_per_chord": beats_per_chord,
+    }
     print(
         f"[modal] gpu={gpu_key}  model={model}  style={style}  "
         f"prompt_length={prompt_length}s, clip_length={clip_length}s, top_p={top_p}, seed={seed}"
@@ -335,6 +369,7 @@ def main(
             seed=seed_i,
             auto_history=auto_history,
             style=style,
+            arrangement=arrangement,
         )
         print(f"[spawned] object_id={call.object_id}")
 

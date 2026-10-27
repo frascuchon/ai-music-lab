@@ -88,7 +88,10 @@ def _unused_program(taken: set, start: int) -> int:
 
 
 def prepare(midi_bytes: bytes, melody_instrument: int = 0, prompt_length: float = 5.0,
-            auto_history: bool = True, style: str = "pop") -> Prepared:
+            auto_history: bool = True, style: str = "pop",
+            arrangement: "harmony.Arrangement | None" = None) -> Prepared:
+    """`arrangement` (parts, density, instruments, own chords) shapes the automatic prompt;
+    without it the prompt is bass + keys in `style`."""
     import pretty_midi
 
     chans, programs, bpm = read_channels(midi_bytes)
@@ -119,12 +122,13 @@ def prepare(midi_bytes: bytes, melody_instrument: int = 0, prompt_length: float 
     generated = False
     description = ""
     if not has_history and auto_history:
-        result = harmony.harmonize(melody, bpm, style, until=prompt_length)
+        arr = arrangement or harmony.Arrangement(style=style)
+        result = harmony.harmonize(melody, bpm, arr.style, until=prompt_length, arrangement=arr)
         description = harmony.describe(result)
-        bass_program = _unused_program(taken, harmony.PROGRAM_BASS)
-        comp_program = _unused_program(taken, result["comp_program"])
-        parts.append(("Bass", bass_program, False, result["bass"]))
-        parts.append(("Chords", comp_program, False, result["comp"]))
+        for name, (notes, program, is_drum) in result["parts"].items():
+            if not is_drum:
+                program = _unused_program(taken, program)
+            parts.append((harmony.PART_NAMES[name], program, is_drum, notes))
         generated = True
 
     pm = pretty_midi.PrettyMIDI(initial_tempo=120.0)

@@ -67,13 +67,14 @@ class TestHarmony(TestCase):
     def test_render_ranges_and_bounds_for_every_style(self):
         for style in harmony.STYLES:
             r = harmony.harmonize(c_major_melody(), 120.0, style)
-            self.assertTrue(r["bass"] and r["comp"], msg=style)
+            bass, comp = r["parts"]["bass"][0], r["parts"]["keys"][0]
+            self.assertTrue(bass and comp, msg=style)
             end = r["chords"][-1][1]
-            for s, e, p, v in r["bass"]:
+            for s, e, p, v in bass:
                 self.assertTrue(30 <= p <= 56, msg=(style, p))
-            for s, e, p, v in r["comp"]:
+            for s, e, p, v in comp:
                 self.assertTrue(48 <= p <= 76, msg=(style, p))
-            for s, e, p, v in r["bass"] + r["comp"]:
+            for s, e, p, v in bass + comp:
                 self.assertTrue(0 <= s < e <= end + 0.01, msg=(style, s, e))
                 self.assertTrue(1 <= v <= 127)
 
@@ -83,10 +84,10 @@ class TestHarmony(TestCase):
         for style in harmony.STYLES:
             r = harmony.harmonize(c_major_melody(), 120.0, style)
             for t0, t1, chord in r["chords"]:
-                for s, e, p, v in r["comp"]:
+                for s, e, p, v in r["parts"]["keys"][0]:
                     if t0 - 1e-6 <= s < t1 - 1e-6:
                         self.assertIn(p % 12, chord.pcs, msg=(style, chord.name, p))
-                for s, e, p, v in r["bass"]:
+                for s, e, p, v in r["parts"]["bass"][0]:
                     if t0 - 1e-6 <= s < t1 - 1e-6:
                         self.assertIn(p % 12, chord.pcs, msg=(style, chord.name, p))
 
@@ -99,13 +100,78 @@ class TestHarmony(TestCase):
 
     def test_until_limits_the_accompaniment(self):
         r = harmony.harmonize(c_major_melody(), 120.0, "pop", until=3.0)
-        self.assertTrue(all(s < 3.0 and e <= 3.0 for s, e, _, _ in r["bass"] + r["comp"]))
+        notes = [n for part in r["parts"].values() for n in part[0]]
+        self.assertTrue(notes and all(s < 3.0 and e <= 3.0 for s, e, _, _ in notes))
 
     def test_unknown_style_and_empty_melody_are_errors(self):
         with self.assertRaises(ValueError):
             harmony.harmonize(c_major_melody(), 120.0, "polka")
         with self.assertRaises(ValueError):
             harmony.harmonize([], 120.0)
+
+
+class TestArrangement(TestCase):
+    """Parts, density, instruments and your own chords."""
+
+    def parts(self, **kw):
+        arr = harmony.Arrangement(**kw)
+        return harmony.harmonize(c_major_melody(), 120.0, arrangement=arr)["parts"]
+
+    def test_only_the_requested_parts_are_written(self):
+        self.assertEqual(set(self.parts(parts=("bass",))), {"bass"})
+        self.assertEqual(set(self.parts(parts=("bass", "keys", "strings", "guitar", "drums"))),
+                         {"bass", "keys", "strings", "guitar", "drums"})
+
+    def test_drums_are_flagged_and_use_the_kit_notes(self):
+        notes, program, is_drum = self.parts(parts=("drums",))["drums"]
+        self.assertTrue(is_drum)
+        self.assertEqual({p for _, _, p, _ in notes} - {36, 38, 42, 46}, set())
+        self.assertTrue({36, 38} <= {p for _, _, p, _ in notes})
+
+    def test_density_changes_how_much_is_played(self):
+        for part in ("bass", "keys", "guitar", "drums"):
+            counts = [len(self.parts(parts=(part,), density=d)[part][0]) for d in (0, 1, 2)]
+            self.assertLess(counts[0], counts[2], msg=(part, counts))
+
+    def test_strings_are_a_sustained_pad_in_a_higher_register(self):
+        notes = self.parts(parts=("strings",), density=2)["strings"][0]
+        self.assertTrue(all(58 <= p <= 79 for _, _, p, _ in notes))
+        self.assertTrue(all(e - s > 0.9 for s, e, _, _ in notes))      # long notes whatever the density
+
+    def test_program_overrides_apply_per_part(self):
+        parts = self.parts(parts=("bass", "keys"), programs=(("bass", 32), ("keys", 16)))
+        self.assertEqual((parts["bass"][1], parts["keys"][1]), (32, 16))
+
+    def test_own_chords_replace_the_detected_ones(self):
+        arr = harmony.Arrangement(chords="Am F C G", beats_per_chord=4)
+        r = harmony.harmonize(c_major_melody(), 120.0, arrangement=arr)
+        names = [c.name for _, _, c in r["chords"]]
+        self.assertEqual(names[:4], ["Am", "F", "C", "G"])
+        for t0, t1, chord in r["chords"]:
+            for s, e, p, v in r["parts"]["keys"][0]:
+                if t0 - 1e-6 <= s < t1 - 1e-6:
+                    self.assertIn(p % 12, chord.pcs)
+
+    def test_progression_repeats_to_cover_the_melody(self):
+        arr = harmony.Arrangement(chords="C G", beats_per_chord=4)
+        r = harmony.harmonize(c_major_melody(), 120.0, arrangement=arr)
+        self.assertEqual([c.name for _, _, c in r["chords"]], ["C", "G", "C", "G"])
+
+    def test_chord_parsing(self):
+        names = [c.name for c in harmony.parse_chords("C#m | Bb, G7; Fmaj7 Ebm")]
+        self.assertEqual(names, ["C#m", "A#", "G", "F", "D#m"])
+        # extensions are ignored; minor/diminished -> minor triad, maj7 stays major
+        self.assertEqual([c.name for c in harmony.parse_chords("Am7 Cmaj7 Bdim Dm9")],
+                         ["Am", "C", "Bm", "Dm"])
+
+    def test_bad_input_is_a_clear_error(self):
+        for bad in ("", "H7", "C X"):
+            with self.assertRaises(ValueError, msg=bad):
+                harmony.parse_chords(bad)
+        with self.assertRaises(ValueError):
+            harmony.harmonize(c_major_melody(), 120.0, arrangement=harmony.Arrangement(parts=("kazoo",)))
+        with self.assertRaises(ValueError):
+            harmony.harmonize(c_major_melody(), 120.0, arrangement=harmony.Arrangement(density=5))
 
 
 def make_midi(channels, programs=None, bpm=120):
@@ -162,12 +228,21 @@ class TestPrepare(TestCase):
         inst = self._instruments(prep)
         self.assertTrue(prep.auto_history)
         self.assertIn("Bass", inst)
-        self.assertIn("Chords", inst)
+        self.assertIn("Keys", inst)
         self.assertEqual(inst["Melody"].program, 0)
         self.assertNotIn(inst["Bass"].program, (0,))
-        self.assertNotEqual(inst["Bass"].program, inst["Chords"].program)
+        self.assertNotEqual(inst["Bass"].program, inst["Keys"].program)
         # the prompt only covers the first prompt_length seconds
-        self.assertTrue(all(n.start < 5.0 for n in inst["Bass"].notes + inst["Chords"].notes))
+        self.assertTrue(all(n.start < 5.0 for n in inst["Bass"].notes + inst["Keys"].notes))
+
+    def test_arrangement_shapes_the_automatic_prompt(self):
+        arr = harmony.Arrangement(parts=("bass", "keys", "drums"), programs=(("keys", 0),))
+        prep = self.acc.prepare(make_midi({0: self.melody}), 0, 5.0, arrangement=arr)
+        inst = self._instruments(prep)
+        self.assertTrue(inst["Drums"].is_drum)
+        self.assertEqual(set(inst) - {"Melody"}, {"Bass", "Keys", "Drums"})
+        # keys asked for program 0, but 0 belongs to the melody: it must move to a free one
+        self.assertNotEqual(inst["Keys"].program, 0)
 
     def test_auto_history_can_be_disabled(self):
         prep = self.acc.prepare(make_midi({0: self.melody}), 0, 5.0, auto_history=False)

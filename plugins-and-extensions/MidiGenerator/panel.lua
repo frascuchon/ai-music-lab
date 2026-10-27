@@ -26,11 +26,14 @@ local PYTHON, PYTHON_ERR = common.detect_reaper_python()
 -- ── CONSTANTS: MODELS ────────────────────────────────────────────
 -- Only the models that held up in evaluation are exposed (see RESEARCH.md);
 -- text2midi, MuseCoco, MIDI-LLM and ChatMusician were retired from the UI.
-local MG_MODELS = { "amadeus", "anticipatory" }
+-- Anticipatory and MIDI-GPT take a MELODY (not a text prompt) and write the accompaniment.
+local MG_MODELS = { "amadeus", "anticipatory", "midigpt" }
 local MG_LABELS = {
-  "Amadeus  (multi-track, MidiCaps, A10G)",
-  "Anticipatory  (accompaniment/cover, seed MIDI, A10G)",
+  "Amadeus  (multi-track from a text description, A10G)",
+  "Anticipatory  (accompaniment of your melody, A10G)",
+  "MIDI-GPT  (accompaniment of your melody, A10G, non-commercial)",
 }
+local function takes_melody(mk) return mk == "anticipatory" or mk == "midigpt" end
 local MG_SCRIPTS = {}
 for _, k in ipairs(MG_MODELS) do
   MG_SCRIPTS[k] = SCRIPT_DIR .. "research/research_" .. k .. "_modal.py"
@@ -43,7 +46,7 @@ local MG_LOCAL_SCRIPTS = {
 }
 
 local MG_GPUS        = { "A10G", "A100-40GB", "T4", "L4" }
-local MG_GPU_DEFAULT = { amadeus="A10G", anticipatory="A10G" }
+local MG_GPU_DEFAULT = { amadeus="A10G", anticipatory="A10G", midigpt="A10G" }
 -- Models where GPU is passed to the script (others ignore it)
 local MG_GPU_RELEVANT = { anticipatory=true }
 
@@ -54,6 +57,15 @@ local MG_TEMP_RANGE_DEFAULT = { 0.5, 2.0 }
 -- (only used when no accompaniment tracks are added)
 local AMT_STYLES = { "pop", "pad", "arp" }
 local AMT_STYLE_LABELS = { "Pop (bass + chord stabs)", "Pad (bass + sustained chords)", "Arpeggio (bass + arpeggiated chords)" }
+
+-- Accompaniment controls shared by Anticipatory and MIDI-GPT
+local ACC_PARTS = { "bass", "keys", "strings", "guitar", "drums" }
+local ACC_PART_LABELS = { bass = "Bass", keys = "Keys", strings = "Strings", guitar = "Guitar", drums = "Drums" }
+local ACC_DENSITY_LABELS = { "Sparse", "Normal", "Busy" }   -- 0, 1, 2
+local ACC_BASS_PROGRAMS = { 33, 32, 38, 35 }
+local ACC_BASS_LABELS = { "Electric bass", "Acoustic bass", "Synth bass", "Fretless bass" }
+local ACC_KEYS_PROGRAMS = { 4, 0, 16, 11 }
+local ACC_KEYS_LABELS = { "Electric piano", "Piano", "Organ", "Vibraphone" }
 
 -- Example prompts per text model, selectable from a dropdown next to the
 -- prompt box. Written in MidiCaps style, the dialect Amadeus expects (see
@@ -88,6 +100,14 @@ local S = {
   -- AMT parameters
   amt_style_idx    = 1,   -- index in AMT_STYLES
   amt_prompt_len   = 5,   -- seconds of accompaniment the model continues from
+  acc_parts        = { bass = true, keys = true, strings = false, guitar = false, drums = false },
+  acc_density_idx  = 2,   -- 1 sparse, 2 normal, 3 busy
+  acc_bass_idx     = 1,
+  acc_keys_idx     = 1,
+  acc_creativity   = 0.5,
+  acc_chords       = "",  -- optional own progression (Anticipatory)
+  acc_beats        = 4,   -- beats per chord when acc_chords is given
+  acc_stay_in_key  = false,  -- MIDI-GPT: only the melody's pitch classes
   -- AMT: melody track
   amt_melody_item  = nil,   -- REAPER item (for position/length on import)
   amt_melody_take  = nil,
@@ -246,7 +266,7 @@ import_midi_all = function()
 
   -- The accompaniment is timed relative to the start of the melody item, so
   -- import it at that position (not wherever the edit cursor happens to be).
-  if mk == "anticipatory" and S.amt_melody_item then
+  if takes_melody(mk) and S.amt_melody_item then
     local pos = reaper.GetMediaItemInfo_Value(S.amt_melody_item, "D_POSITION")
     reaper.SetEditCurPos(pos, false, false)
     add_log(string.format("Cursor → %.2fs (start of the melody item)", pos))
@@ -256,7 +276,7 @@ import_midi_all = function()
   -- generation is based on (AMT), instead of always at the very end of the
   -- project's track list. Each extra candidate then stacks right below the
   -- previous candidate's folder.
-  local ref_track = (mk == "anticipatory") and _amt_ref_track_number() or nil
+  local ref_track = takes_melody(mk) and _amt_ref_track_number() or nil
   local insert_at = track_placement.insert_index(ref_track, reaper.CountTracks(0))
 
   reaper.Undo_BeginBlock()
@@ -349,7 +369,7 @@ end
 local function launch_generate()
   local mk       = model_key()
   local script   = (S.execution == "local") and MG_LOCAL_SCRIPTS[mk] or MG_SCRIPTS[mk]
-  local is_amt   = (mk == "anticipatory")
+  local is_amt   = takes_melody(mk)
   local is_text  = not is_amt
   local has_fields = (mk == "amadeus")
 
@@ -360,9 +380,17 @@ local function launch_generate()
   end
   if is_amt and not S.amt_melody_take then
     reaper.MB(
-      "Anticipatory needs a melody track.\n"
+      "This model needs your melody.\n"
       .. "Select a MIDI item in REAPER and click R next to 'Melody'.",
       "MidiGenerator", 0)
+    return
+  end
+  local chosen_parts = {}
+  for _, part in ipairs(ACC_PARTS) do
+    if S.acc_parts[part] then table.insert(chosen_parts, part) end
+  end
+  if is_amt and #chosen_parts == 0 then
+    reaper.MB("Choose at least one part (bass, keys, strings, guitar or drums).", "MidiGenerator", 0)
     return
   end
 
@@ -418,16 +446,33 @@ local function launch_generate()
       return
     end
     add_log("Melody: " .. S.amt_melody_label)
-    if #S.amt_seed_takes > 0 then
-      add_log("Accompaniment tracks given: " .. #S.amt_seed_takes)
-    else
-      add_log("No accompaniment given: building a " .. AMT_STYLES[S.amt_style_idx] .. " prompt from the melody")
+    add_log(string.format("Parts: %s | density: %s | creativity: %.2f",
+      table.concat(chosen_parts, ", "), ACC_DENSITY_LABELS[S.acc_density_idx], S.acc_creativity))
+    if mk == "anticipatory" then
+      if #S.amt_seed_takes > 0 then
+        add_log("Accompaniment tracks given: " .. #S.amt_seed_takes)
+      else
+        add_log("No accompaniment given: building a " .. AMT_STYLES[S.amt_style_idx] .. " prompt from the melody")
+      end
     end
     extra = extra .. " --melody "            .. q(melody_path)
     extra = extra .. " --style "             .. q(AMT_STYLES[S.amt_style_idx])
-    extra = extra .. " --prompt-length "     .. tostring(S.amt_prompt_len)
+    extra = extra .. " --parts "             .. q(table.concat(chosen_parts, ","))
+    extra = extra .. " --density "           .. tostring(S.acc_density_idx - 1)
+    extra = extra .. " --bass-program "      .. tostring(ACC_BASS_PROGRAMS[S.acc_bass_idx])
+    extra = extra .. " --keys-program "      .. tostring(ACC_KEYS_PROGRAMS[S.acc_keys_idx])
+    extra = extra .. string.format(" --creativity %.3f", S.acc_creativity)
     extra = extra .. " --clip-length 0"     -- 0 = length of the melody
     extra = extra .. " --melody-instrument 0"
+    if mk == "anticipatory" then
+      extra = extra .. " --prompt-length " .. tostring(S.amt_prompt_len)
+      if S.acc_chords:match("%S") then
+        extra = extra .. " --chords " .. q(S.acc_chords)
+                      .. " --beats-per-chord " .. tostring(S.acc_beats)
+      end
+    elseif S.acc_stay_in_key then
+      extra = extra .. " --stay-in-key"
+    end
     -- --n-outputs is already in base; midigen.py maps it internally to --multiplicity
   end
 
@@ -456,7 +501,7 @@ function M.draw()
   local g = gui
   local t = theme
   local mk = model_key()
-  local is_amt  = (mk == "anticipatory")
+  local is_amt  = takes_melody(mk)
   local is_text = not is_amt
   local has_fields = (mk == "amadeus")
 
@@ -572,38 +617,85 @@ function M.draw()
     if g.button("R", t.sc(44), t.ITEM_H) then grab_melody_item() end
     g.text_disabled("  Select the melody item in REAPER and click R.")
 
-    -- Optional accompaniment tracks (they steer the style of the result)
-    g.spacing()
-    g.row_label("Accomp.:", lw_amt)
-    if g.button("+", t.sc(44), t.ITEM_H) then add_seed_items_from_reaper() end
-    g.same_line(t.sc(8))
-    if g.button("Clear", t.sc(70), t.ITEM_H) then
-      S.amt_seed_takes = {}
-      add_log("Accompaniment tracks cleared.")
-    end
-    if #S.amt_seed_takes == 0 then
-      g.text_disabled("  (optional) Select tracks in REAPER and click '+' to steer the style.")
-    else
-      for _, entry in ipairs(S.amt_seed_takes) do
-        g.text_disabled("  • " .. entry.label)
+    -- Optional accompaniment tracks (Anticipatory only: they steer the style)
+    if mk == "anticipatory" then
+      g.spacing()
+      g.row_label("Accomp.:", lw_amt)
+      if g.button("+", t.sc(44), t.ITEM_H) then add_seed_items_from_reaper() end
+      g.same_line(t.sc(8))
+      if g.button("Clear", t.sc(70), t.ITEM_H) then
+        S.amt_seed_takes = {}
+        add_log("Accompaniment tracks cleared.")
+      end
+      if #S.amt_seed_takes == 0 then
+        g.text_disabled("  (optional) Select tracks in REAPER and click '+' to steer the style.")
+      else
+        for _, entry in ipairs(S.amt_seed_takes) do
+          g.text_disabled("  • " .. entry.label)
+        end
       end
     end
 
-    -- Style of the automatic prompt (only when no accompaniment was given)
+    -- ── ARRANGEMENT: what is written, how much, how it sounds ─────────
     g.spacing()
-    g.row_label("Style:", lw_amt)
-    g.next_width(-1)
-    if #S.amt_seed_takes > 0 then g.begin_disabled(true) end
-    S.amt_style_idx = widgets.combo("##amt_style", S.amt_style_idx, AMT_STYLE_LABELS)
-    if #S.amt_seed_takes > 0 then g.end_disabled() end
+    g.row_label("Parts:", lw_amt)
+    for i, part in ipairs(ACC_PARTS) do
+      if i > 1 then g.same_line(t.sc(6)) end
+      local chg, nv = g.checkbox(ACC_PART_LABELS[part] .. "##acc_" .. part, S.acc_parts[part])
+      if chg then S.acc_parts[part] = nv end
+    end
 
-    g.row_label("Prompt (s):", lw_amt)
-    g.next_width(t.sc(120))
-    local rv, nv = g.slider_int("##amt_plen", S.amt_prompt_len, 2, 15)
-    if rv then S.amt_prompt_len = nv end
-    g.same_line(t.sc(14))
-    g.text_disabled("Length follows the melody.")
-    g.text_disabled("  Without accompaniment tracks, a bass + chords prompt is built from your melody.")
+    local has_own_tracks = (mk == "anticipatory" and #S.amt_seed_takes > 0)
+    g.row_label("Style:", lw_amt)
+    g.next_width(t.sc(250))
+    if has_own_tracks then g.begin_disabled(true) end
+    S.amt_style_idx = widgets.combo("##amt_style", S.amt_style_idx, AMT_STYLE_LABELS)
+    if has_own_tracks then g.end_disabled() end
+    g.same_line(t.sc(10)); g.inline_text("Density:")
+    g.same_line(t.sc(6))
+    g.next_width(t.sc(110))
+    S.acc_density_idx = widgets.combo("##acc_density", S.acc_density_idx, ACC_DENSITY_LABELS)
+
+    g.row_label("Bass:", lw_amt)
+    g.next_width(t.sc(150))
+    S.acc_bass_idx = widgets.combo("##acc_bass", S.acc_bass_idx, ACC_BASS_LABELS)
+    g.same_line(t.sc(10)); g.inline_text("Keys:")
+    g.same_line(t.sc(6))
+    g.next_width(t.sc(150))
+    S.acc_keys_idx = widgets.combo("##acc_keys", S.acc_keys_idx, ACC_KEYS_LABELS)
+
+    g.row_label("Creativity:", lw_amt)
+    g.next_width(-1)
+    local cr, cv = g.slider_float("##acc_creativity", S.acc_creativity, 0.0, 1.0, "%.2f")
+    if cr then S.acc_creativity = cv end
+    if mk == "anticipatory" then
+      g.text_disabled("  Higher: the model adds instruments and variations of its own.")
+
+      g.spacing()
+      g.row_label("Chords:", lw_amt)
+      g.next_width(-1)
+      local r4, v4 = widgets.input_text("##acc_chords", S.acc_chords)
+      if r4 then S.acc_chords = v4 end
+      g.text_disabled("  Optional, e.g.  C#m G# A# F   (empty = detected from your melody)")
+      if S.acc_chords:match("%S") then
+        g.row_label("Beats/chord:", lw_amt)
+        g.next_width(t.sc(120))
+        local rb, vb = g.slider_int("##acc_beats", S.acc_beats, 1, 8)
+        if rb then S.acc_beats = vb end
+      end
+
+      g.row_label("Prompt (s):", lw_amt)
+      g.next_width(t.sc(120))
+      local rv, nv = g.slider_int("##amt_plen", S.amt_prompt_len, 2, 15)
+      if rv then S.amt_prompt_len = nv end
+      g.same_line(t.sc(14))
+      g.text_disabled("Length follows the melody.")
+    else
+      g.text_disabled("  Higher: more varied notes.")
+      local sk, sv = g.checkbox("Stay in the melody's notes##acc_key", S.acc_stay_in_key)
+      if sk then S.acc_stay_in_key = sv end
+      g.text_colored("  Non-commercial weights: accept the license at huggingface.co/Metacreation/MIDI-GPT", "YELLOW")
+    end
   end
 
   g.spacing(); g.separator(); g.spacing()
@@ -646,6 +738,7 @@ function M.draw()
   local hints = {
     amadeus      = "A10G: ~$0.05/min  |  multi-track, variable duration",
     anticipatory = "A10G: ~$0.05/min (remote)  |  Local runs on CPU: slower but free",
+    midigpt      = "A10G: ~$0.05/min  |  needs the Hugging Face token in Setup (gated weights)",
   }
   g.text_disabled(hints[mk] or "")
 

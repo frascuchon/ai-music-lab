@@ -16,6 +16,11 @@ M.midigen = {
     local_supported = true,
     reason = "CPU-only PyTorch, no GPU required (research_anticipatory.py).",
   },
+  midigpt = {
+    local_supported = false,
+    reason = "Runs on Modal only: gated Hugging Face weights (non-commercial "
+      .. "license) and a CUDA-sized model; no local backend implemented.",
+  },
   amadeus = {
     local_supported = false,
     reason = "No local backend implemented; research pipeline assumes "

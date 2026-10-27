@@ -36,6 +36,7 @@ def run_accompaniment(
     seed: int = 0,
     auto_history: bool = True,
     style: str = "pop",
+    arrangement=None,
 ):
     """Genera el acompañamiento de la melodía (canal 0) y guarda solo el acompañamiento."""
     import tempfile
@@ -54,7 +55,7 @@ def run_accompaniment(
 
     with open(input_midi_path, "rb") as f:
         prep = accompaniment.prepare(f.read(), melody_instrument, prompt_length,
-                                     auto_history=auto_history, style=style)
+                                     auto_history=auto_history, style=style, arrangement=arrangement)
     if prep.auto_history:
         print(f"[prompt] acompañamiento automático ({style}): {prep.harmony}")
 
@@ -115,6 +116,14 @@ def main():
                         help="Segundos de acompañamiento usados como prompt (default: 5)")
     parser.add_argument("--clip-length", type=int, default=0,
                         help="Duración total en segundos; 0 = la de la melodía (default: 0)")
+    parser.add_argument("--parts", default="bass,keys",
+                        help="Partes del prompt automático: bass,keys,strings,guitar,drums")
+    parser.add_argument("--density", type=int, choices=[0, 1, 2], default=1,
+                        help="0 escaso | 1 normal | 2 denso")
+    parser.add_argument("--bass-program", type=int, default=33)
+    parser.add_argument("--keys-program", type=int, default=4)
+    parser.add_argument("--chords", default="", help='Tu progresión, p. ej. "C#m G# A# F" (vacío = detectar)')
+    parser.add_argument("--beats-per-chord", type=int, default=4)
     parser.add_argument("--top-p", type=float, default=0.95, help="Nucleus sampling (default: 0.95)")
     parser.add_argument("--seed", type=int, default=-1,
                         help="Semilla; negativa = aleatoria en cada ejecución (default: -1)")
@@ -138,6 +147,16 @@ def main():
 
     seed = args.seed if args.seed >= 0 else random.randrange(2**31)
 
+    import harmony
+    arrangement = harmony.Arrangement(
+        style=args.style,
+        parts=tuple(p.strip() for p in args.parts.split(",") if p.strip()),
+        density=args.density,
+        programs=(("bass", args.bass_program), ("keys", args.keys_program)),
+        chords=args.chords,
+        beats_per_chord=args.beats_per_chord,
+    )
+
     # AMT requiere float32 (en fp16 genera tokens fuera de vocabulario)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[info] device={device}  dtype=float32  (en CPU es lento)")
@@ -156,7 +175,7 @@ def main():
                 model, args.input, _versioned_path(args.out, i, args.multiplicity),
                 prompt_length=args.prompt_length, clip_length=args.clip_length,
                 top_p=args.top_p, melody_instrument=args.melody_instrument,
-                seed=seed + i, style=args.style,
+                seed=seed + i, style=args.style, arrangement=arrangement,
             )
 
 

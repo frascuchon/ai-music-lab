@@ -26,7 +26,9 @@ def _make_args(**overrides) -> argparse.Namespace:
         model="amadeus", prompt="A calm piano piece.",
         n_outputs=2, temperature=1.0, gpu="A10G", force=False,
         melody="", style="pop",
-        prompt_length=5, clip_length=0, top_p=0.95, melody_instrument=0,
+        prompt_length=5, clip_length=0, melody_instrument=0,
+        parts="bass,keys", density=1, bass_program=33, keys_program=4,
+        chords="", beats_per_chord=4, creativity=0.5, stay_in_key=False,
     )
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
@@ -91,6 +93,58 @@ class TestBuildCmd(TestCase):
         self.assertEqual(cmd[cmd.index("--clip-length") + 1], "0")   # 0 = length of the melody
         for gone in ("--mode", "--duration"):
             self.assertNotIn(gone, cmd)
+
+    def test_anticipatory_passes_the_arrangement_controls(self):
+        melody = self.tmpdir / "melody.mid"
+        melody.write_bytes(b"fake midi bytes")
+        args = _make_args(model="anticipatory", melody=str(melody), parts="bass,keys,drums",
+                          density=2, bass_program=32, keys_program=0, creativity=1.0,
+                          chords="Am F C G", beats_per_chord=2)
+        cmd = midigen._build_cmd(self.uv_bin, self.shared_dir, self.script_path, self.out_dir, args, "")
+        value = lambda flag: cmd[cmd.index(flag) + 1]
+        self.assertEqual(value("--parts"), "bass,keys,drums")
+        self.assertEqual(value("--density"), "2")
+        self.assertEqual(value("--bass-program"), "32")
+        self.assertEqual(value("--keys-program"), "0")
+        self.assertEqual(value("--chords"), "Am F C G")
+        self.assertEqual(value("--beats-per-chord"), "2")
+        self.assertEqual(value("--top-p"), "1.0")          # creativity 1.0 -> top_p 1.0
+
+    def test_creativity_maps_to_top_p(self):
+        melody = self.tmpdir / "melody.mid"
+        melody.write_bytes(b"x")
+        for creativity, expected in ((0.0, "0.8"), (0.5, "0.9"), (1.0, "1.0")):
+            args = _make_args(model="anticipatory", melody=str(melody), creativity=creativity)
+            cmd = midigen._build_cmd(self.uv_bin, self.shared_dir, self.script_path, self.out_dir, args, "")
+            self.assertEqual(cmd[cmd.index("--top-p") + 1], expected)
+
+    def test_no_chords_flag_when_none_given(self):
+        melody = self.tmpdir / "melody.mid"
+        melody.write_bytes(b"x")
+        args = _make_args(model="anticipatory", melody=str(melody), chords="  ")
+        cmd = midigen._build_cmd(self.uv_bin, self.shared_dir, self.script_path, self.out_dir, args, "")
+        self.assertNotIn("--chords", cmd)
+
+    def test_midigpt_writes_a_spec_from_the_controls(self):
+        import json
+        melody = self.tmpdir / "melody.mid"
+        melody.write_bytes(b"x")
+        self.out_dir.mkdir(parents=True)
+        args = _make_args(model="midigpt", melody=str(melody), parts="bass,keys,drums", density=2,
+                          creativity=0.0, stay_in_key=True, n_outputs=3)
+        cmd = midigen._build_cmd(self.uv_bin, self.shared_dir, self.script_path, self.out_dir, args, "")
+        self.assertEqual(cmd[cmd.index("--multiplicity") + 1], "3")
+        spec = json.loads(Path(cmd[cmd.index("--spec") + 1]).read_text())
+        self.assertEqual([t["role"] for t in spec["tracks"]], ["Bass", "Keys", "Drums"])
+        self.assertTrue(spec["pitch_classes"])
+        self.assertAlmostEqual(spec["temperature"], 0.8)
+        for flag in ("--gpu", "--style", "--top-p"):
+            self.assertNotIn(flag, cmd)
+
+    def test_midigpt_missing_melody_raises(self):
+        args = _make_args(model="midigpt", melody="")
+        with self.assertRaises(FileNotFoundError):
+            midigen._build_cmd(self.uv_bin, self.shared_dir, self.script_path, self.out_dir, args, "")
 
 
 class TestPickErrorMessage(TestCase):
@@ -163,7 +217,7 @@ class TestBuildLocalCmd(TestCase):
         melody = self.tmpdir / "melody.mid"
         melody.write_bytes(b"fake midi bytes")
         args = _make_args(model="anticipatory", melody=str(melody), style="pad",
-                          prompt_length=5, clip_length=0, top_p=0.95, n_outputs=3)
+                          prompt_length=5, clip_length=0, n_outputs=3, parts="bass,drums", density=0)
         cmd = midigen._build_local_cmd(self.uv_bin, script, self.out_dir, args, "")
 
         self.assertIn(str(script), cmd)
@@ -171,6 +225,8 @@ class TestBuildLocalCmd(TestCase):
         self.assertEqual(cmd[cmd.index("--style") + 1], "pad")
         self.assertEqual(cmd[cmd.index("--multiplicity") + 1], "3")
         self.assertEqual(cmd[cmd.index("--clip-length") + 1], "0")
+        self.assertEqual(cmd[cmd.index("--parts") + 1], "bass,drums")
+        self.assertEqual(cmd[cmd.index("--density") + 1], "0")
         for gone in ("--mode", "--duration", "--gpu"):
             self.assertNotIn(gone, cmd)
 

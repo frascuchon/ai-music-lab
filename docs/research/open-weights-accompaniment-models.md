@@ -35,6 +35,10 @@ Modelo `yellow_medium`, melodía de guitarra del usuario (49 notas, 8 compases, 
 
 **Conclusión provisional:** MIDI-GPT funciona y es viable técnicamente, pero hoy da resultados más irregulares que Anticipatory con el arranque automático y sus pesos son solo no comerciales. Merece la pena como segunda opción si el oído del usuario prefiere sus candidatos; hacerlo fiable exige ajustar densidad/polifonía.
 
+## Estado: integrado en el plugin (2026-10-27)
+
+MIDI-GPT se añadió al panel de MidiGenerator como tercer modelo, junto a Anticipatory, con los mismos controles (partes, estilo, densidad, instrumentos, creatividad). Resultados con presets (2 semillas cada uno): 0 partes duplicadas en las 10 configuraciones probadas; densidad 2,7 → 5,2 → 6,5 notas/s; hasta 5 partes. Atributos del checkpoint `yellow_medium`: `note_density` (solo pistas de batería), `min/max_polyphony`, `min/max_note_duration` (niveles 0–5). La duración larga no discriminó en las pruebas; el control efectivo es la **máscara rítmica por parte** (posiciones dentro del compás, 12 ticks por negra).
+
 ## Fuentes
 - MIDI-GPT: <https://github.com/Metacreation-Lab/MIDI-GPT>, <https://arxiv.org/abs/2501.17011>
 - Anticipatory Music Transformer: <https://arxiv.org/abs/2306.08620>

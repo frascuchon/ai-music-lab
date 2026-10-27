@@ -215,40 +215,161 @@ def _bass_pitch(root_pc: int, low: int = 36, high: int = 47) -> int:
     return p if p <= high else p - 12
 
 
-def render(segments, beat: float, style: str = "pop"):
-    """Return {'bass': [...notes], 'comp': [...notes], 'comp_program': int}.
-    Patterns are laid out in beats from the start of each chord segment, so they
-    do not depend on the bar length."""
-    if style not in STYLES:
-        raise ValueError(f"unknown style {style!r}; choose one of {STYLES}")
-    bass, comp = [], []
-    center = 60.0
+@dataclass(frozen=True)
+class Arrangement:
+    """What to write besides the melody. Everything has a sensible default."""
+    style: str = "pop"                  # rhythmic feel of bass and keys: pop | pad | arp
+    parts: tuple = ("bass", "keys")     # any of PARTS
+    density: int = 1                    # 0 sparse | 1 normal | 2 busy
+    programs: tuple = ()                # ((part, GM program), ...) overrides of DEFAULT_PROGRAMS
+    chords: str = ""                    # your own progression, e.g. "C#m G# A# F" (empty = detect)
+    beats_per_chord: int = 4
+
+    def program(self, part: str) -> int:
+        return dict(self.programs).get(part, DEFAULT_PROGRAMS[part])
+
+
+PARTS = ("bass", "keys", "strings", "guitar", "drums")
+DEFAULT_PROGRAMS = {"bass": PROGRAM_BASS, "keys": PROGRAM_PIANO, "strings": PROGRAM_STRINGS,
+                    "guitar": 25, "drums": 0}
+PART_NAMES = {"bass": "Bass", "keys": "Keys", "strings": "Strings", "guitar": "Guitar", "drums": "Drums"}
+
+KICK, SNARE, HAT, OPEN_HAT = 36, 38, 42, 46
+
+
+def _bass_part(segments, beat, arr: Arrangement):
+    out = []
     for t0, t1, chord in segments:
         root = _bass_pitch(chord.root)
         fifth = root + 7 if root + 7 <= 52 else root - 5
-        voicing = _closest_voicing(chord, center, 52, 72)
+        n_beats = max(1, round((t1 - t0) / beat))
+        if arr.density == 0 or arr.style == "pad":
+            out.append((t0, t1 - 0.02, root, 78))
+        elif arr.density == 2:
+            for i in range(n_beats * 2):                     # eighth-note pulses
+                s = t0 + i * beat / 2
+                pitch = root if i % 4 != 3 else fifth
+                out.append((s, min(s + beat / 2, t1) - 0.02, pitch, 84 if i % 2 == 0 else 70))
+        else:
+            for i in range(0, n_beats, 2):
+                s = t0 + i * beat
+                pitch = root if (i // 2) % 2 == 0 else fifth
+                length = 2 * beat if arr.style == "arp" else 1.5 * beat
+                out.append((s, min(s + length, t1) - 0.02, pitch, 82))
+    return out
+
+
+def _chord_part(segments, beat, arr: Arrangement, low: int, high: int, kind: str):
+    """keys / guitar: block chords and arpeggios. strings: sustained pad."""
+    out, center = [], (low + high) / 2
+    for t0, t1, chord in segments:
+        voicing = _closest_voicing(chord, center, low, high)
         center = sum(voicing) / len(voicing)
         n_beats = max(1, round((t1 - t0) / beat))
-
-        if style == "pad":
-            bass.append((t0, t1 - 0.02, root, 78))
-            comp.extend((t0, t1 - 0.02, p, 52) for p in voicing)
+        if kind == "strings" or arr.density == 0 or (kind == "keys" and arr.style == "pad"):
+            out.extend((t0, t1 - 0.02, p, 52) for p in voicing)
             continue
-        for i in range(0, n_beats, 2):
-            s = t0 + i * beat
-            e = min(s + 2 * beat, t1) - 0.02
-            if style == "arp":
-                bass.append((s, e, root if (i // 2) % 2 == 0 else fifth, 80))
-                order = [voicing[0], voicing[1], voicing[2], voicing[1]]
-                for h in range(4):
-                    hs = s + h * beat / 2
-                    if hs < t1:
-                        comp.append((hs, min(hs + beat / 2, t1) - 0.02, order[h], 58 if h % 2 == 0 else 48))
-            else:  # pop
-                bass.append((s, min(s + 1.5 * beat, t1) - 0.02, root if (i // 2) % 2 == 0 else fifth, 82))
-                comp.extend((s, e, p, 56) for p in voicing)
-    program = PROGRAM_STRINGS if style == "pad" else PROGRAM_PIANO
-    return {"bass": bass, "comp": comp, "comp_program": program}
+        if kind == "guitar":
+            hits = [0, 1.5, 2, 3.5] if arr.density == 1 else ([0, 2] if arr.density == 0 else [i / 2 for i in range(8)])
+            for i in range(0, n_beats, 4):
+                for h in hits:
+                    s = t0 + (i + h) * beat
+                    if s < t1 - 1e-6:
+                        out.extend((s + k * 0.012, min(s + beat * 0.45, t1) - 0.02, p, 70 if h == int(h) else 58)
+                                   for k, p in enumerate(voicing))
+            continue
+        if arr.style == "arp" or arr.density == 2:
+            # eighths; sixteenths only for the arpeggio style at the busiest setting
+            step = beat / 4 if (arr.style == "arp" and arr.density == 2) else beat / 2
+            order = [voicing[0], voicing[1], voicing[2], voicing[1]]
+            for h in range(int((t1 - t0) / step + 1e-6)):
+                s = t0 + h * step
+                out.append((s, min(s + step, t1) - 0.02, order[h % 4], 60 if h % 2 == 0 else 48))
+        else:
+            for i in range(0, n_beats, 2):
+                s = t0 + i * beat
+                e = min(s + 2 * beat, t1) - 0.02
+                out.extend((s, e, p, 56) for p in voicing)
+    return out
+
+
+def _drum_part(end_time: float, beat: float, arr: Arrangement):
+    """A simple kit pattern on the global beat grid (4/4)."""
+    out = []
+    n_beats = int(end_time / beat) + 1
+    for b in range(n_beats):
+        t, pos = b * beat, b % 4
+        if pos in (0, 2):
+            out.append((t, t + 0.1, KICK, 100 if pos == 0 else 88))
+        if pos in (1, 3):
+            out.append((t, t + 0.1, SNARE, 96))
+        if arr.density >= 1:
+            out.append((t, t + 0.05, HAT, 70))
+            out.append((t + beat / 2, t + beat / 2 + 0.05, HAT, 54))
+        if arr.density >= 2:
+            out.append((t + beat / 4, t + beat / 4 + 0.05, HAT, 44))
+            out.append((t + 3 * beat / 4, t + 3 * beat / 4 + 0.05, HAT, 44))
+            if pos == 3:
+                out.append((t + beat / 2, t + beat / 2 + 0.1, KICK, 80))
+    return out
+
+
+def render(segments, beat: float, arr: Arrangement | None = None, style: str = "pop"):
+    """Return {part: (notes, program, is_drum)} for every part in `arr.parts`.
+    Patterns are laid out in beats from the start of each chord segment, so they
+    do not depend on the bar length."""
+    arr = arr or Arrangement(style=style)
+    if arr.style not in STYLES:
+        raise ValueError(f"unknown style {arr.style!r}; choose one of {STYLES}")
+    unknown = [p for p in arr.parts if p not in PARTS]
+    if unknown:
+        raise ValueError(f"unknown part(s) {unknown}; choose from {PARTS}")
+    if arr.density not in (0, 1, 2):
+        raise ValueError("density must be 0 (sparse), 1 (normal) or 2 (busy)")
+    out = {}
+    for part in arr.parts:
+        if part == "bass":
+            notes = _bass_part(segments, beat, arr)
+        elif part == "keys":
+            notes = _chord_part(segments, beat, arr, 52, 72, "keys")
+        elif part == "strings":
+            notes = _chord_part(segments, beat, arr, 58, 79, "strings")
+        elif part == "guitar":
+            notes = _chord_part(segments, beat, arr, 47, 69, "guitar")
+        else:
+            notes = _drum_part(segments[-1][1] if segments else 0.0, beat, arr)
+        out[part] = (notes, arr.program(part), part == "drums")
+    return out
+
+
+# ── your own chords ───────────────────────────────────────────────
+
+_FLAT_TO_SHARP = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#", "Cb": "B", "Fb": "E",
+                  "E#": "F", "B#": "C"}
+
+
+def parse_chords(text: str) -> list:
+    """'C#m G# A# F' / 'Am | F | C | G' -> [Chord, ...]. Only the triad matters:
+    'm'/'min' (and 'dim') -> minor, everything else -> major; extensions (7, 9, sus...) are ignored."""
+    import re
+
+    chords = []
+    for token in re.split(r"[\s|,;]+", text.strip()):
+        if not token:
+            continue
+        m = re.fullmatch(r"([A-Ga-g])([#b]?)(.*)", token)
+        if not m:
+            raise ValueError(f"cannot read chord {token!r} (examples: C, Am, F#m, Bb, G7)")
+        name = m.group(1).upper() + m.group(2)
+        name = _FLAT_TO_SHARP.get(name, name)
+        if name not in NOTE_NAMES:
+            raise ValueError(f"cannot read chord {token!r}")
+        rest = m.group(3).lower()
+        minor = rest.startswith("m") and not rest.startswith("maj") or rest.startswith("dim")
+        chords.append(_make_chord(NOTE_NAMES.index(name), "min" if minor else "maj"))
+    if not chords:
+        raise ValueError("the chord progression is empty")
+    return chords
 
 
 # ── public entry points ───────────────────────────────────────────
@@ -264,29 +385,36 @@ def beat_windows(bpm: float, end_time: float, beats_per_window: int = 2):
 
 
 def harmonize(notes, bpm: float, style: str = "pop", beats_per_window: int = 2,
-              until: float | None = None):
-    """Harmonize a melody whose first note is at t = 0.
+              until: float | None = None, arrangement: Arrangement | None = None):
+    """Harmonize a melody whose first note is at t = 0 and write the requested parts.
 
     `until` limits the accompaniment to [0, until] seconds (used to build the
-    short prompt Anticipatory needs).
+    short prompt Anticipatory needs). `arrangement` selects parts, density,
+    instruments and (optionally) your own chords; without it: bass + keys in `style`.
 
-    Returns a dict: key=(tonic, mode), chords=[(t0, t1, Chord)], bass, comp, comp_program.
+    Returns {'key': (tonic, mode), 'chords': [(t0, t1, Chord)],
+             'parts': {name: (notes, program, is_drum)}}.
     """
     if not notes:
         raise ValueError("the melody has no notes")
     if bpm <= 0:
         raise ValueError("bpm must be positive")
+    arr = arrangement or Arrangement(style=style)
     tonic, mode = detect_key(notes)
     end = max(n[1] for n in notes)
-    windows = beat_windows(bpm, end, beats_per_window)
-    chords = choose_chords(notes, windows, tonic, mode)
+    if arr.chords.strip():
+        progression = parse_chords(arr.chords)
+        windows = beat_windows(bpm, end, max(1, arr.beats_per_chord))
+        chords = [progression[i % len(progression)] for i in range(len(windows))]
+    else:
+        windows = beat_windows(bpm, end, beats_per_window)
+        chords = choose_chords(notes, windows, tonic, mode)
     segments = merge_segments(windows, chords)
-    parts = render(segments, 60.0 / bpm, style)
-    out = {"key": (tonic, mode), "chords": segments, **parts}
+    parts = render(segments, 60.0 / bpm, arr)
     if until is not None:
-        for name in ("bass", "comp"):
-            out[name] = [(s, min(e, until), p, v) for s, e, p, v in out[name] if s < until]
-    return out
+        parts = {name: ([(s, min(e, until), p, v) for s, e, p, v in notes_ if s < until], prog, drum)
+                 for name, (notes_, prog, drum) in parts.items()}
+    return {"key": (tonic, mode), "chords": segments, "parts": parts}
 
 
 def describe(result) -> str:
@@ -296,13 +424,13 @@ def describe(result) -> str:
 
 
 def to_pretty_midi(result, melody_notes=None, melody_program: int = 0):
-    """Build a PrettyMIDI with bass, comping and (optionally) the melody."""
+    """Build a PrettyMIDI with the generated parts and (optionally) the melody."""
     import pretty_midi
 
     pm = pretty_midi.PrettyMIDI()
 
-    def add(notes, program, name):
-        inst = pretty_midi.Instrument(program=program, name=name)
+    def add(notes, program, name, is_drum=False):
+        inst = pretty_midi.Instrument(program=program, name=name, is_drum=is_drum)
         for s, e, p, v in notes:
             if e > s:
                 inst.notes.append(pretty_midi.Note(velocity=int(v), pitch=int(p), start=s, end=e))
@@ -311,6 +439,6 @@ def to_pretty_midi(result, melody_notes=None, melody_program: int = 0):
 
     if melody_notes:
         add(melody_notes, melody_program, "Melody")
-    add(result["bass"], PROGRAM_BASS, "Bass")
-    add(result["comp"], result["comp_program"], "Chords")
+    for name, (notes, program, is_drum) in result["parts"].items():
+        add(notes, program, PART_NAMES[name], is_drum)
     return pm
