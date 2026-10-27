@@ -6,7 +6,7 @@ A collection of REAPER plugins that bring AI-powered audio and MIDI tools direct
 
 | Plugin | What it does | Models |
 |---|---|---|
-| **Audio2Midi** | Transcribe any audio to MIDI (polyphonic, multi-instrument) | MIROS, YourMT3+ |
+| **Audio2Midi** | Transcribe any audio to MIDI (single instrument locally, or polyphonic multi-instrument in the cloud) | Basic Pitch, YourMT3+, MIROS |
 | **MidiGenerator** | Generate MIDI from a text prompt or a seed MIDI file | Amadeus, Anticipatory MT |
 | **Text2Audio** | Generate or edit audio from a text description | Stable Audio Open, Foundation-1, ACE-Step, MusicGen, and more |
 | **StemsSeparator** | Separate any audio into stems (vocals, drums, bass, other…) | Demucs (local), SAM Audio (Modal) |

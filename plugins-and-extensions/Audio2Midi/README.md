@@ -6,10 +6,15 @@ Plugin REAPER para transcribir audio a MIDI usando modelos de IA en la nube.
 
 | Modelo | Descripción | GPU | Licencia |
 |--------|-------------|-----|---------|
-| **MIROS** (por defecto) | Multi-instrumento con beat tracking. Mejor en música real. | A10G | Uso interno |
+| **Basic Pitch** (por defecto) | Un solo instrumento (guitarra, voz, piano). Se ejecuta en local (CPU), sin Modal. Devuelve una pista. | ninguna | Apache 2.0 |
+| **MIROS** | Multi-instrumento con beat tracking. Mejor en música real. | A10G | Uso interno |
 | **YourMT3+** | Multi-instrumento. Robusto, F1 77.5% Slakh. | T4+ | Apache 2.0 |
 
-Ambos modelos aplican beat tracking (tempo map constante) para alinear las notas
+**Qué modelo elegir:** para un instrumento solo, Basic Pitch; para una mezcla con varios instrumentos, YourMT3+ o MIROS. En una guitarra distorsionada solista, Basic Pitch coincidió con una referencia pYIN en ~66 % de los fotogramas, frente a ~35 % (YourMT3+) y ~19 % (MIROS), y los dos modelos grandes repartían la guitarra en varias pistas.
+
+**Nivel de entrada:** antes de transcribir se normaliza el pico a -1 dBFS (máx. +30 dB de ganancia). Un render de guitarra con pico en -22 dBFS hacía que MIROS devolviera un MIDI vacío. Si no se detecta ninguna nota, el plugin lo indica como error.
+
+Los modelos Modal aplican beat tracking (tempo map constante) para alinear las notas
 al grid de REAPER. El flag "Beat tracking" del plugin lo controla (MIROS soporta
 desactivarlo; YourMT3+ siempre aplica su propio procesamiento).
 
@@ -24,6 +29,7 @@ plugins-and-extensions/
     ├── Audio2Midi.lua
     ├── transcribe.py
     └── research/
+        ├── research_basic_pitch.py     (local, uv run)
         ├── research_miros_modal.py
         └── research_yourmt3_modal.py
 ```

@@ -24,17 +24,21 @@ local PYTHON, PYTHON_ERR = common.detect_reaper_python()
 -- ── CONSTANTS ────────────────────────────────────────────────────
 -- Ordered by real-world popularity (community adoption); YourMT3+ is public/open,
 -- MIROS is internal-use only
-local A2M_MODELS  = { "yourmt3", "miros" }
+local A2M_MODELS  = { "basicpitch", "yourmt3", "miros" }
 local A2M_LABELS  = {
+  "Basic Pitch  (single instrument, local, Apache 2.0)",
   "YourMT3+  (multi-instr., Apache 2.0)",
   "MIROS  (multi-instr., A10G, internal use)",
 }
 local A2M_SCRIPTS = {
-  miros   = SCRIPT_DIR .. "research/research_miros_modal.py",
-  yourmt3 = SCRIPT_DIR .. "research/research_yourmt3_modal.py",
+  basicpitch = SCRIPT_DIR .. "research/research_basic_pitch.py",
+  miros      = SCRIPT_DIR .. "research/research_miros_modal.py",
+  yourmt3    = SCRIPT_DIR .. "research/research_yourmt3_modal.py",
 }
+-- Models that run on this machine (no Modal, no GPU choice)
+local A2M_LOCAL = { basicpitch = true }
 -- Minimum recommended GPU per model (A10G for MIROS; T4 sufficient for YourMT3+)
-local A2M_GPU_DEFAULT = { miros = 1, yourmt3 = 3 }  -- index in A2M_GPUS
+local A2M_GPU_DEFAULT = { basicpitch = 1, miros = 1, yourmt3 = 3 }  -- index in A2M_GPUS
 local A2M_GPUS   = { "A10G", "A100", "T4" }
 
 local TRANSCRIBE_PY = SCRIPT_DIR .. "transcribe.py"
@@ -369,7 +373,11 @@ local function launch_transcribe()
   local label = "Starting " .. (A2M_LABELS[S.model_idx] or model_key) .. "..."
   clear_run(label)
   add_log("Model: " .. (A2M_LABELS[S.model_idx] or model_key))
-  add_log("GPU: " .. A2M_GPUS[S.gpu_idx])
+  if A2M_LOCAL[model_key] then
+    add_log("Execution: local (this machine)")
+  else
+    add_log("GPU: " .. A2M_GPUS[S.gpu_idx])
+  end
   add_log("Beat tracking: " .. (S.beat_tracking and "yes" or "no"))
 
   local section_args = ""
@@ -393,7 +401,7 @@ local function launch_transcribe()
     section_args, beat_arg,
     q(PROGRESS_F), q(LOG_F))
 
-  add_log("Launching Modal process...")
+  add_log(A2M_LOCAL[model_key] and "Launching local process..." or "Launching Modal process...")
   S.pid = common.launch_tracked(cmd)
 end
 
@@ -406,6 +414,7 @@ function M.init()
   end
   add_log("Audio2Midi ready.")
   add_log("Python: " .. PYTHON)
+  add_log("Basic Pitch: " .. A2M_SCRIPTS.basicpitch)
   add_log("MIROS:  " .. A2M_SCRIPTS.miros)
   add_log("YourMT3+: " .. A2M_SCRIPTS.yourmt3)
 end
@@ -473,16 +482,19 @@ function M.draw()
   local scroll_h = math.max(t.sc(60), gfx.h - gui.ctx.y - t.PAD_Y)
   widgets.scroll_region("##a2m_page", 0, scroll_h, function()
 
-  -- GPU
+  -- GPU (not applicable to local models)
+  local cur_model = A2M_MODELS[S.model_idx]
   g.row_label("GPU:", t.sc(68))
   g.next_width(t.sc(100))
+  if A2M_LOCAL[cur_model] then g.begin_disabled(true) end
   S.gpu_idx = widgets.combo("##a2m_gpu", S.gpu_idx, A2M_GPUS)
+  if A2M_LOCAL[cur_model] then g.end_disabled() end
 
   -- Beat tracking (only shows a note for YourMT3+ which doesn't use it)
   g.same_line(t.sc(18))
   local bt_changed, bt_new = g.checkbox("Beat tracking##bt", S.beat_tracking)
   if bt_changed then S.beat_tracking = bt_new end
-  if S.model_idx == 2 then  -- YourMT3+ has no flag
+  if cur_model == "yourmt3" then  -- YourMT3+ has no flag
     g.same_line(t.sc(8))
     g.text_disabled("(N/A for YourMT3+)")
   end
@@ -491,10 +503,11 @@ function M.draw()
 
   -- Cost hint
   local hints = {
-    "A10G: ~$0.05/min  |  MIROS requires A10G minimum (flash-attn Ampere+)",
-    "A10G: ~$0.05/min  |  YourMT3+ works on T4 and above",
+    basicpitch = "Runs on this machine, free  |  best for ONE instrument (guitar, voice, piano)",
+    miros      = "A10G: ~$0.05/min  |  MIROS requires A10G minimum (flash-attn Ampere+)",
+    yourmt3    = "A10G: ~$0.05/min  |  YourMT3+ works on T4 and above  |  for full mixes",
   }
-  g.text_disabled(hints[S.model_idx] or "")
+  g.text_disabled(hints[cur_model] or "")
 
   g.spacing()
   g.separator()
