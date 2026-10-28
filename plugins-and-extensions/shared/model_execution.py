@@ -36,17 +36,9 @@ TEXT2AUDIO: dict[str, dict] = {
         "local_supported": True,
         "reason": "Same SAO pipeline via SDEdit (init_audio/init_noise_level), MPS/CPU capable.",
     },
-    "foundation1": {
-        "local_supported": True,
-        "reason": "Same SAO pipeline/weights family, MPS/CPU capable.",
-    },
     "musicgen_gen": {
         "local_supported": True,
         "reason": "audiocraft MusicGen runs on MPS/CPU (slow, autoregressive).",
-    },
-    "magnet": {
-        "local_supported": True,
-        "reason": "audiocraft MAGNeT runs on MPS/CPU.",
     },
     "audiogen": {
         "local_supported": True,
@@ -59,14 +51,6 @@ TEXT2AUDIO: dict[str, dict] = {
     "acestep": {
         "local_supported": False,
         "reason": "No MPS/CPU support confirmed in research; CUDA-only (edit mode).",
-    },
-    "mustango": {
-        "local_supported": False,
-        "reason": "Research confirms no MPS/CPU support.",
-    },
-    "inspiremusic_gen": {
-        "local_supported": False,
-        "reason": "Research confirms no MPS/CPU support.",
     },
 }
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Local (non-Modal) CLI backend for the 7 Text2Audio models the feasibility
+"""Local (non-Modal) CLI backend for the 5 Text2Audio models the feasibility
 registry (shared/model_execution.py TEXT2AUDIO) marks as local_supported:
-sao, sao_edit, foundation1, musicgen_gen, musicgen, magnet, audiogen.
+sao, sao_edit, musicgen_gen, audiogen.
 
 Called by text2audio.py's own ``--execution local`` dispatch (not by the Lua
 panel directly) as a plain subprocess, mirroring how text2audio.py already
@@ -14,7 +14,7 @@ avoids two processes racing to write the same progress file.
 
 Contract:
     python3 text2audio_local.py
-        --model   <sao|sao_edit|foundation1|musicgen_gen|magnet|audiogen>
+        --model   <sao|sao_edit|musicgen_gen|audiogen>
         --mode    <generate|edit>
         --prompt  <text>
         --out-dir <dir>
@@ -34,7 +34,7 @@ user's own machine (Apple Silicon MPS or CPU). See _resolve_device().
 IMPORTANT — scope of verification: this file was written by inspecting the
 real APIs used by the sibling research_*_modal.py scripts (diffusers
 StableAudioPipeline, stable-audio-tools generate_diffusion_cond, transformers
-Musicgen*ForConditionalGeneration, audiocraft MAGNeT/AudioGen) and adapting
+Musicgen*ForConditionalGeneration, audiocraft AudioGen) and adapting
 their device handling from hardcoded "cuda" to the local device. It has NOT
 been run end-to-end against real model weights in this environment (no
 GPU/MPS hardware or multi-GB downloads available here) — only the argument
@@ -54,7 +54,6 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 _SAO_FAMILY_GENERATE = {
     "sao": "stabilityai/stable-audio-open-1.0",
-    "foundation1": "RoyalCities/Foundation-1",
 }
 _SAO_EDIT_REPO = "stabilityai/stable-audio-open-1.0"
 
@@ -64,10 +63,9 @@ _MUSICGEN_TRANSFORMERS = {
     "musicgen_gen": "facebook/musicgen-medium",
 }
 
-# audiocraft get_pretrained() — used as-is by the Modal scripts for these two
-# (just with device="cuda" hardcoded there; we pass the local device instead).
+# audiocraft get_pretrained() — used as-is by the Modal script (just with
+# device="cuda" hardcoded there; we pass the local device instead).
 _AUDIOCRAFT_MODELS = {
-    "magnet": "facebook/magnet-medium-30secs",
     "audiogen": "facebook/audiogen-medium",
 }
 
@@ -105,7 +103,7 @@ def _slug(text: str, n: int = 40) -> str:
 
 
 # ---------------------------------------------------------------------------
-# SAO family (sao, foundation1) — diffusers StableAudioPipeline, generate mode
+# SAO family (sao) — diffusers StableAudioPipeline, generate mode
 # ---------------------------------------------------------------------------
 
 def _run_sao_generate(model: str, prompt: str, seconds: float, seed: int,
@@ -220,7 +218,7 @@ def _run_musicgen_gen(prompt: str, seconds: float, device: str, out_wav: Path) -
 
 
 # ---------------------------------------------------------------------------
-# audiocraft family (magnet, audiogen)
+# audiocraft family (audiogen)
 # ---------------------------------------------------------------------------
 
 def _run_audiocraft_generate(model: str, prompt: str, seconds: float, device: str,
@@ -228,12 +226,8 @@ def _run_audiocraft_generate(model: str, prompt: str, seconds: float, device: st
     variant = _AUDIOCRAFT_MODELS[model]
     print(f"[text2audio_local] Loading {variant} on {device}...", flush=True)
 
-    if model == "magnet":
-        from audiocraft.models import MAGNeT
-        mdl = MAGNeT.get_pretrained(variant, device=device)
-    else:
-        from audiocraft.models import AudioGen
-        mdl = AudioGen.get_pretrained(variant, device=device)
+    from audiocraft.models import AudioGen
+    mdl = AudioGen.get_pretrained(variant, device=device)
 
     mdl.set_generation_params(duration=seconds)
     print("[text2audio_local] step 0/1", flush=True)

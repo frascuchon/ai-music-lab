@@ -6,7 +6,7 @@
 -- Free-text prompts are model-specific advice ("use TAG format...", "chord
 -- progression Am-F-C-G...") — carrying the previous model's prompt over to
 -- a newly picked model is confusing and often produces a bad generation
--- (e.g. Foundation-1's TAG-format prompt fed to a plain descriptive model).
+-- (e.g. a comma-separated tag prompt fed to a plain descriptive model).
 -- Numeric per-model defaults (GPU tier, temperature, ...) should likewise
 -- snap to the new model's own default rather than keep the old model's.
 --

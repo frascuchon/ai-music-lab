@@ -37,17 +37,9 @@ M.text2audio = {
     local_supported = true,
     reason = "Same SAO pipeline via SDEdit (init_audio/init_noise_level), MPS/CPU capable.",
   },
-  foundation1 = {
-    local_supported = true,
-    reason = "Same SAO pipeline/weights family, MPS/CPU capable.",
-  },
   musicgen_gen = {
     local_supported = true,
     reason = "audiocraft MusicGen runs on MPS/CPU (slow, autoregressive).",
-  },
-  magnet = {
-    local_supported = true,
-    reason = "audiocraft MAGNeT runs on MPS/CPU.",
   },
   audiogen = {
     local_supported = true,
@@ -60,14 +52,6 @@ M.text2audio = {
   acestep = {
     local_supported = false,
     reason = "No MPS/CPU support confirmed in research; CUDA-only (edit mode).",
-  },
-  mustango = {
-    local_supported = false,
-    reason = "Research confirms no MPS/CPU support.",
-  },
-  inspiremusic_gen = {
-    local_supported = false,
-    reason = "Research confirms no MPS/CPU support.",
   },
 }
 

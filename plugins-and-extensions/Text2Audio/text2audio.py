@@ -5,7 +5,7 @@
 Called by Text2Audio.lua as a background process:
     python3 text2audio.py
         --shared-dir <shared/>  --script <research_*.py>
-        --model <sao|foundation1|sao_edit|acestep|...>
+        --model <sao|sao_edit|acestep|...>
         --mode  <generate|edit>
         --out-dir <dir>  --progress <pf>
         [--prompt <text>]
@@ -21,8 +21,7 @@ Called by Text2Audio.lua as a background process:
         [--lora-path <folder>] [--lora-scale <float>]
 
 Model entrypoint contracts (modal run <script>::main):
-  text2audio (sao, foundation1, acestep_gen, inspiremusic_gen,
-              mustango, audiogen, musicgen_gen, magnet):
+  text2audio (acestep_gen, sao, musicgen_gen, audiogen):
       --prompt  --seconds  --out-dir  --force
       acestep_gen additionally forwards --steps --guidance-scale --shift
       --seed --use-adg --cfg-interval-start --cfg-interval-end --thinking
@@ -69,13 +68,9 @@ LOCAL_SCRIPT = Path(__file__).resolve().parent / "text2audio_local.py"
 MODEL_KIND: dict[str, str] = {
     # Generation (text → audio, no source)
     "sao":             "text2audio",
-    "foundation1":     "text2audio",
     "acestep_gen":     "text2audio",
-    "inspiremusic_gen":"text2audio",
-    "mustango":        "text2audio",
     "audiogen":        "text2audio",
     "musicgen_gen":    "text2audio",
-    "magnet":          "text2audio",
     # Editing (source audio + prompt → transformed audio)
     "sao_edit":    "audio_edit_noise",
     "acestep":     "audio_edit_strength",
@@ -146,8 +141,7 @@ def main() -> int:
     p.add_argument("--script",      required=True,
                    help="Path to the Modal script to run.")
     p.add_argument("--model",       required=True,
-                   help="Model key (sao|foundation1|acestep_gen|inspiremusic_gen|"
-                        "mustango|audiogen|musicgen_gen|magnet|"
+                   help="Model key (acestep_gen|sao|musicgen_gen|audiogen|"
                         "sao_edit|acestep).")
     p.add_argument("--mode",        required=True, choices=["generate", "edit"],
                    help="Operation mode.")
@@ -372,7 +366,7 @@ def _run_and_collect(cmd: list[str], env: dict, pf: str, out_dir: Path,
         tail.append(line)
 
         pct = 0.1
-        # Diffusion: "step N/M" (SAO, Foundation-1, MusicGen) or "[N/M]"
+        # Diffusion: "step N/M" (SAO, MusicGen) or "[N/M]"
         m = re.search(r'step\s+(\d+)/(\d+)', line, re.IGNORECASE)
         if not m:
             m = re.search(r'\[(\d+)/(\d+)\]', line)

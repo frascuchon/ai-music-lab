@@ -72,7 +72,7 @@ class TestMainValidation(TestCase):
         return subprocess.run(args, capture_output=True, text=True, timeout=30)
 
     def test_unsupported_model_rejected_by_argparse_choices(self):
-        proc = self._run(["--model", "mustango", "--mode", "generate", "--prompt", "x"])
+        proc = self._run(["--model", "acestep_gen", "--mode", "generate", "--prompt", "x"])
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("invalid choice", proc.stderr.lower())
 

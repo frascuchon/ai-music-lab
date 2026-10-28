@@ -8,7 +8,7 @@ A collection of REAPER plugins that bring AI-powered audio and MIDI tools direct
 |---|---|---|
 | **Audio2Midi** | Transcribe any audio to MIDI (single instrument locally, or polyphonic multi-instrument in the cloud) | Basic Pitch, YourMT3+ |
 | **MidiGenerator** | Generate MIDI from a text prompt or a seed MIDI file | Amadeus, Anticipatory MT |
-| **Text2Audio** | Generate or edit audio from a text description | Stable Audio Open, Foundation-1, ACE-Step, MusicGen, and more |
+| **Text2Audio** | Generate or edit audio from a text description | ACE-Step, Stable Audio Open, MusicGen, AudioGen (generate); SAO and ACE-Step (edit) |
 | **StemsSeparator** | Separate any audio into stems (vocals, drums, bass, other…) | Demucs (local), SAM Audio (Modal) |
 
 A shared **Setup** wizard handles the full environment configuration — Python, uv, Modal auth, HF secrets — for all plugins from a single UI.
