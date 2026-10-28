@@ -32,12 +32,6 @@ Model entrypoint contracts (modal run <script>::main):
       --source-audio  --prompt  --noise-level  --out-dir  --force
   audio_edit_strength (acestep):
       --source-audio  --prompt  --strength  --out-dir  --force
-  audio_edit_flowstep (melodyflow):
-      --source-audio  --prompt  --flowstep  --out-dir  --force
-  audio_edit_tstart (zeta):
-      --source-audio  --prompt  --tstart  --out-dir  --force
-  audio_continuation (inspiremusic):
-      --source-audio  --prompt  --out-dir  --force
 
 Progress protocol (--progress):
     state|pct|msg\\n       state = running | done | error
@@ -85,17 +79,12 @@ MODEL_KIND: dict[str, str] = {
     # Editing (source audio + prompt → transformed audio)
     "sao_edit":    "audio_edit_noise",
     "acestep":     "audio_edit_strength",
-    "melodyflow":  "audio_edit_flowstep",
-    "zeta":        "audio_edit_tstart",
-    "inspiremusic":"audio_continuation",
 }
 
 # Intensity → numeric value mapping
 INTENSITY_MAP: dict[str, dict[str, float]] = {
     "sao_edit":   {"subtle": 0.4,  "moderate": 1.0,  "strong": 4.0},
     "acestep":    {"subtle": 0.9,  "moderate": 0.7,  "strong": 0.4},
-    "melodyflow": {"subtle": 0.10, "moderate": 0.05, "strong": 0.0},
-    "zeta":       {"subtle": 70,   "moderate": 100,  "strong": 130},
 }
 
 
@@ -159,7 +148,7 @@ def main() -> int:
     p.add_argument("--model",       required=True,
                    help="Model key (sao|foundation1|acestep_gen|inspiremusic_gen|"
                         "mustango|audiogen|musicgen_gen|magnet|"
-                        "sao_edit|acestep|melodyflow|zeta|inspiremusic).")
+                        "sao_edit|acestep).")
     p.add_argument("--mode",        required=True, choices=["generate", "edit"],
                    help="Operation mode.")
     p.add_argument("--out-dir",     required=True, dest="out_dir",
@@ -342,31 +331,6 @@ def main() -> int:
             "--source-audio", str(process_path),
             "--prompt",       args.prompt,
             "--strength",     str(strength),
-            "--out-dir",      str(out_dir),
-            "--force",
-        ]
-    elif kind == "audio_edit_flowstep":
-        flowstep = INTENSITY_MAP["melodyflow"].get(args.intensity, 0.05)
-        cmd += [
-            "--source-audio", str(process_path),
-            "--prompt",       args.prompt,
-            "--flowstep",     str(flowstep),
-            "--out-dir",      str(out_dir),
-            "--force",
-        ]
-    elif kind == "audio_edit_tstart":
-        tstart = int(INTENSITY_MAP["zeta"].get(args.intensity, 100))
-        cmd += [
-            "--source-audio", str(process_path),
-            "--prompt",       args.prompt,
-            "--tstart",       str(tstart),
-            "--out-dir",      str(out_dir),
-            "--force",
-        ]
-    elif kind == "audio_continuation":
-        cmd += [
-            "--source-audio", str(process_path),
-            "--prompt",       args.prompt,
             "--out-dir",      str(out_dir),
             "--force",
         ]

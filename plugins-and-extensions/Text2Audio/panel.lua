@@ -59,21 +59,14 @@ local GEN_MAX_SEC = {
 -- Edit models (source audio + prompt → transformed audio)
 -- Ordered by real-world popularity of the underlying base model (verified via GitHub
 -- stars / official announcements); AudioLDM2's own repo has only ~6★
-local EDIT_MODELS  = { "sao_edit", "acestep",
-                       "melodyflow", "zeta", "inspiremusic" }
+local EDIT_MODELS  = { "sao_edit", "acestep" }
 local EDIT_LABELS  = {
   "SAO Style Transfer  (A10G, SDEdit init_audio)",
   "ACE-Step 1.5  (A10G, cover/re-style, Apache 2.0)",
-  "MelodyFlow  (A10G, ≤30 s, flow matching, MIT/CC-BY-NC)",
-  "ZETA/AudioLDM2  (A10G, ≤10 s, zero-shot, Apache/CC-BY-SA)",
-  "InspireMusic continuation  (A10G, ≤30 s, Apache 2.0)",
 }
 local EDIT_SCRIPTS = {
   sao_edit    = SCRIPT_DIR .. "research/research_sao_edit_modal.py",
   acestep     = SCRIPT_DIR .. "research/research_acestep_edit_modal.py",
-  melodyflow  = SCRIPT_DIR .. "research/research_melodyflow_modal.py",
-  zeta        = SCRIPT_DIR .. "research/research_zeta_edit_modal.py",
-  inspiremusic= SCRIPT_DIR .. "research/research_inspiremusic_modal.py",
 }
 
 local GPUS        = { "A10G", "A100", "T4" }
@@ -203,30 +196,6 @@ local EDIT_EXAMPLE_PROMPTS = {
       text = "8-bit chiptune arcade video game soundtrack version" },
     { label = "Dark ambient, heavy reverb, ominous mood",
       text = "dark ambient version, heavy reverb, ominous and haunting mood" },
-  },
-  melodyflow = {
-    { label = "Soft dreamy ambient, gentle synth pads",
-      text = "soft dreamy ambient rendition with gentle synth pads" },
-    { label = "Dark ambient, heavy reverb, ominous mood",
-      text = "dark ambient version, heavy reverb, ominous and haunting mood" },
-    { label = "Orchestral symphonic arrangement",
-      text = "orchestral symphonic arrangement" },
-  },
-  zeta = {
-    { label = "Jazz piano version, swing feel",
-      text = "jazz piano version, swing feel, relaxed tempo" },
-    { label = "Same melody played by a string quartet",
-      text = "the same melody played by a string quartet" },
-    { label = "Lo-fi hip hop remix, dusty vinyl texture",
-      text = "lo-fi hip hop remix, chill, dusty vinyl texture, slow tempo" },
-  },
-  inspiremusic = {
-    { label = "Continue to generate jazz music.",
-      text = "Continue to generate jazz music." },
-    { label = "Continue with energetic electronic dance music.",
-      text = "Continue to generate energetic electronic dance music." },
-    { label = "Continue with a relaxing ambient piano piece.",
-      text = "Continue to generate a relaxing ambient piano piece." },
   },
 }
 
@@ -941,10 +910,9 @@ function M.draw()
     end
     g.spacing()
 
-    -- Intensity (not applicable to InspireMusic continuation)
+    -- Intensity
     local cur_edit_model = EDIT_MODELS[S.edit_model_idx]
-    local EDIT_NO_INTENSITY = { inspiremusic = true }
-    if not EDIT_NO_INTENSITY[cur_edit_model] then
+    do
       g.row_label("Intensity:", t.sc(80))
       g.next_width(t.sc(170))
       S.intensity_idx = widgets.combo("##intensity", S.intensity_idx, INTENSITY_LABELS)
@@ -968,9 +936,6 @@ function M.draw()
     local model_hints = {
       sao_edit    = "SAO SDEdit: reuses weights already downloaded from SAO 1.0 (no extra setup cost)",
       acestep     = "ACE-Step: requires initial setup (~5 GB). Apache 2.0, commercial use allowed.",
-      melodyflow  = "MelodyFlow: flow matching with latent inversion. High fidelity. ≤30 s.",
-      zeta        = "ZETA/AudioLDM2: DDIM inversion zero-shot. Output 16 kHz mono ≤10 s.",
-      inspiremusic= "InspireMusic: continues the audio with the style from the prompt. ≤30 s.",
     }
     g.text_disabled(model_hints[cur_edit_model] or "")
   end

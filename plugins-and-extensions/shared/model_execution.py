@@ -68,19 +68,6 @@ TEXT2AUDIO: dict[str, dict] = {
         "local_supported": False,
         "reason": "Research confirms no MPS/CPU support.",
     },
-    "inspiremusic": {
-        "local_supported": False,
-        "reason": "Research confirms no MPS/CPU support (continuation mode).",
-    },
-    "melodyflow": {
-        "local_supported": False,
-        "reason": ("Non-standard install (audiocraft fork via HF Space); "
-                   "no local backend implemented."),
-    },
-    "zeta": {
-        "local_supported": False,
-        "reason": "Custom DDPM-inversion repo on AudioLDM2; no local backend implemented.",
-    },
 }
 
 STEMSEPARATOR: dict[str, dict] = {

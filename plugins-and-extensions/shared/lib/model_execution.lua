@@ -69,18 +69,6 @@ M.text2audio = {
     local_supported = false,
     reason = "Research confirms no MPS/CPU support.",
   },
-  inspiremusic = {
-    local_supported = false,
-    reason = "Research confirms no MPS/CPU support (continuation mode).",
-  },
-  melodyflow = {
-    local_supported = false,
-    reason = "Non-standard install (audiocraft fork via HF Space); no local backend implemented.",
-  },
-  zeta = {
-    local_supported = false,
-    reason = "Custom DDPM-inversion repo on AudioLDM2; no local backend implemented.",
-  },
 }
 
 M.stemseparator = {
