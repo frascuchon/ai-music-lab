@@ -14,3 +14,6 @@ _wip/
 # Cloned research repos (too large for the repo)
 plugins-and-extensions/MidiGenerator/research/midi_llm_repo/
 plugins-and-extensions/MidiGenerator/research/text2midi/
+
+# Material de la charla: solo local, no se publica
+docs/presentation/
