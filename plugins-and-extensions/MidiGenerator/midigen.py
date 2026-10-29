@@ -21,13 +21,15 @@ Called by MidiGenerator.lua as a background process:
         [--temperature <float>]
         [--gpu   <A10G|A100|T4|L4>]
         [--force]
-        # ChatMusician with harmonization only:
-        [--seed-file  <path.mid>]
         # Anticipatory (AMT) only:
-        [--seed       <path.mid>]
-        [--mode       <accompaniment|continuation>]
+        [--melody     <path.mid>]   (channel 0 = melody; other channels = optional accompaniment)
+        [--style      <pop|pad|arp>]
+        [--parts bass,keys,strings,guitar,drums] [--density 0|1|2]
+        [--bass-program N] [--keys-program N] [--creativity 0..1]
+        [--chords "C#m G# A# F"] [--beats-per-chord N]      (Anticipatory)
+        [--stay-in-key]                                      (MIDI-GPT)
         [--prompt-length   <int>]
-        [--clip-length     <int>]
+        [--clip-length     <int>]   (0 = length of the melody)
         [--top-p           <float>]
         [--multiplicity    <int>]
         [--melody-instrument <int>]
@@ -38,39 +40,38 @@ Progress protocol (--progress):
 
 Model entrypoint contracts (verified in research_*_modal.py)
 -------------------------------------------------------------
-text_dir  (amadeus, midi_llm, text2midi, chatmusician):
+text_dir  (amadeus):
     ::main --prompt … --out-dir … [--n-outputs] [--temperature] [--gpu] [--force]
     Output: generated_cuda_v*.mid  (glob in out-dir)
 
-text_file (musecoco):
-    ::main --prompt … --out <out-dir>/generated.mid [--n-samples] [--instruments "0,5"]
-    Output: generated.mid (n=1) or generated.mid + generated_2.mid … (n>1)
-
-seed_file (anticipatory):
-    ::main --input <seed.mid> --out <out-dir>/generated.mid
-           --mode <accompaniment|continuation> --gpu …
+melody_file (anticipatory):
+    ::main --input <melody.mid> --out <out-dir>/generated.mid --gpu … --style …
+           --parts … --density … --bass-program … --keys-program … [--chords …]
            [--prompt-length] [--clip-length] [--top-p]
            [--multiplicity] [--melody-instrument]
+    Output: only the accompaniment (the melody is not returned).
+
+melody_file (midigpt):
+    ::main --input <melody.mid> --out <out-dir>/generated.mid --spec <spec.json>
+           --multiplicity N          (spec built by midigpt_spec.build_spec)
+    Output: only the generated parts.
     Output: generated.mid (mult=1) or generated_v0.mid … generated_v{N-1}.mid (mult>1)
 
-Local entrypoint contracts (--execution local; only text2midi, anticipatory —
+Local entrypoint contracts (--execution local; only anticipatory —
 see shared/model_execution.py MIDIGEN registry for the full feasibility list)
 -------------------------------------------------------------------------------
-text2midi (research_text2midi.py, plain — no Modal):
-    --prompt … --out <out-dir>/generated.mid --temperature … --n_outputs …
-    Output: generated.mid (n=1) or generated_v0.mid … generated_v{N-1}.mid (n>1)
-
 anticipatory (research_anticipatory.py, plain — no Modal, CPU-only):
-    --input <seed.mid> --out <out-dir>/generated.mid --mode <accompaniment|continuation>
+    --input <melody.mid> --out <out-dir>/generated.mid --style …
            [--prompt-length] [--clip-length] [--top-p] [--multiplicity] [--melody-instrument]
-    Output: generated.mid (mult=1) or generated_v0.mid … (mult>1, accompaniment only —
-    the local script's continuation mode always produces a single file)
+    Output: generated.mid (mult=1) or generated_v0.mid … (mult>1)
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import random
 import re
 import shutil
 import sys
@@ -86,7 +87,8 @@ _LOG_TAIL_LINES = 20
 # ---------------------------------------------------------------------------
 _THIS_DIR = Path(__file__).parent
 sys.path.insert(0, str(_THIS_DIR))
-from prompt_adapters import adapt, instruments_to_classids  # noqa: E402
+from prompt_adapters import adapt  # noqa: E402
+import midigpt_spec  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -94,18 +96,21 @@ from prompt_adapters import adapt, instruments_to_classids  # noqa: E402
 # ---------------------------------------------------------------------------
 _MODEL_KIND: dict[str, str] = {
     "amadeus":      "text_dir",
-    "midi_llm":     "text_dir",
-    "text2midi":    "text_dir",
-    "chatmusician": "text_dir",
-    "musecoco":     "text_file",
-    "anticipatory": "seed_file",
+    "anticipatory": "melody_file",
+    "midigpt":      "melody_file",
 }
 
-# Models whose ::main accepts --gpu (others ignore it)
-_SUPPORTS_GPU = {"midi_llm", "anticipatory"}
+# Models whose ::main accepts --gpu (others ignore it; MIDI-GPT's GPU is fixed in its script)
+_SUPPORTS_GPU = {"anticipatory"}
 
-# text_dir models that accept --force (midi_llm does not)
-_SUPPORTS_FORCE = {"amadeus", "text2midi", "chatmusician"}
+# Accompaniment engines that take a melody MIDI, and the display name used in errors
+_MELODY_ENGINES = {"anticipatory": "Anticipatory", "midigpt": "MIDI-GPT"}
+
+# text_dir models that accept --force
+_SUPPORTS_FORCE = {"amadeus"}
+
+# text_dir models whose ::main accepts --base-seed
+_SUPPORTS_BASE_SEED = {"amadeus"}
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +157,7 @@ def _collect_outputs(out_dir: Path) -> list[Path]:
     """Collect all generated .mid files in out_dir, sorted.
     Filters files that are too small (< 64 bytes) — usually empty or invalid
     MIDIs produced when the model generates text instead of ABC notation.
-    For AMT (seed_file), expects the generated*.mid pattern."""
+    For AMT (melody_file), expects the generated*.mid pattern."""
     mids = [m for m in sorted(out_dir.glob("*.mid")) if m.stat().st_size >= 64]
     return mids
 
@@ -167,7 +172,7 @@ def _pick_error_message(
     failure) over the generic ones below.
 
     - Non-zero exit: an "ERROR:" line, if seen, names the actual failure
-      (e.g. missing midi2abc); otherwise fall back to the exit-code message.
+      (e.g. a failed Modal call); otherwise fall back to the exit-code message.
     - Zero exit but no outputs: a "[warn]" line, if seen, usually explains
       why the model was fed a degraded/unseeded prompt (e.g. an unrecognized
       seed extension); appended to the generic "no outputs" message.
@@ -186,6 +191,43 @@ def _pick_error_message(
 
 
 # ---------------------------------------------------------------------------
+# Accompaniment controls -> per-engine arguments
+# ---------------------------------------------------------------------------
+
+def _parts(args) -> list:
+    return [p.strip() for p in args.parts.split(",") if p.strip()]
+
+
+def _top_p(args) -> float:
+    """Creativity 0..1 -> nucleus-sampling top_p 0.80..1.00 (measured: at 1.0 the model
+    adds instruments of its own; at 0.8 it sticks to the ones in the prompt)."""
+    return round(0.80 + 0.20 * args.creativity, 3)
+
+
+def _anticipatory_flags(args) -> list:
+    flags = [
+        "--style",           args.style,
+        "--parts",           ",".join(_parts(args)),
+        "--density",         str(args.density),
+        "--bass-program",    str(args.bass_program),
+        "--keys-program",    str(args.keys_program),
+        "--beats-per-chord", str(args.beats_per_chord),
+        "--top-p",           str(_top_p(args)),
+    ]
+    if args.chords.strip():
+        flags += ["--chords", args.chords]
+    return flags
+
+
+def _midigpt_spec(args) -> dict:
+    return midigpt_spec.build_spec(
+        parts=tuple(_parts(args)), style=args.style, density=args.density,
+        programs={"bass": args.bass_program, "keys": args.keys_program},
+        creativity=args.creativity, stay_in_key=args.stay_in_key,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Build modal run command per model
 # ---------------------------------------------------------------------------
 
@@ -196,7 +238,6 @@ def _build_cmd(
     out_dir: Path,
     args: argparse.Namespace,
     adapted_prompt: str,
-    instruments_str: str,
 ) -> list[str]:
     """Return the token list for the modal run command to execute."""
 
@@ -217,53 +258,39 @@ def _build_cmd(
         ]
         if model in _SUPPORTS_FORCE:
             cmd += ["--force"]
-        if model == "midi_llm" and args.gpu:
+        if model in _SUPPORTS_BASE_SEED:
+            # Fresh seed per run: a fixed seed made every generation of the
+            # same prompt return the identical MIDI.
+            cmd += ["--base-seed", str(random.randrange(2**31))]
+        if model in _SUPPORTS_GPU and args.gpu:
             cmd += ["--gpu", args.gpu]
-        # AMT (anticipatory) also accepts --gpu
-        if model == "anticipatory" and args.gpu:
-            cmd += ["--gpu", args.gpu]
-        # ChatMusician: optional seed for harmonization
-        if model == "chatmusician" and args.seed_file:
-            if not Path(args.seed_file).exists():
-                raise FileNotFoundError(
-                    f"Seed MIDI not found: {args.seed_file!r}. "
-                    "It may have been deleted before the run started — "
-                    "re-select the MIDI item and try again."
-                )
-            cmd += ["--input-file", args.seed_file]
 
-    elif kind == "text_file":
-        out_path = out_dir / "generated.mid"
-        cmd = base + [
-            "--prompt",   adapted_prompt,
-            "--out",      str(out_path),
-            "--n-samples", str(args.n_outputs),
-        ]
-        if instruments_str:
-            cmd += ["--instruments", instruments_str]
-
-    elif kind == "seed_file":
-        if not args.seed or not Path(args.seed).exists():
+    elif kind == "melody_file":
+        if not args.melody or not Path(args.melody).exists():
             raise FileNotFoundError(
-                f"Anticipatory requires a seed MIDI (--seed). "
-                f"Specified path: {args.seed!r}"
+                f"{_MELODY_ENGINES.get(model, model)} requires the melody MIDI (--melody). "
+                f"Specified path: {args.melody!r}"
             )
         out_path = out_dir / "generated.mid"
-        cmd = base + [
-            "--input",          args.seed,
-            "--out",            str(out_path),
-            "--mode",           args.mode,
-            "--gpu",            args.gpu or "A10G",
-            "--prompt-length",  str(args.prompt_length),
-            "--top-p",          str(args.top_p),
-            "--multiplicity",   str(args.n_outputs),
-            "--melody-instrument", str(args.melody_instrument),
-        ]
-        # continuation uses --duration, accompaniment uses --clip-length
-        if args.mode == "continuation":
-            cmd += ["--duration", str(args.clip_length)]
+        if model == "midigpt":
+            spec_path = out_dir / "spec.json"
+            spec_path.write_text(json.dumps(_midigpt_spec(args)))
+            cmd = base + [
+                "--input",        args.melody,
+                "--out",          str(out_path),
+                "--spec",         str(spec_path),
+                "--multiplicity", str(args.n_outputs),
+            ]
         else:
-            cmd += ["--clip-length", str(args.clip_length)]
+            cmd = base + [
+                "--input",          args.melody,
+                "--out",            str(out_path),
+                "--gpu",            args.gpu or "A10G",
+                "--prompt-length",  str(args.prompt_length),
+                "--clip-length",    str(args.clip_length),
+                "--multiplicity",   str(args.n_outputs),
+                "--melody-instrument", str(args.melody_instrument),
+            ] + _anticipatory_flags(args)
 
     else:
         raise ValueError(f"Unknown contract type: {kind!r}")
@@ -275,9 +302,9 @@ def _build_cmd(
 # Build local run command per model (--execution local)
 # ---------------------------------------------------------------------------
 
-# Models with a plain (non-Modal) local script — the only two with
+# Models with a plain (non-Modal) local script — the only one with
 # local_supported=True in shared/model_execution.py's MIDIGEN registry.
-_LOCAL_SUPPORTED_MODELS = {"text2midi", "anticipatory"}
+_LOCAL_SUPPORTED_MODELS = {"anticipatory"}
 
 
 def _build_local_cmd(
@@ -289,7 +316,7 @@ def _build_local_cmd(
 ) -> list[str]:
     """Return the token list to run a model's plain local script directly
     (no `modal run`, no GPU). `script_path` points at the plain script
-    (e.g. research_text2midi.py) — its parent directory is the uv project
+    (e.g. research_anticipatory.py) — its parent directory is the uv project
     (MidiGenerator/research/, with its own pyproject.toml/venv, distinct
     from the shared/ Modal-only project used by _build_cmd)."""
 
@@ -298,36 +325,21 @@ def _build_local_cmd(
 
     base = [str(uv_bin), "run", "--project", str(research_dir), str(script_path)]
 
-    if model == "text2midi":
-        out_path = out_dir / "generated.mid"
-        cmd = base + [
-            "--prompt",      adapted_prompt,
-            "--out",         str(out_path),
-            "--temperature", str(args.temperature),
-            "--n_outputs",   str(args.n_outputs),
-        ]
-
-    elif model == "anticipatory":
-        if not args.seed or not Path(args.seed).exists():
+    if model == "anticipatory":
+        if not args.melody or not Path(args.melody).exists():
             raise FileNotFoundError(
-                f"Anticipatory requires a seed MIDI (--seed). "
-                f"Specified path: {args.seed!r}"
+                f"Anticipatory requires the melody MIDI (--melody). "
+                f"Specified path: {args.melody!r}"
             )
         out_path = out_dir / "generated.mid"
         cmd = base + [
-            "--mode",             args.mode,
-            "--input",            args.seed,
+            "--input",            args.melody,
             "--out",              str(out_path),
             "--prompt-length",    str(args.prompt_length),
             "--clip-length",      str(args.clip_length),
-            "--top-p",            str(args.top_p),
             "--melody-instrument", str(args.melody_instrument),
             "--multiplicity",     str(args.n_outputs),
-        ]
-        # research_anticipatory.py's continuation mode ignores --multiplicity
-        # and always writes a single file; --duration only applies there.
-        if args.mode == "continuation":
-            cmd += ["--duration", str(args.clip_length)]
+        ] + _anticipatory_flags(args)
 
     else:
         # Defensive only: main() already rejects unsupported models via
@@ -354,7 +366,7 @@ def main() -> int:
     p.add_argument("--progress",   default="")
     p.add_argument("--execution",  choices=["local", "remote"], default="remote",
                    help="local runs the model's plain script directly on this "
-                        "machine (only text2midi/anticipatory support it; see "
+                        "machine (only anticipatory supports it; see "
                         "shared/model_execution.py). remote (default) uses Modal, "
                         "unchanged from previous behavior.")
 
@@ -371,16 +383,27 @@ def main() -> int:
     p.add_argument("--gpu",         default="A10G")
     p.add_argument("--force",       action="store_true")
 
-    # ChatMusician: optional seed for harmonization
-    p.add_argument("--seed-file", default="", dest="seed_file")
-
-    # Anticipatory (AMT): seed + mode parameters
-    p.add_argument("--seed",             default="")
-    p.add_argument("--mode",             default="accompaniment")
+    # Anticipatory (AMT): melody file + accompaniment parameters
+    p.add_argument("--melody",           default="")
+    p.add_argument("--style",            choices=["pop", "pad", "arp"], default="pop")
     p.add_argument("--prompt-length",    type=int,   default=5, dest="prompt_length")
-    p.add_argument("--clip-length",      type=int,   default=20, dest="clip_length")
-    p.add_argument("--top-p",            type=float, default=0.95, dest="top_p")
+    p.add_argument("--clip-length",      type=int,   default=0, dest="clip_length")
     p.add_argument("--melody-instrument",type=int,   default=0, dest="melody_instrument")
+
+    # Accompaniment controls (Anticipatory and MIDI-GPT)
+    p.add_argument("--parts",            default="bass,keys",
+                   help="comma list of: bass, keys, strings, guitar, drums")
+    p.add_argument("--density",          type=int,   choices=[0, 1, 2], default=1,
+                   help="0 sparse | 1 normal | 2 busy")
+    p.add_argument("--bass-program",     type=int,   default=33, dest="bass_program")
+    p.add_argument("--keys-program",     type=int,   default=4,  dest="keys_program")
+    p.add_argument("--chords",           default="",
+                   help="your own progression, e.g. 'C#m G# A# F' (Anticipatory only)")
+    p.add_argument("--beats-per-chord",  type=int,   default=4,  dest="beats_per_chord")
+    p.add_argument("--creativity",       type=float, default=0.5,
+                   help="0..1: more variety (top_p for Anticipatory, temperature for MIDI-GPT)")
+    p.add_argument("--stay-in-key",      action="store_true", dest="stay_in_key",
+                   help="MIDI-GPT: only use the pitch classes of the melody")
 
     args = p.parse_args()
 
@@ -407,15 +430,15 @@ def main() -> int:
         write_progress(pf, "error", 0, f"Unknown model: {model_key!r}")
         return 1
 
-    if kind in ("text_dir", "text_file") and not args.prompt.strip():
+    if kind == "text_dir" and not args.prompt.strip():
         write_progress(pf, "error", 0,
                        "This model requires a text prompt (--prompt).")
         return 1
 
-    if kind == "seed_file" and not args.seed:
+    if kind == "melody_file" and not args.melody:
         write_progress(pf, "error", 0,
-                       "Anticipatory requires a seed MIDI (select a MIDI item "
-                       "in REAPER or choose a .mid file).")
+                       f"{_MELODY_ENGINES.get(model_key, model_key)} requires the melody MIDI "
+                       "(select a MIDI item in REAPER and click R next to 'Melody').")
         return 1
 
     if args.execution == "local":
@@ -437,9 +460,9 @@ def main() -> int:
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- Adapt prompt + derive MuseCoco instruments -------------------------
+    # --- Adapt prompt -------------------------------------------------------
     fields: dict | None = None
-    if kind in ("text_dir", "text_file") and any([
+    if kind == "text_dir" and any([
         args.field_key, args.field_bpm, args.field_instruments, args.field_chords,
     ]):
         fields = {
@@ -450,11 +473,6 @@ def main() -> int:
         }
 
     adapted_prompt  = adapt(model_key, args.prompt, fields)
-    instruments_str = ""
-    if model_key == "musecoco":
-        cids = instruments_to_classids(args.prompt)
-        if cids:
-            instruments_str = ",".join(str(c) for c in cids)
 
     # --- Build and launch run command ---------------------------------------
     if args.execution == "local":
@@ -470,7 +488,7 @@ def main() -> int:
         else:
             cmd = _build_cmd(
                 uv_bin, shared_dir, script_path,
-                out_dir, args, adapted_prompt, instruments_str,
+                out_dir, args, adapted_prompt,
             )
     except (FileNotFoundError, ValueError) as exc:
         write_progress(pf, "error", 0, str(exc))
@@ -479,10 +497,8 @@ def main() -> int:
     env = os.environ.copy()
     print(f"[midigen] Command: {' '.join(cmd)}", flush=True)
     print(f"[midigen] Model: {model_key}  kind={kind}", flush=True)
-    if kind in ("text_dir", "text_file"):
+    if kind == "text_dir":
         print(f"[midigen] Adapted prompt: {adapted_prompt[:120]}", flush=True)
-    if instruments_str:
-        print(f"[midigen] Instruments override: {instruments_str}", flush=True)
 
     import subprocess
     try:
@@ -532,7 +548,7 @@ def main() -> int:
                     pct = 0.10 + (n / total) * 0.80
             except (ValueError, IndexError):
                 pass
-        # AMT/MuseCoco report progress differently; keep incremental pct
+        # AMT reports progress differently; keep incremental pct
         elif "spawned" in line.lower() or "candidate" in line.lower():
             pct = 0.15
         elif "saved" in line.lower() or "→" in line:

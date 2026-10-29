@@ -1,5 +1,5 @@
--- @description AI Music Lab - unified plugin (AudioGenerator, StemsSeparator, Audio2Midi, MidiGenerator, Setup)
--- @version 1.0
+-- @description AI Music Lab - unified plugin (Text2Audio, StemsSeparator, Audio2Midi, MidiGenerator, Setup)
+-- @version 1.2.0
 -- @author AI Music Lab
 -- @about Single REAPER window with a tab per tool: AudioGenerator, StemsSeparator,
 --        Audio2Midi, MidiGenerator and Setup. Replaces the 4 previous

@@ -24,62 +24,34 @@ local PYTHON, PYTHON_ERR = common.detect_reaper_python()
 
 -- ── CONSTANTS ────────────────────────────────────────────────────
 -- Generation models (text → audio, no source)
--- Ordered by real-world popularity (verified via GitHub stars: MusicGen/AudioGen/MAGNeT
--- share facebookresearch/audiocraft ~23.6k★; ACE-Step-1.5 has its own ~13k★ repo;
--- Stable Audio Open's stable-audio-tools ~3.9k★; Mustango 395★; InspireMusic and
--- Foundation-1 have no dedicated starred repo)
-local GEN_MODELS  = { "musicgen_gen", "acestep_gen", "sao", "audiogen",
-                      "magnet", "mustango", "inspiremusic_gen", "foundation1" }
+local GEN_MODELS  = { "acestep_gen", "sao", "musicgen_gen", "audiogen" }
 local GEN_LABELS  = {
-  "MusicGen-medium  (A10G, 32 kHz, CC-BY-NC)",
   "ACE-Step 1.5  (A10G, full-song, Apache 2.0)",
   "Stable Audio Open 1.0  (A10G, 44.1 kHz stereo)",
+  "MusicGen-medium  (A10G, 32 kHz, CC-BY-NC)",
   "AudioGen-medium  (A10G, 16 kHz, effects/sound)",
-  "MAGNeT-medium  (A10G, 32 kHz, non-AR, CC-BY-NC)",
-  "Mustango  (A10G, ~10 s fixed, MuBERT features)",
-  "InspireMusic 1.5B  (A10G, 48 kHz, Apache 2.0)",
-  "Foundation-1  (A10G, electronic, TAG format)",
 }
 local GEN_SCRIPTS = {
-  sao            = SCRIPT_DIR .. "research/research_stable_audio_open_modal.py",
-  foundation1    = SCRIPT_DIR .. "research/research_foundation1_modal.py",
   acestep_gen    = SCRIPT_DIR .. "research/research_acestep_gen_modal.py",
-  inspiremusic_gen = SCRIPT_DIR .. "research/research_inspiremusic_gen_modal.py",
-  mustango       = SCRIPT_DIR .. "research/research_mustango_modal.py",
-  audiogen       = SCRIPT_DIR .. "research/research_audiogen_modal.py",
+  sao            = SCRIPT_DIR .. "research/research_stable_audio_open_modal.py",
   musicgen_gen   = SCRIPT_DIR .. "research/research_musicgen_gen_modal.py",
-  magnet         = SCRIPT_DIR .. "research/research_magnet_modal.py",
+  audiogen       = SCRIPT_DIR .. "research/research_audiogen_modal.py",
 }
 local GEN_MAX_SEC = {
-  sao = 47.0, foundation1 = 47.0,
-  acestep_gen = 180.0, inspiremusic_gen = 240.0,
-  mustango = 10.0, audiogen = 30.0, musicgen_gen = 30.0, magnet = 30.0,
+  acestep_gen = 180.0, sao = 47.0, musicgen_gen = 30.0, audiogen = 30.0,
 }
 
 -- Edit models (source audio + prompt → transformed audio)
 -- Ordered by real-world popularity of the underlying base model (verified via GitHub
 -- stars / official announcements); AudioLDM2's own repo has only ~6★
-local EDIT_MODELS  = { "musicgen", "acestep", "sao_edit",
-                       "melodyflow", "zeta", "inspiremusic" }
+local EDIT_MODELS  = { "sao_edit", "acestep" }
 local EDIT_LABELS  = {
-  "MusicGen-melody  (A10G, melodic conditioning, CC-BY-NC)",
-  "ACE-Step 1.5  (A10G, cover/re-style, Apache 2.0)",
   "SAO Style Transfer  (A10G, SDEdit init_audio)",
-  "MelodyFlow  (A10G, ≤30 s, flow matching, MIT/CC-BY-NC)",
-  "ZETA/AudioLDM2  (A10G, ≤10 s, zero-shot, Apache/CC-BY-SA)",
-  "InspireMusic continuation  (A10G, ≤30 s, Apache 2.0)",
+  "ACE-Step 1.5  (A10G, cover/re-style, Apache 2.0)",
 }
 local EDIT_SCRIPTS = {
   sao_edit    = SCRIPT_DIR .. "research/research_sao_edit_modal.py",
   acestep     = SCRIPT_DIR .. "research/research_acestep_edit_modal.py",
-  musicgen    = SCRIPT_DIR .. "research/research_musicgen_melody_modal.py",
-  melodyflow  = SCRIPT_DIR .. "research/research_melodyflow_modal.py",
-  zeta        = SCRIPT_DIR .. "research/research_zeta_edit_modal.py",
-  inspiremusic= SCRIPT_DIR .. "research/research_inspiremusic_modal.py",
-}
-local EDIT_NEEDS_SECONDS = {
-  sao_edit = false, acestep = false, musicgen = true,
-  melodyflow = false, zeta = false, inspiremusic = false,
 }
 
 local GPUS        = { "A10G", "A100", "T4" }
@@ -121,8 +93,7 @@ local ACESTEP_LORA_SCALE_RANGE = { 0.0, 1.0  }
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 
 -- Example prompts per model, shown as a dropdown next to each prompt box.
--- Generation models each expect their own prompt "dialect" (Foundation-1's
--- comma-separated TAG format is the clearest case); edit models take a
+-- Generation models each expect their own prompt "dialect"; edit models take a
 -- transformation instruction applied to the source audio rather than a
 -- from-scratch description. Sourced from each model's card / demo and from
 -- evaluation/prompts_official.json and evaluation/edit/README.md, which
@@ -136,14 +107,6 @@ local GEN_EXAMPLE_PROMPTS = {
     { label = "Lo-fi slow BPM electro chill",
       text = "Lo-fi slow BPM electro chill with organic samples" },
   },
-  foundation1 = {
-    { label = "Bass, FM Bass, Acid, Dubstep, 140 BPM, E min",
-      text = "Bass, FM Bass, Medium Delay, Medium Reverb, Phaser, Acid, Gritty, Dubstep, 8 Bars, 140 BPM, E minor" },
-    { label = "Drums, 808 Kick, House, 4 Bars, 120 BPM",
-      text = "Drums, 808 Kick, Clap, Closed Hi-Hat, Open Hi-Hat, Tight, Dry, Minimal, House, 4 Bars, 120 BPM" },
-    { label = "Lead Synth, Saw Wave, Arpeggio, 128 BPM, A min",
-      text = "Lead Synth, Saw Wave, Short Delay, Short Reverb, Arpeggio, Bright, Wide, 4 Bars, 128 BPM, A minor" },
-  },
   acestep_gen = {
     { label = "Uplifting EDM, synths, driving beat",
       text = "uplifting electronic dance music with synthesizers and driving beat" },
@@ -151,22 +114,6 @@ local GEN_EXAMPLE_PROMPTS = {
       text = "funk reinterpretation with syncopated bass" },
     { label = "Dark cinematic trailer, brass stabs",
       text = "dark cinematic trailer music with heavy percussion and brass stabs" },
-  },
-  inspiremusic_gen = {
-    { label = "Relaxing ambient piano in C major",
-      text = "Generate a relaxing ambient piano piece in C major" },
-    { label = "Energetic electronic dance music",
-      text = "Generate energetic electronic dance music." },
-    { label = "Upbeat jazz fusion, sax and electric piano",
-      text = "Generate an upbeat jazz fusion track with saxophone and electric piano" },
-  },
-  mustango = {
-    { label = "Jazz piano, 120 BPM, C major, walking bass",
-      text = "Generate a jazz piano piece at 120 BPM in C major with walking bass" },
-    { label = "Acoustic guitar melody, 90 BPM, G major",
-      text = "A relaxing acoustic guitar melody at 90 BPM in G major" },
-    { label = "Rock riff, 140 BPM, E minor, drums/bass",
-      text = "An energetic rock riff at 140 BPM in E minor with drums and bass" },
   },
   audiogen = {
     { label = "Footsteps on wooden floor, indoors",
@@ -183,14 +130,6 @@ local GEN_EXAMPLE_PROMPTS = {
       text = "A cheerful country song with acoustic guitars, banjo, and light drums" },
     { label = "Melancholic jazz, piano/bass/brushed drums",
       text = "Jazz music with piano, acoustic bass, and brushed drums. Melancholic mood." },
-  },
-  magnet = {
-    { label = "happy rock",
-      text = "happy rock" },
-    { label = "energetic EDM, upbeat, driving beat",
-      text = "energetic EDM, upbeat, driving beat" },
-    { label = "melodic lo-fi hip hop, chill, slow tempo",
-      text = "melodic lo-fi hip hop, chill, slow tempo" },
   },
 }
 local EDIT_EXAMPLE_PROMPTS = {
@@ -209,38 +148,6 @@ local EDIT_EXAMPLE_PROMPTS = {
       text = "8-bit chiptune arcade video game soundtrack version" },
     { label = "Dark ambient, heavy reverb, ominous mood",
       text = "dark ambient version, heavy reverb, ominous and haunting mood" },
-  },
-  musicgen = {
-    { label = "Same melody played by a string quartet",
-      text = "the same melody played by a string quartet" },
-    { label = "Acoustic drum kit, same rhythm, 90 BPM",
-      text = "acoustic drum kit playing the same rhythm, tight studio recording, 90 BPM" },
-    { label = "Same chords on grand piano, jazz voicings",
-      text = "the same chord progression played on a grand piano, jazz voicings, warm and intimate" },
-  },
-  melodyflow = {
-    { label = "Soft dreamy ambient, gentle synth pads",
-      text = "soft dreamy ambient rendition with gentle synth pads" },
-    { label = "Dark ambient, heavy reverb, ominous mood",
-      text = "dark ambient version, heavy reverb, ominous and haunting mood" },
-    { label = "Orchestral symphonic arrangement",
-      text = "orchestral symphonic arrangement" },
-  },
-  zeta = {
-    { label = "Jazz piano version, swing feel",
-      text = "jazz piano version, swing feel, relaxed tempo" },
-    { label = "Same melody played by a string quartet",
-      text = "the same melody played by a string quartet" },
-    { label = "Lo-fi hip hop remix, dusty vinyl texture",
-      text = "lo-fi hip hop remix, chill, dusty vinyl texture, slow tempo" },
-  },
-  inspiremusic = {
-    { label = "Continue to generate jazz music.",
-      text = "Continue to generate jazz music." },
-    { label = "Continue with energetic electronic dance music.",
-      text = "Continue to generate energetic electronic dance music." },
-    { label = "Continue with a relaxing ambient piano piece.",
-      text = "Continue to generate a relaxing ambient piano piece." },
   },
 }
 
@@ -280,7 +187,6 @@ local S = {
   src_is_section    = false,
   edit_prompt       = "",
   edit_prompt_example = { idx = 1 },
-  edit_duration     = 10.0,
   intensity_idx     = 2,   -- "moderate"
   edit_model_idx    = 1,
   -- Execution: "local" (this machine, MPS/CPU) or "remote" (Modal cloud)
@@ -616,22 +522,16 @@ local function launch_t2a()
         S.src_start_offs, S.src_start_offs + S.src_section_dur))
     end
 
-    -- MusicGen needs --seconds
-    local seconds_arg = ""
-    if EDIT_NEEDS_SECONDS[model_key] then
-      seconds_arg = string.format(" --seconds %.2f", S.edit_duration)
-    end
-
     add_log("Execution: " .. S.execution)
     local cmd = string.format(
       '%s %s --shared-dir %s --script %s --model %s --mode edit'
       .. ' --input %s --prompt %s --intensity %s --gpu %s --execution %s'
-      .. ' --out-dir %s%s%s --progress %s >>%s 2>&1 &',
+      .. ' --out-dir %s%s --progress %s >>%s 2>&1 &',
       q(PYTHON), q(TEXT2AUDIO_PY),
       q(SHARED_DIR), q(script),
       q(model_key),
       q(S.src), q(prompt), q(INTENSITIES[S.intensity_idx]), q(GPUS[S.gpu_idx]), q(S.execution),
-      q(run_dir), section_args, seconds_arg,
+      q(run_dir), section_args,
       q(PROGRESS_F), q(LOG_F))
 
     add_log("Launching " .. (S.execution == "local" and "local" or "Modal") .. " process...")
@@ -694,7 +594,7 @@ function M.draw()
     local old_gen_model_idx = S.gen_model_idx
     S.gen_model_idx = widgets.combo("##gen_model", S.gen_model_idx, GEN_LABELS)
     -- A prompt written for one model's phrasing conventions (e.g.
-    -- Foundation-1's TAG format) rarely still makes sense for another, so
+    -- a tag list vs a sentence) rarely still makes sense for another, so
     -- clear it instead of silently carrying it over.
     S.prompt = model_switch.next_prompt(old_gen_model_idx, S.gen_model_idx, S.prompt)
   else
@@ -803,12 +703,6 @@ function M.draw()
       if picked then S.prompt = picked end
     end
 
-    -- Foundation-1 hint
-    if GEN_MODELS[S.gen_model_idx] == "foundation1" then
-      g.text_colored(
-        "Foundation-1: use TAG format → Instrument, FX, Genre, N Bars, BPM, Key",
-        "YELLOW")
-    end
     g.spacing()
 
     -- Duration
@@ -933,12 +827,8 @@ function M.draw()
       g.spacing()
     end
 
-    -- Mustango fixed duration hint
-    if GEN_MODELS[S.gen_model_idx] == "mustango" then
-      g.text_colored("Mustango: fixed duration ~10 s (slider is ignored)", "YELLOW")
-    end
     -- Cost hint
-    g.text_disabled("A10G: ~$0.05/min  |  SAO/Foundation-1 ~20-40 s  |  ACE-Step/MusicGen ~30-60 s")
+    g.text_disabled("A10G: ~$0.05/min  |  SAO ~20-40 s  |  ACE-Step/MusicGen ~30-60 s")
 
   -- ════════════════════════════════════════════
   else
@@ -962,10 +852,9 @@ function M.draw()
     end
     g.spacing()
 
-    -- Intensity (not applicable to MusicGen or InspireMusic continuation)
+    -- Intensity
     local cur_edit_model = EDIT_MODELS[S.edit_model_idx]
-    local EDIT_NO_INTENSITY = { musicgen = true, inspiremusic = true }
-    if not EDIT_NO_INTENSITY[cur_edit_model] then
+    do
       g.row_label("Intensity:", t.sc(80))
       g.next_width(t.sc(170))
       S.intensity_idx = widgets.combo("##intensity", S.intensity_idx, INTENSITY_LABELS)
@@ -979,17 +868,6 @@ function M.draw()
       g.spacing()
     end
 
-    -- Duration (MusicGen only)
-    if EDIT_NEEDS_SECONDS[cur_edit_model] then
-      g.row_label("Duration:", t.sc(80))
-      g.next_width(-(t.sc(50) + t.SPACING_X))
-      local ch_ed, new_ed = g.slider_float("##edit_dur", S.edit_duration, 1.0, 30.0, "%.1f s")
-      if ch_ed then S.edit_duration = new_ed end
-      g.same_line()
-      g.text(string.format("%.1fs", S.edit_duration))
-      g.spacing()
-    end
-
     -- GPU
     g.row_label("GPU:", t.sc(80))
     g.next_width(t.sc(90))
@@ -1000,10 +878,6 @@ function M.draw()
     local model_hints = {
       sao_edit    = "SAO SDEdit: reuses weights already downloaded from SAO 1.0 (no extra setup cost)",
       acestep     = "ACE-Step: requires initial setup (~5 GB). Apache 2.0, commercial use allowed.",
-      musicgen    = "MusicGen-melody: melodic conditioning. CC-BY-NC, non-commercial use only.",
-      melodyflow  = "MelodyFlow: flow matching with latent inversion. High fidelity. ≤30 s.",
-      zeta        = "ZETA/AudioLDM2: DDIM inversion zero-shot. Output 16 kHz mono ≤10 s.",
-      inspiremusic= "InspireMusic: continues the audio with the style from the prompt. ≤30 s.",
     }
     g.text_disabled(model_hints[cur_edit_model] or "")
   end

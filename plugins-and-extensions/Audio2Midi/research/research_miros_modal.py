@@ -295,6 +295,27 @@ def _setup_repo_env() -> None:
         print(f"[setup_env] Symlink: {miros_dest} → {miros_src}")
 
 
+TARGET_PEAK = 0.89     # -1 dBFS
+MAX_GAIN_DB = 30.0     # never lift a noise floor by more than this
+
+
+def _peak_normalise(y):
+    """Bring a quiet recording up to -1 dBFS peak (cap +30 dB).
+
+    Both transcription models were trained on levelled audio; a guitar render
+    peaking at -22 dBFS made MIROS return an empty MIDI. Silent input is left
+    untouched so the caller still gets a clear 'no notes' outcome.
+    """
+    import numpy as np
+
+    peak = float(np.abs(y).max()) if len(y) else 0.0
+    if peak < 1e-4:
+        return y, 0.0
+    gain = min(TARGET_PEAK / peak, 10 ** (MAX_GAIN_DB / 20))
+    return y * gain, 20 * float(np.log10(gain))
+
+
+
 def _transcribe_one(audio_bytes: bytes, beat_tracking: bool = True) -> bytes:
     """
     Transcribe un audio (bytes) a MIDI (bytes) llamando a miros_transcribe().
@@ -334,8 +355,10 @@ def _transcribe_one(audio_bytes: bytes, beat_tracking: bool = True) -> bytes:
     try:
         # Normalizar a 16 kHz mono (no-op de calidad si ya lo es)
         y, _ = librosa.load(raw_path, sr=16000, mono=True)
+        y, gain_db = _peak_normalise(y)
         sf.write(norm_path, y, 16000, subtype="PCM_16")
-        print(f"[miros] Entrada normalizada a 16 kHz mono: {len(y) / 16000:.2f}s")
+        print(f"[miros] Entrada normalizada a 16 kHz mono: {len(y) / 16000:.2f}s "
+              f"(ganancia {gain_db:+.1f} dB)")
 
         miros_transcribe(norm_path, midi_path)
         if os.path.exists(midi_path) and os.path.getsize(midi_path) > 0:

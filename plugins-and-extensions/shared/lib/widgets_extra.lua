@@ -12,9 +12,6 @@ local function just_clicked()
   return ctx.mb == 1 and ctx.mb_prev == 0
 end
 
--- Strip ImGui-style ##id suffix from display labels ("Label##id" → "Label")
-local function strip_id(s) return s:match("^(.-)##") or s end
-
 -- ── CLIPBOARD ─────────────────────────────────────────────────────
 
 local function _clip_get()

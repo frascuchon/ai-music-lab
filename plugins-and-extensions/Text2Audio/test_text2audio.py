@@ -167,7 +167,7 @@ class TestExecutionDispatch(TestCase):
     """--execution local|remote dispatch added alongside the local/remote
     toggle in panel.lua. remote (default) must be provably unchanged;
     local must route to text2audio_local.py for supported models and
-    reject unsupported ones (e.g. mustango, acestep) without touching uv/
+    reject unsupported ones (e.g. acestep_gen, acestep) without touching uv/
     subprocess at all."""
 
     def setUp(self):
@@ -200,11 +200,11 @@ class TestExecutionDispatch(TestCase):
         return subprocess.run(args, capture_output=True, text=True, timeout=30)
 
     def test_local_unsupported_model_errors_without_subprocess(self):
-        proc = self._run("mustango", "local")
+        proc = self._run("acestep_gen", "local")
         self.assertEqual(proc.returncode, 1)
         state, _, msg, _ = parse_progress(self.progress_file)
         self.assertEqual(state, "error")
-        self.assertIn("Local execution not supported for mustango", msg)
+        self.assertIn("Local execution not supported for acestep_gen", msg)
         # No output.wav should ever appear — nothing was launched.
         self.assertFalse((self.out_dir / "output.wav").exists())
 

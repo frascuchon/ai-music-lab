@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Local (non-Modal) CLI backend for the 7 Text2Audio models the feasibility
+"""Local (non-Modal) CLI backend for the 5 Text2Audio models the feasibility
 registry (shared/model_execution.py TEXT2AUDIO) marks as local_supported:
-sao, sao_edit, foundation1, musicgen_gen, musicgen, magnet, audiogen.
+sao, sao_edit, musicgen_gen, audiogen.
 
 Called by text2audio.py's own ``--execution local`` dispatch (not by the Lua
 panel directly) as a plain subprocess, mirroring how text2audio.py already
@@ -14,11 +14,11 @@ avoids two processes racing to write the same progress file.
 
 Contract:
     python3 text2audio_local.py
-        --model   <sao|sao_edit|foundation1|musicgen_gen|musicgen|magnet|audiogen>
+        --model   <sao|sao_edit|musicgen_gen|audiogen>
         --mode    <generate|edit>
         --prompt  <text>
         --out-dir <dir>
-        [--seconds <float>]       # generate mode (all); edit mode (musicgen only)
+        [--seconds <float>]       # generate mode (all)
         [--input  <path>]         # edit mode: source audio
         [--intensity <subtle|moderate|strong>]   # edit mode (sao_edit)
         [--seed <int>]
@@ -34,7 +34,7 @@ user's own machine (Apple Silicon MPS or CPU). See _resolve_device().
 IMPORTANT — scope of verification: this file was written by inspecting the
 real APIs used by the sibling research_*_modal.py scripts (diffusers
 StableAudioPipeline, stable-audio-tools generate_diffusion_cond, transformers
-Musicgen*ForConditionalGeneration, audiocraft MAGNeT/AudioGen) and adapting
+Musicgen*ForConditionalGeneration, audiocraft AudioGen) and adapting
 their device handling from hardcoded "cuda" to the local device. It has NOT
 been run end-to-end against real model weights in this environment (no
 GPU/MPS hardware or multi-GB downloads available here) — only the argument
@@ -54,23 +54,18 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 _SAO_FAMILY_GENERATE = {
     "sao": "stabilityai/stable-audio-open-1.0",
-    "foundation1": "RoyalCities/Foundation-1",
 }
 _SAO_EDIT_REPO = "stabilityai/stable-audio-open-1.0"
 
-# transformers Musicgen*ForConditionalGeneration — same library the Modal
-# scripts use for these two models specifically (NOT audiocraft — see
-# research_musicgen_melody_modal.py's own comment: "Evita audiocraft +
-# xformers (que requieren CUDA headers...)").
+# transformers MusicgenForConditionalGeneration — same library the Modal
+# script uses for this model (NOT audiocraft, which needs xformers/CUDA headers).
 _MUSICGEN_TRANSFORMERS = {
     "musicgen_gen": "facebook/musicgen-medium",
-    "musicgen": "facebook/musicgen-melody",
 }
 
-# audiocraft get_pretrained() — used as-is by the Modal scripts for these two
-# (just with device="cuda" hardcoded there; we pass the local device instead).
+# audiocraft get_pretrained() — used as-is by the Modal script (just with
+# device="cuda" hardcoded there; we pass the local device instead).
 _AUDIOCRAFT_MODELS = {
-    "magnet": "facebook/magnet-medium-30secs",
     "audiogen": "facebook/audiogen-medium",
 }
 
@@ -108,7 +103,7 @@ def _slug(text: str, n: int = 40) -> str:
 
 
 # ---------------------------------------------------------------------------
-# SAO family (sao, foundation1) — diffusers StableAudioPipeline, generate mode
+# SAO family (sao) — diffusers StableAudioPipeline, generate mode
 # ---------------------------------------------------------------------------
 
 def _run_sao_generate(model: str, prompt: str, seconds: float, seed: int,
@@ -222,33 +217,8 @@ def _run_musicgen_gen(prompt: str, seconds: float, device: str, out_wav: Path) -
     sf.write(str(out_wav), audio, samplerate=sr_out, subtype="PCM_16")
 
 
-def _run_musicgen_melody_edit(prompt: str, input_path: Path, seconds: float,
-                              device: str, out_wav: Path) -> None:
-    import torchaudio
-    from transformers import AutoProcessor, MusicgenMelodyForConditionalGeneration
-
-    variant = _MUSICGEN_TRANSFORMERS["musicgen"]
-    print(f"[text2audio_local] Loading {variant} on {device}...", flush=True)
-    processor = AutoProcessor.from_pretrained(variant)
-    model = MusicgenMelodyForConditionalGeneration.from_pretrained(variant).to(device)
-
-    melody, sr = torchaudio.load(str(input_path))
-    inputs = processor(audio=melody.numpy(), sampling_rate=sr, text=[prompt],
-                       padding=True, return_tensors="pt").to(device)
-    max_new_tokens = int(seconds * 50)
-    print(f"[text2audio_local] step 0/{max_new_tokens}", flush=True)
-    audio_values = model.generate(**inputs, do_sample=True, guidance_scale=3,
-                                   max_new_tokens=max_new_tokens)
-    print(f"[text2audio_local] step {max_new_tokens}/{max_new_tokens}", flush=True)
-
-    sr_out = model.config.audio_encoder.sampling_rate
-    audio = audio_values[0].cpu().float().numpy().T
-    import soundfile as sf
-    sf.write(str(out_wav), audio, samplerate=sr_out, subtype="PCM_16")
-
-
 # ---------------------------------------------------------------------------
-# audiocraft family (magnet, audiogen)
+# audiocraft family (audiogen)
 # ---------------------------------------------------------------------------
 
 def _run_audiocraft_generate(model: str, prompt: str, seconds: float, device: str,
@@ -256,12 +226,8 @@ def _run_audiocraft_generate(model: str, prompt: str, seconds: float, device: st
     variant = _AUDIOCRAFT_MODELS[model]
     print(f"[text2audio_local] Loading {variant} on {device}...", flush=True)
 
-    if model == "magnet":
-        from audiocraft.models import MAGNeT
-        mdl = MAGNeT.get_pretrained(variant, device=device)
-    else:
-        from audiocraft.models import AudioGen
-        mdl = AudioGen.get_pretrained(variant, device=device)
+    from audiocraft.models import AudioGen
+    mdl = AudioGen.get_pretrained(variant, device=device)
 
     mdl.set_generation_params(duration=seconds)
     print("[text2audio_local] step 0/1", flush=True)
@@ -338,11 +304,6 @@ def main() -> int:
                 print("ERROR: musicgen_gen only supports generate mode.", flush=True)
                 return 1
             _run_musicgen_gen(args.prompt, args.seconds, device, out_wav)
-        elif args.model == "musicgen":
-            if args.mode != "edit":
-                print("ERROR: musicgen (melody) only supports edit mode locally.", flush=True)
-                return 1
-            _run_musicgen_melody_edit(args.prompt, input_path, args.seconds, device, out_wav)
         elif args.model in _AUDIOCRAFT_MODELS:
             if args.mode != "generate":
                 print(f"ERROR: {args.model} only supports generate mode.", flush=True)

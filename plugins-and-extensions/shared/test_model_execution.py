@@ -48,10 +48,10 @@ def _lua_table_keys(lua_text: str, table_name: str) -> set[str]:
 class TestRegistryBasics(TestCase):
 
     def test_is_local_supported_known_models(self):
-        self.assertEqual(me.is_local_supported("midigen", "text2midi"), (True, me.MIDIGEN["text2midi"]["reason"]))
-        self.assertEqual(me.is_local_supported("midigen", "midi_llm")[0], False)
+        self.assertEqual(me.is_local_supported("midigen", "anticipatory"), (True, me.MIDIGEN["anticipatory"]["reason"]))
+        self.assertEqual(me.is_local_supported("midigen", "amadeus")[0], False)
         self.assertEqual(me.is_local_supported("text2audio", "sao")[0], True)
-        self.assertEqual(me.is_local_supported("text2audio", "mustango")[0], False)
+        self.assertEqual(me.is_local_supported("text2audio", "acestep_gen")[0], False)
         self.assertEqual(me.is_local_supported("stemseparator", "sam_base")[0], True)
         self.assertEqual(me.is_local_supported("stemseparator", "htdemucs")[0], True)
 

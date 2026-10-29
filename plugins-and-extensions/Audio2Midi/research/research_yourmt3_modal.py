@@ -326,12 +326,51 @@ def _load_model_once():
     return model
 
 
+TARGET_PEAK = 0.89     # -1 dBFS
+MAX_GAIN_DB = 30.0     # never lift a noise floor by more than this
+
+
+def _peak_normalise(y):
+    """Bring a quiet recording up to -1 dBFS peak (cap +30 dB).
+
+    Both transcription models were trained on levelled audio; a guitar render
+    peaking at -22 dBFS made MIROS return an empty MIDI. Silent input is left
+    untouched so the caller still gets a clear 'no notes' outcome.
+    """
+    import numpy as np
+
+    peak = float(np.abs(y).max()) if len(y) else 0.0
+    if peak < 1e-4:
+        return y, 0.0
+    gain = min(TARGET_PEAK / peak, 10 ** (MAX_GAIN_DB / 20))
+    return y * gain, 20 * float(np.log10(gain))
+
+
+
+def _level_audio(audio_bytes: bytes) -> bytes:
+    """Re-encode the input as a peak-normalised mono float WAV (same sample rate)."""
+    import io
+    import soundfile as sf
+
+    data, sr = sf.read(io.BytesIO(audio_bytes), dtype="float32", always_2d=True)
+    y, gain_db = _peak_normalise(data.mean(axis=1))
+    print(f"[yourmt3] Entrada nivelada: ganancia {gain_db:+.1f} dB")
+    buf = io.BytesIO()
+    sf.write(buf, y, sr, format="WAV", subtype="FLOAT")
+    return buf.getvalue()
+
+
 def _transcribe_one(model, audio_bytes: bytes, track_name: str) -> bytes:
     """
     Transcribe un audio (bytes) a MIDI (bytes).
     track_name debe ser único por llamada para evitar conflictos en model_output/.
     """
     from model_helper import transcribe as yt3_transcribe
+
+    try:
+        audio_bytes = _level_audio(audio_bytes)
+    except Exception as exc:  # e.g. mp3 bytes soundfile cannot parse: keep the original
+        print(f"[yourmt3] No se pudo nivelar la entrada ({exc}); se usa tal cual")
 
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp.write(audio_bytes)

@@ -7,34 +7,19 @@
 -- for that model, with `reason` shown to the user.
 --
 -- Sources: MidiGenerator/RESEARCH.md and Text2Audio/RESEARCH.md (Mac MPS/CPU
--- feasibility columns per model), and the MIDI-LLM evaluation memory (MPS
--- bfloat16 output-collapse bug — see project_midi_llm_eval memory).
+-- feasibility columns per model).
 
 local M = {}
 
 M.midigen = {
-  text2midi = {
-    local_supported = true,
-    reason = "MPS/CPU local script (research_text2midi.py).",
-  },
   anticipatory = {
     local_supported = true,
     reason = "CPU-only PyTorch, no GPU required (research_anticipatory.py).",
   },
-  midi_llm = {
+  midigpt = {
     local_supported = false,
-    reason = "Known MPS bfloat16 bug: output collapses to drums-only. "
-      .. "CUDA required for correct output (see MIDI-LLM evaluation).",
-  },
-  chatmusician = {
-    local_supported = false,
-    reason = "7B LLaMA model; no local backend implemented "
-      .. "(ABC→MIDI toolchain + VRAM requirements assume Modal CUDA).",
-  },
-  musecoco = {
-    local_supported = false,
-    reason = "fairseq + pytorch-fast-transformers require CUDA + Python 3.8, "
-      .. "incompatible with Apple Silicon.",
+    reason = "Runs on Modal only: gated Hugging Face weights (non-commercial "
+      .. "license) and a CUDA-sized model; no local backend implemented.",
   },
   amadeus = {
     local_supported = false,
@@ -52,21 +37,9 @@ M.text2audio = {
     local_supported = true,
     reason = "Same SAO pipeline via SDEdit (init_audio/init_noise_level), MPS/CPU capable.",
   },
-  foundation1 = {
-    local_supported = true,
-    reason = "Same SAO pipeline/weights family, MPS/CPU capable.",
-  },
   musicgen_gen = {
     local_supported = true,
     reason = "audiocraft MusicGen runs on MPS/CPU (slow, autoregressive).",
-  },
-  musicgen = {
-    local_supported = true,
-    reason = "audiocraft MusicGen melody conditioning, MPS/CPU capable.",
-  },
-  magnet = {
-    local_supported = true,
-    reason = "audiocraft MAGNeT runs on MPS/CPU.",
   },
   audiogen = {
     local_supported = true,
@@ -79,26 +52,6 @@ M.text2audio = {
   acestep = {
     local_supported = false,
     reason = "No MPS/CPU support confirmed in research; CUDA-only (edit mode).",
-  },
-  mustango = {
-    local_supported = false,
-    reason = "Research confirms no MPS/CPU support.",
-  },
-  inspiremusic_gen = {
-    local_supported = false,
-    reason = "Research confirms no MPS/CPU support.",
-  },
-  inspiremusic = {
-    local_supported = false,
-    reason = "Research confirms no MPS/CPU support (continuation mode).",
-  },
-  melodyflow = {
-    local_supported = false,
-    reason = "Non-standard install (audiocraft fork via HF Space); no local backend implemented.",
-  },
-  zeta = {
-    local_supported = false,
-    reason = "Custom DDPM-inversion repo on AudioLDM2; no local backend implemented.",
   },
 }
 

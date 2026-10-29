@@ -14,6 +14,7 @@ local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
 local track_placement = require("track_placement")
+local midi_import = require("midi_import")
 local model_switch = require("model_switch")
 local model_execution = require("model_execution")
 local smf     = dofile(SCRIPT_DIR .. "smf_writer.lua")
@@ -23,71 +24,52 @@ local TMPDIR = common.TMPDIR
 local PYTHON, PYTHON_ERR = common.detect_reaper_python()
 
 -- ── CONSTANTS: MODELS ────────────────────────────────────────────
--- Ordered by real-world popularity (community adoption / GitHub stars / HF downloads)
-local MG_MODELS = {
-  "musecoco", "chatmusician", "anticipatory",
-  "text2midi", "amadeus", "midi_llm",
-}
+-- Only the models that held up in evaluation are exposed (see RESEARCH.md);
+-- text2midi, MuseCoco, MIDI-LLM and ChatMusician were retired from the UI.
+-- Anticipatory and MIDI-GPT take a MELODY (not a text prompt) and write the accompaniment.
+local MG_MODELS = { "amadeus", "anticipatory", "midigpt" }
 local MG_LABELS = {
-  "MuseCoco  (multi-track, attributes, A100) [~11 min]",
-  "ChatMusician  (multi-voice, ABC notation) [limited]",
-  "Anticipatory  (accompaniment/cover, seed MIDI, A10G)",
-  "text2midi  (baseline, multi-track) [low quality]",
-  "Amadeus  (multi-track, MidiCaps, A10G)",
-  "MIDI-LLM  (multi-track, free, A10G) [CUDA only]",
+  "Amadeus  (multi-track from a text description, A10G)",
+  "Anticipatory  (accompaniment of your melody, A10G)",
+  "MIDI-GPT  (accompaniment of your melody, A10G, non-commercial)",
 }
+local function takes_melody(mk) return mk == "anticipatory" or mk == "midigpt" end
 local MG_SCRIPTS = {}
 for _, k in ipairs(MG_MODELS) do
   MG_SCRIPTS[k] = SCRIPT_DIR .. "research/research_" .. k .. "_modal.py"
 end
--- MuseCoco uses a different filename on disk
-MG_SCRIPTS["musecoco"] = SCRIPT_DIR .. "research/research_musecoco_modal.py"
 
 -- Plain (non-Modal) local scripts — only for the models that support
 -- --execution local (see shared/lib/model_execution.lua's M.midigen table).
 local MG_LOCAL_SCRIPTS = {
-  text2midi    = SCRIPT_DIR .. "research/research_text2midi.py",
   anticipatory = SCRIPT_DIR .. "research/research_anticipatory.py",
 }
 
 local MG_GPUS        = { "A10G", "A100-40GB", "T4", "L4" }
-local MG_GPU_DEFAULT = {
-  amadeus="A10G", midi_llm="A10G", text2midi="A10G",
-  chatmusician="A10G", musecoco="A100-40GB", anticipatory="A10G",
-}
+local MG_GPU_DEFAULT = { amadeus="A10G", anticipatory="A10G", midigpt="A10G" }
 -- Models where GPU is passed to the script (others ignore it)
-local MG_GPU_RELEVANT = { midi_llm=true, anticipatory=true }
+local MG_GPU_RELEVANT = { anticipatory=true }
 
--- Temperature default/range per model. The single global default of 1.0
--- (tuned for the other, more free-form models) was never validated for
--- ChatMusician specifically and pushes its harmonization/simplification
--- requests into garbled ABC fragments or outright noise (e.g. a 64-char
--- hex-looking string) that _extract_abc then rejects on every candidate.
--- RESEARCH.md's own ChatMusician evaluation (harmonization/chord/form/motif
--- tests, see "GenerationConfig recomendado (ajustado tras evaluación)")
--- settled on 0.5 — the bare model-card value of 0.2 "es demasiado
--- conservador para prompts abstractos" (test06 only passed once raised to
--- 0.5) but the plugin's generic 1.0 default is well past ChatMusician's own
--- useful range.
-local MG_TEMP_DEFAULT = {
-  amadeus=1.0, midi_llm=1.0, text2midi=1.0, chatmusician=0.5, musecoco=1.0,
-}
-local MG_TEMP_RANGE = {
-  chatmusician = { 0.2, 1.0 },
-}
+local MG_TEMP_DEFAULT = { amadeus=1.0 }
 local MG_TEMP_RANGE_DEFAULT = { 0.5, 2.0 }
 
-local AMT_MODES = { "accompaniment", "continuation" }
-local AMT_MODE_LABELS = { "Accompaniment", "Continuation" }
+-- Style of the automatic bass + chords prompt Anticipatory continues from
+-- (only used when no accompaniment tracks are added)
+local AMT_STYLES = { "pop", "pad", "arp" }
+local AMT_STYLE_LABELS = { "Pop (bass + chord stabs)", "Pad (bass + sustained chords)", "Arpeggio (bass + arpeggiated chords)" }
+
+-- Accompaniment controls shared by Anticipatory and MIDI-GPT
+local ACC_PARTS = { "bass", "keys", "strings", "guitar", "drums" }
+local ACC_PART_LABELS = { bass = "Bass", keys = "Keys", strings = "Strings", guitar = "Guitar", drums = "Drums" }
+local ACC_DENSITY_LABELS = { "Sparse", "Normal", "Busy" }   -- 0, 1, 2
+local ACC_BASS_PROGRAMS = { 33, 32, 38, 35 }
+local ACC_BASS_LABELS = { "Electric bass", "Acoustic bass", "Synth bass", "Fretless bass" }
+local ACC_KEYS_PROGRAMS = { 4, 0, 16, 11 }
+local ACC_KEYS_LABELS = { "Electric piano", "Piano", "Organ", "Vibraphone" }
 
 -- Example prompts per text model, selectable from a dropdown next to the
--- prompt box. Each model expects a different prompt "dialect" (see notes
--- in the draw() code below), so examples are written to match: MidiCaps-
--- style descriptive sentences for amadeus/text2midi, free-form phrases for
--- midi_llm, chord/harmonization instructions for chatmusician, and
--- attribute-laden descriptions (with explicit instrument names) for
--- musecoco. Sourced from the model cards / eval prompts already used in
--- evaluation/{amadeus,chatmusician}/README.md and research_*_modal.py.
+-- prompt box. Written in MidiCaps style, the dialect Amadeus expects (see
+-- evaluation/amadeus/README.md and research_amadeus_modal.py).
 local MG_EXAMPLE_PROMPTS = {
   amadeus = {
     { label = "Electronic ambient, E major, tubular bells...",
@@ -96,38 +78,6 @@ local MG_EXAMPLE_PROMPTS = {
       text = "An upbeat jazz fusion track in the key of F minor at 120 BPM, featuring piano, upright bass, and brushed drums. The chord progression Fm-Db-Ab-Eb repeats throughout, building a relaxed but energetic groove." },
     { label = "Cinematic orchestral, D minor, 90 BPM",
       text = "A cinematic orchestral piece in D minor, 90 BPM, 3/4 time signature. Strings, French horn, and timpani build a tense, dramatic atmosphere over a Dm-Bb-F-C chord progression." },
-  },
-  midi_llm = {
-    { label = "Cheerful pop, piano/bass/drums",
-      text = "A cheerful pop song with piano, bass, and drums, upbeat tempo" },
-    { label = "Melancholic piano ballad, minor key",
-      text = "A melancholic piano ballad, slow tempo, minor key" },
-    { label = "Energetic rock, electric guitar riffs",
-      text = "An energetic rock track with electric guitar riffs and driving drums" },
-  },
-  text2midi = {
-    { label = "Pop, piano/bass/drums, 120 BPM, C major",
-      text = "A pop song with piano, bass, and drums at 120 BPM in C major" },
-    { label = "Jazz, saxophone/double bass, slow swing",
-      text = "A jazz piece with saxophone and double bass, slow swing feel" },
-    { label = "EDM, synth lead, four-on-the-floor, 128 BPM",
-      text = "An electronic dance track with synth lead and four-on-the-floor drums, 128 BPM" },
-  },
-  chatmusician = {
-    { label = "Develop piece from chord progression Dm-C-Dm...",
-      text = "Develop a musical piece using the given chord progression. 'Dm', 'C', 'Dm', 'Dm', 'C', 'Dm', 'C', 'Dm'" },
-    { label = "Increase harmonic complexity (needs seed)",
-      text = "Formulate chord combinations to increase the harmonic complexity of the specified musical excerpt." },
-    { label = "Develop piece from chords Am-F-C-G, 4/4",
-      text = "Using the chord progression 'Am', 'F', 'C', 'G', develop this into a full melodic piece in 4/4 time." },
-  },
-  musecoco = {
-    { label = "Pop, piano/electric guitar/bass/drums",
-      text = "A pop song with piano, electric guitar, bass, and drums, upbeat and energetic" },
-    { label = "Classical solo piano, slow, minor key",
-      text = "A classical piece for solo piano, slow and expressive, in a minor key" },
-    { label = "Electronic, synth pad/synth lead/bass",
-      text = "An electronic track with synth pad, synth lead, and bass, dreamy atmosphere" },
   },
 }
 
@@ -143,20 +93,21 @@ local S = {
   -- Prompt (text models)
   prompt    = "",
   prompt_example = { idx = 1 },
-  -- Optional MidiCaps fields (amadeus / text2midi)
+  -- Optional MidiCaps fields (amadeus)
   field_key         = "",
-  field_bpm         = "",
   field_instruments = "",
   field_chords      = "",
-  -- ChatMusician: optional seed for harmonization
-  cm_use_seed = false,
-  -- Seed MIDI (ChatMusician harmonization)
-  seed_path       = "",
-  seed_label      = "",
   -- AMT parameters
-  amt_mode_idx     = 1,   -- 1=accompaniment, 2=continuation
-  amt_duration     = 20,  -- clip_length (accompaniment) or duration (continuation)
-  amt_prompt_len   = 5,   -- prompt_length (accompaniment only)
+  amt_style_idx    = 1,   -- index in AMT_STYLES
+  amt_prompt_len   = 5,   -- seconds of accompaniment the model continues from
+  acc_parts        = { bass = true, keys = true, strings = false, guitar = false, drums = false },
+  acc_density_idx  = 2,   -- 1 sparse, 2 normal, 3 busy
+  acc_bass_idx     = 1,
+  acc_keys_idx     = 1,
+  acc_creativity   = 0.5,
+  acc_chords       = "",  -- optional own progression (Anticipatory)
+  acc_beats        = 4,   -- beats per chord when acc_chords is given
+  acc_stay_in_key  = false,  -- MIDI-GPT: only the melody's pitch classes
   -- AMT: melody track
   amt_melody_item  = nil,   -- REAPER item (for position/length on import)
   amt_melody_take  = nil,
@@ -205,9 +156,8 @@ end
 
 local function model_key() return MG_MODELS[S.model_idx] end
 
--- ── SMF WRITER (export in-project MIDI take) ─────────────────────
--- See smf_writer.lua for write_midi_from_take / write_combined_midi.
-local write_midi_from_take = smf.write_midi_from_take
+-- ── SMF WRITER (export in-project MIDI takes) ────────────────────
+-- See smf_writer.lua for write_combined_midi.
 local write_combined_midi  = smf.write_combined_midi
 
 -- forward declaration (defined further below, referenced earlier)
@@ -269,121 +219,31 @@ end
 -- reaper.CountTracks(0). Returns the insert_at index the NEXT candidate
 -- should use, so multiple candidates stack below each other right under
 -- the source instead of all landing at the end of the project.
+--
+-- Tracks and clips are created explicitly (lib/midi_import.lua) rather than
+-- through reaper.InsertMedia, so existing tracks and MIDI clips are never
+-- wrapped in the new folder, moved or overwritten.
 local function _import_one(mid_path, folder_name, insert_at)
   local f = io.open(mid_path, "rb")
   if not f then add_log("Error: cannot read " .. mid_path); return insert_at end
   f:close()
 
-  local cursor      = reaper.GetCursorPosition()
-  local tcnt_before = insert_at
-
-  -- Snapshot existing markers: InsertMedia can create markers from MIDI
-  -- meta-events (type 0x06/0x07), adding visual noise to the timeline.
-  local marker_snap = {}
-  for i = 0, reaper.CountProjectMarkers(0) - 1 do
-    local _, _, _, _, _, idx = reaper.EnumProjectMarkers(i)
-    marker_snap[idx] = true
-  end
-
-  -- Create + select a placeholder track AT the desired position before
-  -- calling InsertMedia: with nothing selected, REAPER's "add to new
-  -- track" mode always appends at reaper.CountTracks(0), which is the bug
-  -- being fixed here. With exactly one track selected, InsertMedia anchors
-  -- the import there (reusing it for the first instrument, and inserting
-  -- any extra instruments from a multi-track SMF immediately after it).
-  for i = 0, reaper.CountTracks(0) - 1 do
-    reaper.SetTrackSelected(reaper.GetTrack(0, i), false)
-  end
-  reaper.InsertTrackAtIndex(tcnt_before, true)
-  local anchor_tr = reaper.GetTrack(0, tcnt_before)
-  reaper.SetOnlyTrackSelected(anchor_tr)
-
-  reaper.SetEditCurPos(cursor, false, false)
-  reaper.InsertMedia(mid_path, 0)
-
-  -- Remove markers added by the import
-  for i = reaper.CountProjectMarkers(0) - 1, 0, -1 do
-    local _, isrgn, _, _, _, idx = reaper.EnumProjectMarkers(i)
-    if not isrgn and not marker_snap[idx] then
-      reaper.DeleteProjectMarker(0, idx, false)
-    end
-  end
-
-  local delta = reaper.CountTracks(0) - tcnt_before
-  local plan = track_placement.plan_candidate_import(tcnt_before, delta)
-  if not plan then
-    add_log("Warning: InsertMedia did not add tracks for " .. mid_path:match("[^/\\]+$"))
-    reaper.DeleteTrack(anchor_tr)
+  local res, err = midi_import.import_file(mid_path, {
+    insert_at = insert_at, position = reaper.GetCursorPosition(),
+    name = folder_name, always_folder = true,
+  })
+  if not res then
+    add_log("Warning: could not import " .. mid_path:match("[^/\\]+$") .. ": " .. tostring(err))
     return insert_at
   end
-  add_log(string.format("DEBUG: delta=%d tcnt_before=%d tcnt_after=%d", delta, tcnt_before, reaper.CountTracks(0)))
-
-  -- Fix position: multi-track MIDI InsertMedia may ignore SetEditCurPos and
-  -- insert items at position 0. Detect and offset if needed.
-  local min_pos = math.huge
-  for i = tcnt_before, tcnt_before + delta - 1 do
-    local tr = reaper.GetTrack(0, i)
-    if tr then
-      for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
-        local it = reaper.GetTrackMediaItem(tr, j)
-        if it then
-          local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
-          if p < min_pos then min_pos = p end
-        end
-      end
-    end
-  end
-  if min_pos ~= math.huge and math.abs(min_pos - cursor) > 0.001 then
-    local offset = cursor - min_pos
-    for i = tcnt_before, tcnt_before + delta - 1 do
-      local tr = reaper.GetTrack(0, i)
-      if tr then
-        for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
-          local it = reaper.GetTrackMediaItem(tr, j)
-          if it then
-            local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
-            reaper.SetMediaItemInfo_Value(it, "D_POSITION", p + offset)
-          end
-        end
-      end
-    end
-  end
-
-  -- Always create folder structure (regardless of track count)
-  reaper.InsertTrackAtIndex(plan.folder_index, true)
-  local folder_tr = reaper.GetTrack(0, plan.folder_index)
-  add_log(string.format("DEBUG: folder_tr created at index %d, name='%s'", plan.folder_index, folder_name))
-  reaper.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", folder_name, true)
-  reaper.SetMediaTrackInfo_Value(folder_tr, "I_FOLDERDEPTH", 1)
-  for i = plan.instrument_start, plan.instrument_end do
-    local tr = reaper.GetTrack(0, i)
-    if tr then
-      local _, existing = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
-      if existing == "" then
-        reaper.GetSetMediaTrackInfo_String(tr, "P_NAME",
-          folder_name .. " " .. (i - plan.instrument_start + 1), true)
-      end
-    end
-  end
-  local last_tr = reaper.GetTrack(0, plan.instrument_end)
-  if last_tr then reaper.SetMediaTrackInfo_Value(last_tr, "I_FOLDERDEPTH", -1) end
   add_log(string.format("Imported into folder '%s' (%d track%s)",
-    folder_name, delta, delta == 1 and "" or "s"))
-
-  -- Next candidate (if any) must land right below THIS candidate's whole
-  -- folder (1 folder track + delta instrument tracks), not back at
-  -- reaper.CountTracks(0). Clamp defensively to the live track count: if
-  -- any assumption above drifts (e.g. InsertMedia behaving unexpectedly for
-  -- a given multi-track SMF), a stale/overshooting index must never be
-  -- carried into the next InsertTrackAtIndex call — that is what lets
-  -- "versions"/candidates land on top of each other or on top of
-  -- already-existing tracks instead of failing loudly.
-  return math.min(plan.next_insert_at, reaper.CountTracks(0))
+    folder_name, res.instruments, res.instruments == 1 and "" or "s"))
+  return res.next_insert_at
 end
 
 -- Reference track number (1-based IP_TRACKNUMBER) for AMT generations that
 -- are based on other tracks (melody item + seed takes) — nil when there is
--- no such basis (e.g. text-only models like amadeus/text2midi), in which
+-- no such basis (e.g. text-only models like amadeus), in which
 -- case track_placement.insert_index falls back to appending at the end.
 local function _amt_ref_track_number()
   local nums = {}
@@ -404,22 +264,19 @@ import_midi_all = function()
   local mk    = model_key()
   local label = "[MIDI " .. mk .. "]"
 
-  -- For AMT continuation: position cursor at the end of the melody item
-  -- so the continuation is inserted right after (not overlapping the seed).
-  if mk == "anticipatory"
-      and AMT_MODES[S.amt_mode_idx] == "continuation"
-      and S.amt_melody_item then
+  -- The accompaniment is timed relative to the start of the melody item, so
+  -- import it at that position (not wherever the edit cursor happens to be).
+  if takes_melody(mk) and S.amt_melody_item then
     local pos = reaper.GetMediaItemInfo_Value(S.amt_melody_item, "D_POSITION")
-    local len = reaper.GetMediaItemInfo_Value(S.amt_melody_item, "D_LENGTH")
-    reaper.SetEditCurPos(pos + len, false, false)
-    add_log(string.format("Cursor → %.2fs (end of melody item)", pos + len))
+    reaper.SetEditCurPos(pos, false, false)
+    add_log(string.format("Cursor → %.2fs (start of the melody item)", pos))
   end
 
   -- Land the generated folder(s) right below the melody/seed tracks this
   -- generation is based on (AMT), instead of always at the very end of the
   -- project's track list. Each extra candidate then stacks right below the
   -- previous candidate's folder.
-  local ref_track = (mk == "anticipatory") and _amt_ref_track_number() or nil
+  local ref_track = takes_melody(mk) and _amt_ref_track_number() or nil
   local insert_at = track_placement.insert_index(ref_track, reaper.CountTracks(0))
 
   reaper.Undo_BeginBlock()
@@ -429,83 +286,6 @@ import_midi_all = function()
   end
   reaper.UpdateArrange()
   reaper.Undo_EndBlock("MidiGenerator: import MIDI", -1)
-end
-
--- ── SEED MIDI CAPTURE ────────────────────────────────────────────
-local function _try_get_source_path(take)
-  local src = reaper.GetMediaItemTake_Source(take)
-  if not src then return nil end
-  local fname = reaper.GetMediaSourceFileName(src, "")
-  if not fname or fname == "" then return nil end
-  -- Verify it is an existing .mid file on disk
-  local ext = fname:match("%.([^%.]+)$")
-  if not ext then return nil end
-  ext = ext:lower()
-  if ext == "mid" or ext == "midi" then
-    local f = io.open(fname, "rb")
-    if f then f:close(); return fname end
-  end
-  return nil
-end
-
-local function _export_take_to_tmp(take)
-  local tmp_path = TMPDIR .. "midigen_seed_" .. _run_id .. ".mid"
-  local ok, err = write_midi_from_take(take, tmp_path)
-  if ok then return tmp_path end
-  add_log("Warning exporting MIDI: " .. (err or "unknown error"))
-  return nil
-end
-
-local function grab_midi_from_reaper()
-  local n_items = reaper.CountSelectedMediaItems(0)
-  local item = nil
-  if n_items > 0 then
-    item = reaper.GetSelectedMediaItem(0, 0)
-  else
-    local tcnt = reaper.CountSelectedTracks(0)
-    if tcnt > 0 then
-      local tr = reaper.GetSelectedTrack(0, 0)
-      for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
-        local it = reaper.GetTrackMediaItem(tr, i)
-        if it then item = it; break end
-      end
-    end
-  end
-
-  if not item then
-    reaper.MB("No MIDI item selected in REAPER.", "MidiGenerator", 0)
-    return
-  end
-
-  local take = reaper.GetActiveTake(item)
-  if not take or not reaper.TakeIsMIDI(take) then
-    reaper.MB("Selected item does not contain MIDI.", "MidiGenerator", 0)
-    return
-  end
-
-  -- Try direct .mid file path
-  local path = _try_get_source_path(take)
-  if path then
-    S.seed_path  = path
-    S.seed_label = path:match("[^/\\]+$") or path
-    add_log("Seed MIDI (file): " .. S.seed_label)
-    return
-  end
-
-  -- Export in-project take to temp file
-  add_log("In-project MIDI detected; exporting to temp file...")
-  path = _export_take_to_tmp(take)
-  if path then
-    S.seed_path  = path
-    S.seed_label = "(in-project take → exported)"
-    add_log("Seed exported: " .. path)
-  else
-    reaper.MB(
-      "Could not export the in-project MIDI.\n"
-      .. "Export the MIDI track to a .mid file (File → Export → MIDI file)"
-      .. " and select it with the '...' button.",
-      "MidiGenerator", 0)
-  end
 end
 
 local function _get_track_label(item)
@@ -589,9 +369,9 @@ end
 local function launch_generate()
   local mk       = model_key()
   local script   = (S.execution == "local") and MG_LOCAL_SCRIPTS[mk] or MG_SCRIPTS[mk]
-  local is_amt   = (mk == "anticipatory")
+  local is_amt   = takes_melody(mk)
   local is_text  = not is_amt
-  local has_fields = (mk == "amadeus" or mk == "text2midi")
+  local has_fields = (mk == "amadeus")
 
   -- Validations
   if is_text and S.prompt:match("^%s*$") then
@@ -600,21 +380,17 @@ local function launch_generate()
   end
   if is_amt and not S.amt_melody_take then
     reaper.MB(
-      "Anticipatory needs a melody track.\n"
+      "This model needs your melody.\n"
       .. "Select a MIDI item in REAPER and click R next to 'Melody'.",
       "MidiGenerator", 0)
     return
   end
-  local amt_mode_is_acc = is_amt and (AMT_MODES[S.amt_mode_idx] == "accompaniment")
-  if amt_mode_is_acc and #S.amt_seed_takes == 0 then
-    reaper.MB(
-      "Accompaniment mode needs at least one seed track.\n"
-      .. "Select MIDI items in REAPER and click '+' next to 'Seed acc.'.",
-      "MidiGenerator", 0)
-    return
+  local chosen_parts = {}
+  for _, part in ipairs(ACC_PARTS) do
+    if S.acc_parts[part] then table.insert(chosen_parts, part) end
   end
-  if mk == "chatmusician" and S.cm_use_seed and S.seed_path == "" then
-    reaper.MB("You enabled 'Harmonize seed' but no MIDI has been loaded.", "MidiGenerator", 0)
+  if is_amt and #chosen_parts == 0 then
+    reaper.MB("Choose at least one part (bass, keys, strings, guitar or drums).", "MidiGenerator", 0)
     return
   end
 
@@ -651,36 +427,52 @@ local function launch_generate()
     add_log("Prompt: " .. S.prompt:sub(1,80))
     extra = extra .. " --prompt " .. q(S.prompt)
     extra = extra .. string.format(" --temperature %.2f", S.temperature)
-    -- BPM always from project for amadeus/text2midi (not user-editable)
+    -- BPM always from project for amadeus (not user-editable)
     if has_fields then
       extra = extra .. " --field-bpm " .. q(string.format("%.0f", reaper.Master_GetTempo()))
     end
     if S.field_key         ~= "" then extra = extra .. " --field-key "         .. q(S.field_key)         end
     if S.field_instruments ~= "" then extra = extra .. " --field-instruments " .. q(S.field_instruments) end
     if S.field_chords      ~= "" then extra = extra .. " --field-chords "      .. q(S.field_chords)      end
-    if mk == "chatmusician" and S.cm_use_seed and S.seed_path ~= "" then
-      extra = extra .. " --seed-file " .. q(S.seed_path)
-    end
   else
-    -- AMT: build combined MIDI (melody channel 0 + seed channels 1..N)
-    -- Write to TMPDIR (outside run_dir) so _collect_outputs doesn't pick it up
-    local seed_path = TMPDIR .. "combined_seed.mid"
-    local ok_s, err_s = write_combined_midi(S.amt_melody_take, S.amt_seed_takes, seed_path)
+    -- AMT: build one MIDI with the melody on channel 0 and the optional
+    -- accompaniment tracks on channels 1..N. Written to TMPDIR (outside
+    -- run_dir) so _collect_outputs doesn't pick it up.
+    local melody_path = TMPDIR .. "combined_melody.mid"
+    local ok_s, err_s = write_combined_midi(S.amt_melody_take, S.amt_seed_takes, melody_path)
     if not ok_s then
-      reaper.MB("Error building seed MIDI: " .. (err_s or "?"), "MidiGenerator", 0)
+      reaper.MB("Error building the melody MIDI: " .. (err_s or "?"), "MidiGenerator", 0)
       S.running = false; S.pid = nil
       return
     end
-    local mode = AMT_MODES[S.amt_mode_idx]
-    add_log("AMT mode: " .. mode)
     add_log("Melody: " .. S.amt_melody_label)
-    add_log("Seed tracks: " .. #S.amt_seed_takes)
-    add_log("Combined seed MIDI: " .. seed_path)
-    extra = extra .. " --seed "              .. q(seed_path)
-    extra = extra .. " --mode "              .. q(mode)
-    extra = extra .. " --prompt-length "     .. tostring(S.amt_prompt_len)
-    extra = extra .. " --clip-length "       .. tostring(S.amt_duration)
+    add_log(string.format("Parts: %s | density: %s | creativity: %.2f",
+      table.concat(chosen_parts, ", "), ACC_DENSITY_LABELS[S.acc_density_idx], S.acc_creativity))
+    if mk == "anticipatory" then
+      if #S.amt_seed_takes > 0 then
+        add_log("Accompaniment tracks given: " .. #S.amt_seed_takes)
+      else
+        add_log("No accompaniment given: building a " .. AMT_STYLES[S.amt_style_idx] .. " prompt from the melody")
+      end
+    end
+    extra = extra .. " --melody "            .. q(melody_path)
+    extra = extra .. " --style "             .. q(AMT_STYLES[S.amt_style_idx])
+    extra = extra .. " --parts "             .. q(table.concat(chosen_parts, ","))
+    extra = extra .. " --density "           .. tostring(S.acc_density_idx - 1)
+    extra = extra .. " --bass-program "      .. tostring(ACC_BASS_PROGRAMS[S.acc_bass_idx])
+    extra = extra .. " --keys-program "      .. tostring(ACC_KEYS_PROGRAMS[S.acc_keys_idx])
+    extra = extra .. string.format(" --creativity %.3f", S.acc_creativity)
+    extra = extra .. " --clip-length 0"     -- 0 = length of the melody
     extra = extra .. " --melody-instrument 0"
+    if mk == "anticipatory" then
+      extra = extra .. " --prompt-length " .. tostring(S.amt_prompt_len)
+      if S.acc_chords:match("%S") then
+        extra = extra .. " --chords " .. q(S.acc_chords)
+                      .. " --beats-per-chord " .. tostring(S.acc_beats)
+      end
+    elseif S.acc_stay_in_key then
+      extra = extra .. " --stay-in-key"
+    end
     -- --n-outputs is already in base; midigen.py maps it internally to --multiplicity
   end
 
@@ -709,10 +501,9 @@ function M.draw()
   local g = gui
   local t = theme
   local mk = model_key()
-  local is_amt  = (mk == "anticipatory")
+  local is_amt  = takes_melody(mk)
   local is_text = not is_amt
-  local has_fields = (mk == "amadeus" or mk == "text2midi")
-  local has_opt_seed = (mk == "chatmusician")
+  local has_fields = (mk == "amadeus")
 
   -- ── MODEL (fixed, above the scrollable content — same position across
   -- every tab in the app) ──────────────────────────────────────────
@@ -729,8 +520,8 @@ function M.draw()
     if not supported_now then S.execution = "remote" end
   end
   -- The prompt (and its model-specific phrasing advice) doesn't carry over
-  -- meaningfully to a different model — e.g. musecoco's instrument-class
-  -- phrasing vs. amadeus's descriptive-sentence style.
+  -- meaningfully to a different model — e.g. amadeus's descriptive-sentence
+  -- style doesn't apply to Anticipatory, which takes no text prompt.
   S.prompt = model_switch.next_prompt(old_idx, S.model_idx, S.prompt)
 
   -- ── EXECUTION: LOCAL vs REMOTE ────────────────────────────────────
@@ -780,38 +571,8 @@ function M.draw()
     end
 
     -- Informational note per model
-    if mk == "midi_llm" then
-      g.text_disabled("  Model prepends its system-prompt internally.")
-    elseif mk == "chatmusician" then
-      if S.cm_use_seed then
-        g.text_disabled("  Your prompt is auto-adapted to ChatMusician's instruction")
-        g.text_disabled("  style before generation (small self-hosted LLM in Modal).")
-      else
-        g.text_disabled("  Use phrases like: 'chord progression Am-F-C-G'.")
-      end
-    elseif mk == "musecoco" then
-      g.text_disabled("  Include instruments in the text to activate class override.")
-    elseif mk == "amadeus" or mk == "text2midi" then
+    if mk == "amadeus" then
       g.text_disabled("  Fill in the optional fields for more predictable results.")
-    end
-
-    -- ── Optional ChatMusician seed ─────────────────────────────────
-    if has_opt_seed then
-      g.spacing()
-      local chg, nv2 = g.checkbox("Harmonize seed MIDI##cm_seed", S.cm_use_seed)
-      if chg then S.cm_use_seed = nv2 end
-      if S.cm_use_seed then
-        g.row_label("Seed:", t.sc(70))
-        g.next_width(-(2 * t.SPACING_X + 2 * t.sc(44)))
-        widgets.input_text("##mg_seed_disp", S.seed_label ~= "" and S.seed_label or "(none)", { readonly=true })
-        g.same_line()
-        if g.button("...", t.sc(44), t.ITEM_H) then
-          local ok, fn = reaper.GetUserFileNameForRead("", "Seed MIDI", "mid")
-          if ok then S.seed_path = fn; S.seed_label = fn:match("[^/\\]+$") or fn end
-        end
-        g.same_line()
-        if g.button("R", t.sc(44), t.ITEM_H) then grab_midi_from_reaper() end
-      end
     end
 
     -- ── Optional MidiCaps fields ───────────────────────────────────
@@ -856,54 +617,84 @@ function M.draw()
     if g.button("R", t.sc(44), t.ITEM_H) then grab_melody_item() end
     g.text_disabled("  Select the melody item in REAPER and click R.")
 
-    g.spacing()
-    g.row_label("Mode:", lw_amt)
-    g.next_width(t.sc(160))
-    S.amt_mode_idx = widgets.combo("##amt_mode", S.amt_mode_idx, AMT_MODE_LABELS)
-    local amt_mode_key = AMT_MODES[S.amt_mode_idx]
-
-    -- Accompaniment seed tracks (only in accompaniment mode)
-    if amt_mode_key == "accompaniment" then
+    -- Optional accompaniment tracks (Anticipatory only: they steer the style)
+    if mk == "anticipatory" then
       g.spacing()
-      g.row_label("Seed acc.:", lw_amt)
+      g.row_label("Accomp.:", lw_amt)
       if g.button("+", t.sc(44), t.ITEM_H) then add_seed_items_from_reaper() end
       g.same_line(t.sc(8))
       if g.button("Clear", t.sc(70), t.ITEM_H) then
         S.amt_seed_takes = {}
-        add_log("Accompaniment seed cleared.")
+        add_log("Accompaniment tracks cleared.")
       end
       if #S.amt_seed_takes == 0 then
-        g.text_disabled("  (no tracks added)")
+        g.text_disabled("  (optional) Select tracks in REAPER and click '+' to steer the style.")
       else
         for _, entry in ipairs(S.amt_seed_takes) do
           g.text_disabled("  • " .. entry.label)
         end
       end
-      g.text_disabled("  Select accompaniment tracks in REAPER and click '+'.")
     end
 
+    -- ── ARRANGEMENT: what is written, how much, how it sounds ─────────
     g.spacing()
-    local lw = t.sc(110)
-    g.row_label("Duration (s):", lw)
-    g.next_width(t.sc(120))
-    local rv, nv = g.slider_int("##amt_dur", S.amt_duration, 5, 120)
-    if rv then S.amt_duration = nv end
-
-    if amt_mode_key == "continuation" then
-      g.same_line(t.sc(14)); g.text_disabled("Temp. not supported by AMT")
+    g.row_label("Parts:", lw_amt)
+    for i, part in ipairs(ACC_PARTS) do
+      if i > 1 then g.same_line(t.sc(6)) end
+      local chg, nv = g.checkbox(ACC_PART_LABELS[part] .. "##acc_" .. part, S.acc_parts[part])
+      if chg then S.acc_parts[part] = nv end
     end
 
-    if amt_mode_key == "accompaniment" then
-      g.same_line(t.sc(14)); g.inline_text("Hist. (s):")
-      g.same_line(t.sc(6))
-      g.next_width(t.sc(90))
-      rv, nv = g.slider_int("##amt_plen", S.amt_prompt_len, 1, 15)
-      if rv then S.amt_prompt_len = nv end
+    local has_own_tracks = (mk == "anticipatory" and #S.amt_seed_takes > 0)
+    g.row_label("Style:", lw_amt)
+    g.next_width(t.sc(250))
+    if has_own_tracks then g.begin_disabled(true) end
+    S.amt_style_idx = widgets.combo("##amt_style", S.amt_style_idx, AMT_STYLE_LABELS)
+    if has_own_tracks then g.end_disabled() end
+    g.same_line(t.sc(10)); g.inline_text("Density:")
+    g.same_line(t.sc(6))
+    g.next_width(t.sc(110))
+    S.acc_density_idx = widgets.combo("##acc_density", S.acc_density_idx, ACC_DENSITY_LABELS)
+
+    g.row_label("Bass:", lw_amt)
+    g.next_width(t.sc(150))
+    S.acc_bass_idx = widgets.combo("##acc_bass", S.acc_bass_idx, ACC_BASS_LABELS)
+    g.same_line(t.sc(10)); g.inline_text("Keys:")
+    g.same_line(t.sc(6))
+    g.next_width(t.sc(150))
+    S.acc_keys_idx = widgets.combo("##acc_keys", S.acc_keys_idx, ACC_KEYS_LABELS)
+
+    g.row_label("Creativity:", lw_amt)
+    g.next_width(-1)
+    local cr, cv = g.slider_float("##acc_creativity", S.acc_creativity, 0.0, 1.0, "%.2f")
+    if cr then S.acc_creativity = cv end
+    if mk == "anticipatory" then
+      g.text_disabled("  Higher: the model adds instruments and variations of its own.")
 
       g.spacing()
-      g.text_colored(
-        "⚠  Accompaniment seed must contain ≥" .. S.amt_prompt_len ..
-        "s of history for dense results.", "YELLOW")
+      g.row_label("Chords:", lw_amt)
+      g.next_width(-1)
+      local r4, v4 = widgets.input_text("##acc_chords", S.acc_chords)
+      if r4 then S.acc_chords = v4 end
+      g.text_disabled("  Optional, e.g.  C#m G# A# F   (empty = detected from your melody)")
+      if S.acc_chords:match("%S") then
+        g.row_label("Beats/chord:", lw_amt)
+        g.next_width(t.sc(120))
+        local rb, vb = g.slider_int("##acc_beats", S.acc_beats, 1, 8)
+        if rb then S.acc_beats = vb end
+      end
+
+      g.row_label("Prompt (s):", lw_amt)
+      g.next_width(t.sc(120))
+      local rv, nv = g.slider_int("##amt_plen", S.amt_prompt_len, 2, 15)
+      if rv then S.amt_prompt_len = nv end
+      g.same_line(t.sc(14))
+      g.text_disabled("Length follows the melody.")
+    else
+      g.text_disabled("  Higher: more varied notes.")
+      local sk, sv = g.checkbox("Stay in the melody's notes##acc_key", S.acc_stay_in_key)
+      if sk then S.acc_stay_in_key = sv end
+      g.text_colored("  Non-commercial weights: accept the license at huggingface.co/Metacreation/MIDI-GPT", "YELLOW")
     end
   end
 
@@ -920,7 +711,7 @@ function M.draw()
     g.same_line(t.sc(18)); g.inline_text("Temperature:")
     g.same_line(t.sc(6))
     g.next_width(-1)
-    local temp_min, temp_max = table.unpack(MG_TEMP_RANGE[mk] or MG_TEMP_RANGE_DEFAULT)
+    local temp_min, temp_max = table.unpack(MG_TEMP_RANGE_DEFAULT)
     rv, nv = g.slider_float("##mg_temp", S.temperature, temp_min, temp_max, "%.2f")
     if rv then S.temperature = nv end
   end
@@ -946,11 +737,8 @@ function M.draw()
   g.spacing()
   local hints = {
     amadeus      = "A10G: ~$0.05/min  |  multi-track, variable duration",
-    midi_llm     = "A10G: ~$0.05/min  |  requires CUDA BF16 (no MPS)",
-    text2midi    = "A10G: ~$0.05/min  |  academic baseline, low quality",
-    chatmusician = "A10G: ~$0.05/min  |  multi-voice ABC; sometimes generates text instead of ABC",
-    musecoco     = "A100: ~$0.14/min  |  stage-2 takes ~11 min, uses spawn+poll",
-    anticipatory = "A10G: ~$0.05/min (remote)  |  ~15-45 min on CPU if run Local",
+    anticipatory = "A10G: ~$0.05/min (remote)  |  Local runs on CPU: slower but free",
+    midigpt      = "A10G: ~$0.05/min  |  needs the Hugging Face token in Setup (gated weights)",
   }
   g.text_disabled(hints[mk] or "")
 

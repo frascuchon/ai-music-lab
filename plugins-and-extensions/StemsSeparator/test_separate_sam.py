@@ -390,11 +390,19 @@ class TestOutputDiscovery(TestCase):
         self.outdir = self.tmpdir / "out"
         self.outdir.mkdir()
 
-    def _write_modal_stub(self):
-        (self.tmpdir / "modal_sam_audio.py").write_text("import sys; sys.exit(0)\n")
+    def _write_modal_stub(self, creates=()):
+        """Stub modal_sam_audio.py: creates `creates` inside --output-dir
+        while it runs, like the real Modal entrypoint downloading results."""
+        (self.tmpdir / "modal_sam_audio.py").write_text(textwrap.dedent(f"""\
+            import sys
+            from pathlib import Path
+            out = Path(sys.argv[sys.argv.index("--output-dir") + 1])
+            for name in {list(creates)!r}:
+                (out / name).touch()
+        """))
 
-    def _run(self):
-        self._write_modal_stub()
+    def _run(self, creates=()):
+        self._write_modal_stub(creates)
         args = [
             str(SCRIPT),
             "--sam-dir", str(self.tmpdir),
@@ -408,24 +416,33 @@ class TestOutputDiscovery(TestCase):
             capture_output=True, text=True, timeout=30,
         )
 
-    def test_discovers_target_and_residual(self):
-        (self.outdir / "test_track_sam_midpoint64_target.wav").touch()
-        (self.outdir / "test_track_sam_midpoint64_residual.wav").touch()
-        (self.outdir / "other.wav").touch()
-        self._run()
+    def _listed(self):
         lines = self.progress_file.read_text().splitlines()
-        listed_files = [l for l in lines[1:] if l.strip()]
+        return [l for l in lines[1:] if l.strip()]
+
+    def test_discovers_target_and_residual(self):
+        self._run(creates=["test_track_sam_midpoint64_target.wav",
+                           "test_track_sam_midpoint64_residual.wav"])
+        listed_files = self._listed()
         self.assertEqual(len(listed_files), 2)
         for f in listed_files:
             self.assertTrue(f.endswith("target.wav") or f.endswith("residual.wav"))
 
-    def test_fallback_to_all_wavs(self):
-        (self.outdir / "output_vocals.wav").touch()
-        (self.outdir / "output_bass.wav").touch()
+    def test_leftovers_from_previous_runs_are_not_reported(self):
+        (self.outdir / "old_run_target.wav").touch()
+        self._run(creates=["test_track_sam_midpoint64_target.wav"])
+        listed_files = self._listed()
+        self.assertEqual(len(listed_files), 1)
+        self.assertTrue(listed_files[0].endswith("test_track_sam_midpoint64_target.wav"))
+
+    def test_fallback_to_files_matching_stem_and_prompt(self):
+        """If the run created nothing new (e.g. identical re-run), fall back
+        to files for this track + prompt, never unrelated wavs."""
+        (self.outdir / "test_track_sam_midpoint64_vocals_target.wav").touch()
+        (self.outdir / "test_track_sam_midpoint64_vocals_residual.wav").touch()
+        (self.outdir / "other_track_sam_midpoint64_vocals_target.wav").touch()
         self._run()
-        lines = self.progress_file.read_text().splitlines()
-        listed_files = [l for l in lines[1:] if l.strip()]
-        self.assertEqual(len(listed_files), 2)
+        self.assertEqual(len(self._listed()), 2)
 
     def test_no_output_files_still_marks_done(self):
         self._run()

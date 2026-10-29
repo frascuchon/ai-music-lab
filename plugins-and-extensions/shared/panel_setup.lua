@@ -3,10 +3,9 @@
 -- unified ai-music-lab.lua container, which owns the window/main loop
 -- and calls M.init() once, M.poll() every frame, M.draw() when active.
 -- Manages the common environment (uv, Modal) and plugin-specific extras
--- (StemsSeparator: demucs, HF secret;
---  MidiGenerator: abcmidi).
+-- (StemsSeparator: demucs, HF secret).
 -- Note: this used to also offer "pre-load weights" buttons per model
--- (StemsSeparator/SAM, Audio2Midi/MIROS+YourMT3+, MidiGenerator/7 models).
+-- (StemsSeparator/SAM, Audio2Midi/YourMT3+, MidiGenerator models).
 -- Removed — every model's real generate/transcribe/separate Modal function
 -- now downloads+caches its own weights lazily on first real use, so a
 -- separate manual pre-warm step is pure redundancy; the first real
@@ -57,7 +56,6 @@ local PF = {
   sync         = TMPDIR .. "reaperai_setup_sync.txt",
   login        = TMPDIR .. "reaperai_setup_login.txt",
   demucs       = TMPDIR .. "reaperai_setup_demucs.txt",
-  abcmidi      = TMPDIR .. "reaperai_setup_abcmidi.txt",
   hfsecret     = TMPDIR .. "reaperai_setup_hfsecret.txt",
 }
 
@@ -74,7 +72,6 @@ end
 -- ── STATE ────────────────────────────────────────────────────────
 -- Core checks always present; plugin extras detected at runtime
 local CORE_NAMES = { "python", "uv", "modal-cli", "modal-auth" }
-local STEMS_NAMES = { "demucs", "hf-secret" }
 
 local CHECKS = {}  -- filled dynamically from CHECK| lines
 local CHECK_IDX = {}
@@ -85,9 +82,6 @@ local function init_checks()
   if HAS_STEMS then
     table.insert(names, "demucs"); table.insert(names, "hf-secret")
   end
-  if HAS_MG then
-    table.insert(names, "abcmidi")
-  end
   local labels = {
     python        = "Python (REAPER)",
     uv            = "uv",
@@ -95,7 +89,6 @@ local function init_checks()
     ["modal-auth"]= "Modal authenticated",
     demucs        = "demucs  (StemsSeparator)",
     ["hf-secret"] = "HF secret 'huggingface-secret'  (StemsSeparator)",
-    abcmidi       = "abcmidi / midi2abc  (MidiGenerator ChatMusician seed)",
   }
   for _, name in ipairs(names) do
     table.insert(CHECKS, { name=name, label=labels[name] or name,
@@ -112,7 +105,6 @@ local ST = {
   sync_state      = "idle", sync_msg      = "",
   login_state     = "idle", login_msg     = "",
   demucs_state    = "idle", demucs_msg    = "",
-  abcmidi_state   = "idle", abcmidi_msg   = "",
   hf_state        = "idle", hf_msg        = "",
   hf_token        = "",
 }
@@ -186,7 +178,6 @@ function M.poll()
   poll_simple("sync_state",   "sync_msg",   "sync")
   poll_simple("login_state",  "login_msg",  "login")
   poll_simple("demucs_state", "demucs_msg", "demucs")
-  poll_simple("abcmidi_state", "abcmidi_msg", "abcmidi")
   poll_simple("hf_state",     "hf_msg",     "hfsecret")
 
   -- Recheck after action finishes
@@ -195,7 +186,6 @@ function M.poll()
   end
   maybe_recheck("uv_state"); maybe_recheck("sync_state")
   maybe_recheck("demucs_state"); maybe_recheck("login_state"); maybe_recheck("hf_state")
-  maybe_recheck("abcmidi_state")
   if pending_recheck and ST.check_state ~= "running" then
     pending_recheck = false; run_check()
   end
@@ -389,42 +379,9 @@ function M.draw()
     g.text("MidiGenerator")
     g.pop_font()
     g.spacing()
-
-    -- abcmidi (midi2abc/abc2midi) — required locally for ChatMusician's
-    -- "harmonize/simplify with seed" flow (MIDI<->ABC conversion happens on
-    -- this machine, before the Modal call, not inside the container).
-    do
-      local c = CHECKS[CHECK_IDX["abcmidi"]]
-      if c then
-        local icon  = checking and "..." or status_icon(c.status)
-        local color = checking and "YELLOW" or status_color(c.status)
-        g.text_colored("[" .. icon .. "]", color)
-        g.same_line(6); g.text(c.label)
-        if c.detail ~= "" then
-          g.same_line(10); g.text_disabled(c.detail:sub(1, 48))
-        end
-        if not checking and c.status == "missing" then
-          g.same_line_or_wrap(t.sc(70))
-          g.begin_disabled(ST.abcmidi_state == "running")
-          if g.button("Install", t.sc(70), t.ITEM_H) then
-            ST.abcmidi_state = "running"; ST.abcmidi_msg = ""
-            launch("abcmidi", "install-abcmidi")
-          end
-          g.end_disabled()
-          if ST.abcmidi_state == "running" then
-            g.same_line_or_wrap(t.sc(80), 6); g.text_colored("Installing...", "YELLOW")
-          elseif ST.abcmidi_state == "error" then
-            g.same_line_or_wrap(t.sc(150), 6)
-            g.text_colored(ST.abcmidi_msg ~= "" and ST.abcmidi_msg:sub(1,55) or "Error — check the log", "RED")
-          end
-        end
-      end
-    end
-
-    g.spacing()
     g.text_colored("[OK]", "GREEN")
     g.same_line(6)
-    g.text("No other local dependencies — weights downloaded automatically on first use")
+    g.text("No local dependencies — weights downloaded automatically on first use")
   end
 
   g.spacing(); g.separator(); g.spacing()

@@ -5,7 +5,7 @@
 Called by Text2Audio.lua as a background process:
     python3 text2audio.py
         --shared-dir <shared/>  --script <research_*.py>
-        --model <sao|foundation1|sao_edit|acestep|musicgen|...>
+        --model <sao|sao_edit|acestep|...>
         --mode  <generate|edit>
         --out-dir <dir>  --progress <pf>
         [--prompt <text>]
@@ -21,8 +21,7 @@ Called by Text2Audio.lua as a background process:
         [--lora-path <folder>] [--lora-scale <float>]
 
 Model entrypoint contracts (modal run <script>::main):
-  text2audio (sao, foundation1, acestep_gen, inspiremusic_gen,
-              mustango, audiogen, musicgen_gen, magnet):
+  text2audio (acestep_gen, sao, musicgen_gen, audiogen):
       --prompt  --seconds  --out-dir  --force
       acestep_gen additionally forwards --steps --guidance-scale --shift
       --seed --use-adg --cfg-interval-start --cfg-interval-end --thinking
@@ -32,14 +31,6 @@ Model entrypoint contracts (modal run <script>::main):
       --source-audio  --prompt  --noise-level  --out-dir  --force
   audio_edit_strength (acestep):
       --source-audio  --prompt  --strength  --out-dir  --force
-  melody_edit (musicgen):
-      --source-audio  --prompt  --seconds  --out-dir  --force
-  audio_edit_flowstep (melodyflow):
-      --source-audio  --prompt  --flowstep  --out-dir  --force
-  audio_edit_tstart (zeta):
-      --source-audio  --prompt  --tstart  --out-dir  --force
-  audio_continuation (inspiremusic):
-      --source-audio  --prompt  --out-dir  --force
 
 Progress protocol (--progress):
     state|pct|msg\\n       state = running | done | error
@@ -70,10 +61,6 @@ from model_execution import is_local_supported  # noqa: E402
 
 LOCAL_SCRIPT = Path(__file__).resolve().parent / "text2audio_local.py"
 
-# Edit-mode models whose local backend (text2audio_local.py) needs --seconds
-# explicitly (mirrors panel.lua's EDIT_NEEDS_SECONDS for the remote path).
-_LOCAL_EDIT_NEEDS_SECONDS = {"musicgen"}
-
 
 # ---------------------------------------------------------------------------
 # Model contract type per model key
@@ -81,28 +68,18 @@ _LOCAL_EDIT_NEEDS_SECONDS = {"musicgen"}
 MODEL_KIND: dict[str, str] = {
     # Generation (text → audio, no source)
     "sao":             "text2audio",
-    "foundation1":     "text2audio",
     "acestep_gen":     "text2audio",
-    "inspiremusic_gen":"text2audio",
-    "mustango":        "text2audio",
     "audiogen":        "text2audio",
     "musicgen_gen":    "text2audio",
-    "magnet":          "text2audio",
     # Editing (source audio + prompt → transformed audio)
     "sao_edit":    "audio_edit_noise",
     "acestep":     "audio_edit_strength",
-    "musicgen":    "melody_edit",
-    "melodyflow":  "audio_edit_flowstep",
-    "zeta":        "audio_edit_tstart",
-    "inspiremusic":"audio_continuation",
 }
 
 # Intensity → numeric value mapping
 INTENSITY_MAP: dict[str, dict[str, float]] = {
     "sao_edit":   {"subtle": 0.4,  "moderate": 1.0,  "strong": 4.0},
     "acestep":    {"subtle": 0.9,  "moderate": 0.7,  "strong": 0.4},
-    "melodyflow": {"subtle": 0.10, "moderate": 0.05, "strong": 0.0},
-    "zeta":       {"subtle": 70,   "moderate": 100,  "strong": 130},
 }
 
 
@@ -164,9 +141,8 @@ def main() -> int:
     p.add_argument("--script",      required=True,
                    help="Path to the Modal script to run.")
     p.add_argument("--model",       required=True,
-                   help="Model key (sao|foundation1|acestep_gen|inspiremusic_gen|"
-                        "mustango|audiogen|musicgen_gen|magnet|"
-                        "sao_edit|acestep|musicgen|melodyflow|zeta|inspiremusic).")
+                   help="Model key (acestep_gen|sao|musicgen_gen|audiogen|"
+                        "sao_edit|acestep).")
     p.add_argument("--mode",        required=True, choices=["generate", "edit"],
                    help="Operation mode.")
     p.add_argument("--out-dir",     required=True, dest="out_dir",
@@ -287,8 +263,6 @@ def main() -> int:
         else:
             cmd += ["--mode", "edit", "--input", str(process_path),
                    "--intensity", args.intensity]
-            if args.model in _LOCAL_EDIT_NEEDS_SECONDS:
-                cmd += ["--seconds", str(args.seconds)]
         env = os.environ.copy()
         print(f"[text2audio] Command (local): {' '.join(cmd)}", flush=True)
         return _run_and_collect(cmd, env, pf, out_dir, args, temp_dir)
@@ -354,39 +328,6 @@ def main() -> int:
             "--out-dir",      str(out_dir),
             "--force",
         ]
-    elif kind == "melody_edit":
-        cmd += [
-            "--source-audio", str(process_path),
-            "--prompt",       args.prompt,
-            "--seconds",      str(args.seconds),
-            "--out-dir",      str(out_dir),
-            "--force",
-        ]
-    elif kind == "audio_edit_flowstep":
-        flowstep = INTENSITY_MAP["melodyflow"].get(args.intensity, 0.05)
-        cmd += [
-            "--source-audio", str(process_path),
-            "--prompt",       args.prompt,
-            "--flowstep",     str(flowstep),
-            "--out-dir",      str(out_dir),
-            "--force",
-        ]
-    elif kind == "audio_edit_tstart":
-        tstart = int(INTENSITY_MAP["zeta"].get(args.intensity, 100))
-        cmd += [
-            "--source-audio", str(process_path),
-            "--prompt",       args.prompt,
-            "--tstart",       str(tstart),
-            "--out-dir",      str(out_dir),
-            "--force",
-        ]
-    elif kind == "audio_continuation":
-        cmd += [
-            "--source-audio", str(process_path),
-            "--prompt",       args.prompt,
-            "--out-dir",      str(out_dir),
-            "--force",
-        ]
 
     # Propagate GPU to the environment (used by SAO and SAO-edit via env vars)
     env = os.environ.copy()
@@ -425,7 +366,7 @@ def _run_and_collect(cmd: list[str], env: dict, pf: str, out_dir: Path,
         tail.append(line)
 
         pct = 0.1
-        # Diffusion: "step N/M" (SAO, Foundation-1, MusicGen) or "[N/M]"
+        # Diffusion: "step N/M" (SAO, MusicGen) or "[N/M]"
         m = re.search(r'step\s+(\d+)/(\d+)', line, re.IGNORECASE)
         if not m:
             m = re.search(r'\[(\d+)/(\d+)\]', line)

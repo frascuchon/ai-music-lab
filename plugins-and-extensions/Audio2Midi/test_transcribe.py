@@ -191,7 +191,7 @@ class TestTempoReportedEndToEnd(TestCase):
         """))
         return script
 
-    def _run(self, script, model="miros"):
+    def _run(self, script, model="yourmt3"):
         args = [
             sys.executable, str(SCRIPT),
             "--shared-dir", str(self.shared_dir),
@@ -240,6 +240,225 @@ class TestTempoReportedEndToEnd(TestCase):
         self.assertEqual(len(instr_lines), 1)
 
 
+class TestGpuSelection(TestCase):
+    """The panel's GPU combo must reach the Modal script: those scripts read
+    YOURMT3_GPU at import time, so transcribe.py has to export the chosen GPU
+    into the subprocess environment."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="a2m_gpu_"))
+        self.progress_file = self.tmpdir / "progress.txt"
+        self.input_wav = self.tmpdir / "input.wav"
+        self.input_wav.write_bytes(b"\x00" * 8000)
+        self.outdir = self.tmpdir / "out"
+        self.outdir.mkdir()
+        self.shared_dir = self.tmpdir / "shared"
+        self.shared_dir.mkdir()
+        (self.shared_dir / "pyproject.toml").write_text("[project]\nname='shared'\n")
+        self.script = self.tmpdir / "research_stub_modal.py"
+        self.script.write_text(textwrap.dedent(f"""\
+            import argparse, os, sys
+            sys.path.insert(0, {str(SCRIPT.parent)!r})
+            from test_transcribe import make_midi
+            from pathlib import Path
+            p = argparse.ArgumentParser()
+            p.add_argument("--audio-path"); p.add_argument("--out-dir")
+            p.add_argument("--force", action="store_true")
+            p.add_argument("--no-beat-tracking", action="store_true")
+            a = p.parse_args()
+            out = Path(a.out_dir)
+            (out / "gpu_seen.txt").write_text(
+                os.environ.get("YOURMT3_GPU", "-"))
+            make_midi(out / "transcribed_cuda.mid", tempo_bpm=120)
+        """))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _seen(self, model, gpu):
+        subprocess.run(
+            [sys.executable, str(SCRIPT),
+             "--shared-dir", str(self.shared_dir), "--script", str(self.script),
+             "--input", str(self.input_wav), "--out-dir", str(self.outdir),
+             "--model", model, "--gpu", gpu, "--progress", str(self.progress_file)],
+            capture_output=True, text=True, timeout=30)
+        return (self.outdir / "gpu_seen.txt").read_text()
+
+    def test_yourmt3_gpu_is_exported(self):
+        self.assertEqual(self._seen("yourmt3", "T4"), "T4")
+
+    def test_gpu_choice_reaches_the_modal_script(self):
+        self.assertEqual(self._seen("yourmt3", "A100"), "A100")
+
+
+class TestLocalModel(TestCase):
+    """Basic Pitch runs through `uv run <script>` on this machine: no shared/
+    project, no modal, no GPU env var. An empty result must be an error."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="a2m_local_"))
+        self.progress_file = self.tmpdir / "progress.txt"
+        self.input_wav = self.tmpdir / "guitar.wav"
+        self.input_wav.write_bytes(b"\x00" * 8000)
+        self.outdir = self.tmpdir / "out"
+        self.outdir.mkdir()
+        self.script = self.tmpdir / "research_basic_pitch.py"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write_script(self, n_notes):
+        self.script.write_text(textwrap.dedent(f"""\
+            import argparse, os, sys
+            sys.path.insert(0, {str(SCRIPT.parent)!r})
+            from test_transcribe import make_midi
+            p = argparse.ArgumentParser()
+            p.add_argument("--input"); p.add_argument("--out")
+            p.add_argument("--no-beat-tracking", action="store_true")
+            a = p.parse_args()
+            make_midi(a.out, tempo_bpm=100, n_notes={n_notes})
+            print("[stub] gpu env:", os.environ.get("YOURMT3_GPU"))
+        """))
+
+    def _run(self, extra=()):
+        # --shared-dir deliberately points at a folder WITHOUT pyproject.toml
+        return subprocess.run(
+            [sys.executable, str(SCRIPT),
+             "--shared-dir", str(self.tmpdir / "no_shared"), "--script", str(self.script),
+             "--input", str(self.input_wav), "--out-dir", str(self.outdir),
+             "--model", "basicpitch", "--progress", str(self.progress_file), *extra],
+            capture_output=True, text=True, timeout=30)
+
+    def test_local_model_runs_without_shared_project(self):
+        self._write_script(n_notes=4)
+        self._run()
+        text = self.progress_file.read_text()
+        self.assertTrue(text.startswith("done|"), msg=text)
+        self.assertIn("TEMPO|100", text)
+        self.assertIn("INSTRUMENTS|1", text)
+        self.assertIn("guitar__basicpitch.mid", text)
+
+    def test_local_model_does_not_export_gpu_env(self):
+        self._write_script(n_notes=4)
+        res = self._run(["--gpu", "A100"])
+        self.assertIn("gpu env: None", res.stdout)
+
+    def test_bpm_is_forwarded_to_the_local_script(self):
+        self._write_script(n_notes=3)
+        self.script.write_text(self.script.read_text().replace(
+            'p.add_argument("--no-beat-tracking", action="store_true")',
+            'p.add_argument("--no-beat-tracking", action="store_true"); p.add_argument("--bpm", type=float, default=None)').replace(
+            'tempo_bpm=100', 'tempo_bpm=(a.bpm or 100)'))
+        self._run(["--bpm", "87"])
+        self.assertIn("TEMPO|87", self.progress_file.read_text())
+
+    def test_onset_threshold_is_forwarded_to_the_local_script(self):
+        self._write_script(n_notes=3)
+        self.script.write_text(self.script.read_text().replace(
+            'p.add_argument("--no-beat-tracking", action="store_true")',
+            'p.add_argument("--no-beat-tracking", action="store_true"); p.add_argument("--onset-threshold", type=float)').replace(
+            'tempo_bpm=100', 'tempo_bpm=int(a.onset_threshold * 100)'))
+        self._run(["--onset-threshold", "0.8"])
+        self.assertIn("TEMPO|80", self.progress_file.read_text())
+
+    def test_empty_transcription_is_an_error_not_completed(self):
+        self._write_script(n_notes=0)
+        self._run()
+        text = self.progress_file.read_text()
+        self.assertTrue(text.startswith("error|"), msg=text)
+        self.assertIn("No notes were transcribed", text)
+
+
+class TestBasicPitchCleanup(TestCase):
+    """drop_ghost_notes / drop_tail_notes: the sub-octave ghosts and tail
+    noise Basic Pitch produced on a distorted guitar render."""
+
+    def setUp(self):
+        sys.path.insert(0, str(SCRIPT.parent / "research"))
+        import importlib
+        self.bp = importlib.import_module("research_basic_pitch")
+        import pretty_midi
+        self.N = lambda p, s, e, v=80: pretty_midi.Note(velocity=v, pitch=p, start=s, end=e)
+
+    def test_octave_ghost_under_louder_note_is_dropped(self):
+        real, ghost = self.N(49, 8.05, 8.25, 69), self.N(37, 8.06, 8.25, 59)
+        self.assertEqual(self.bp.drop_ghost_notes([real, ghost]), [real])
+
+    def test_octave_plus_fifth_ghost_is_dropped(self):
+        real, ghost = self.N(58, 9.21, 9.43, 79), self.N(39, 9.23, 9.38, 68)
+        self.assertEqual(self.bp.drop_ghost_notes([real, ghost]), [real])
+
+    def test_louder_low_note_is_kept(self):
+        """A genuine octave doubling where the low note dominates survives."""
+        low, high = self.N(49, 1.0, 1.3, 100), self.N(61, 1.0, 1.3, 60)
+        self.assertEqual(len(self.bp.drop_ghost_notes([low, high])), 2)
+
+    def test_non_overlapping_octave_is_kept(self):
+        a, b = self.N(49, 1.0, 1.2, 70), self.N(61, 2.0, 2.2, 90)
+        self.assertEqual(len(self.bp.drop_ghost_notes([a, b])), 2)
+
+    def test_unrelated_interval_is_kept(self):
+        a, b = self.N(49, 1.0, 1.3, 70), self.N(56, 1.0, 1.3, 90)  # a fifth
+        self.assertEqual(len(self.bp.drop_ghost_notes([a, b])), 2)
+
+    def test_quiet_tail_notes_are_dropped(self):
+        import numpy as np
+        sr = 16000
+        y = np.zeros(sr * 10, dtype="float32")
+        notes = [self.N(60 + i, float(i), i + 0.5) for i in range(8)]
+        for n in notes:
+            y[int(n.start * sr):int(n.end * sr)] = 0.5
+        tail = self.N(64, 9.0, 9.5)
+        y[int(9.0 * sr):int(9.5 * sr)] = 0.02            # ~28 dB below the notes
+        kept = self.bp.drop_tail_notes(notes + [tail], y, sr)
+        self.assertNotIn(tail, kept)
+        self.assertEqual(len(kept), 8)
+
+    def test_few_notes_are_never_filtered(self):
+        import numpy as np
+        notes = [self.N(60, 0.0, 0.5), self.N(62, 1.0, 1.5)]
+        self.assertEqual(self.bp.drop_tail_notes(notes, np.zeros(16000 * 3, dtype="float32"), 16000), notes)
+
+
+class TestLevelling(TestCase):
+    """research_basic_pitch.load_normalised: quiet recordings (a Guitar Rig
+    render peaking at -22 dBFS made a transcription model return an empty MIDI) must be
+    brought up to -1 dBFS; silence must be rejected."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="a2m_level_"))
+        sys.path.insert(0, str(SCRIPT.parent / "research"))
+        import importlib
+        self.bp = importlib.import_module("research_basic_pitch")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _wav(self, amp, stereo=True, sr=48000):
+        import numpy as np
+        import soundfile as sf
+        t = np.arange(sr) / sr
+        y = amp * np.sin(2 * np.pi * 220 * t).astype("float32")
+        data = np.stack([y, y], axis=1) if stereo else y
+        path = self.tmpdir / f"t_{amp}.wav"
+        sf.write(str(path), data, sr, subtype="PCM_24")
+        return path
+
+    def test_quiet_stereo_is_downmixed_and_peaks_at_minus_one_dbfs(self):
+        y, sr, gain = self.bp.load_normalised(self._wav(0.077))
+        self.assertEqual(y.ndim, 1)
+        self.assertAlmostEqual(float(abs(y).max()), 0.89, places=2)
+        self.assertGreater(gain, 20)
+
+    def test_gain_is_capped(self):
+        _, _, gain = self.bp.load_normalised(self._wav(0.001))
+        self.assertLessEqual(gain, 30.01)
+
+    def test_silence_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.bp.load_normalised(self._wav(0.0))
+
+
 class TestErrorReporting(TestCase):
     """Covers the reported bug: when the Modal subprocess fails, the
     progress file used to only get "Modal failed with code 1. Check the
@@ -270,7 +489,7 @@ class TestErrorReporting(TestCase):
         """))
         return script
 
-    def _run(self, script, model="miros"):
+    def _run(self, script, model="yourmt3"):
         args = [
             sys.executable, str(SCRIPT),
             "--shared-dir", str(self.shared_dir),

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Backend CLI for Audio2Midi.lua — transcribes audio to MIDI via Modal cloud.
+"""Backend CLI for Audio2Midi.lua — transcribes audio to MIDI via Modal cloud
+(YourMT3+) or locally (Basic Pitch, single-instrument).
 
 Called by Audio2Midi.lua as a background process:
     python3 transcribe.py --shared-dir <shared/> --script <research_*.py>
-        --input <audio> --out-dir <dir> --model <miros|yourmt3>
+        --input <audio> --out-dir <dir> --model <basicpitch|yourmt3>
         --gpu <A10G|A100|T4> [--start S] [--duration D]
         [--no-beat-tracking] --progress <pf> >> <log> 2>&1 &
 
@@ -39,7 +40,14 @@ from pathlib import Path
 
 
 # Models that accept --no-beat-tracking in their Modal entrypoint
-SUPPORTS_NO_BEAT_TRACKING = {"miros"}
+SUPPORTS_NO_BEAT_TRACKING = {"basicpitch"}
+
+# Models that run on this machine through `uv run <script>` (PEP 723 inline
+# dependencies) instead of `modal run`. They need no shared/ project and no GPU.
+LOCAL_MODELS = {"basicpitch"}
+
+# Env var each research_*_modal.py reads to choose its Modal GPU.
+GPU_ENV_VARS = {"yourmt3": "YOURMT3_GPU"}
 
 
 # ---------------------------------------------------------------------------
@@ -151,8 +159,8 @@ def main() -> int:
                    help="shared/ directory containing pyproject.toml (modal CLI).")
     p.add_argument("--script",     required=True,
                    help="Path to the Modal script to run (research_*_modal.py).")
-    p.add_argument("--model",      default="miros",
-                   help="Model name (miros | yourmt3).")
+    p.add_argument("--model",      default="basicpitch",
+                   help="Model name (basicpitch | yourmt3).")
     p.add_argument("--gpu",        default="A10G",
                    help="GPU to use on Modal (A10G | A100 | T4).")
     p.add_argument("--start",      type=float, default=None,
@@ -161,7 +169,12 @@ def main() -> int:
                    help="Duration of the section (seconds).")
     p.add_argument("--no-beat-tracking", action="store_true",
                    dest="no_beat_tracking",
-                   help="Disable beat tracking (only for models that support it).")
+                   help="Local models only: skip the automatic tempo estimate.")
+    p.add_argument("--bpm",        type=float, default=None,
+                   help="Local models only: write the MIDI at this tempo "
+                        "(e.g. the REAPER project's) instead of estimating it.")
+    p.add_argument("--onset-threshold", type=float, default=None, dest="onset_threshold",
+                   help="Local models only: note-detection threshold (higher = fewer notes).")
     p.add_argument("--progress",   default="",
                    help="Path to the progress file (state|pct|msg protocol).")
     args = p.parse_args()
@@ -184,7 +197,9 @@ def main() -> int:
                        "Check the model path in Audio2Midi/research/.")
         return 1
 
-    if not (shared_dir / "pyproject.toml").exists():
+    is_local = args.model.lower() in LOCAL_MODELS
+
+    if not is_local and not (shared_dir / "pyproject.toml").exists():
         write_progress(pf, "error", 0,
                        f"shared/pyproject.toml not found at: {shared_dir}\n"
                        "Check that shared/ is next to the plugins.")
@@ -219,22 +234,40 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Build modal run command ----------------------------------------------
-    write_progress(pf, "running", 0.08,
-                   f"Launching Modal ({args.model} · {args.gpu})...")
+    if is_local:
+        write_progress(pf, "running", 0.08,
+                       f"Launching local transcription ({args.model})...")
+        cmd = [
+            str(uv_bin), "run", str(script_path),
+            "--input", str(process_path),
+            "--out",   str(out_dir / "transcribed_cuda.mid"),
+        ]
+    else:
+        write_progress(pf, "running", 0.08,
+                       f"Launching Modal ({args.model} · {args.gpu})...")
+        cmd = [
+            str(uv_bin), "run", "--project", str(shared_dir),
+            "modal", "run", f"{script_path}::main",
+            "--audio-path", str(process_path),
+            "--out-dir",    str(out_dir),
+            "--force",
+        ]
 
-    cmd = [
-        str(uv_bin), "run", "--project", str(shared_dir),
-        "modal", "run", f"{script_path}::main",
-        "--audio-path", str(process_path),
-        "--out-dir",    str(out_dir),
-        "--force",
-    ]
+    if is_local and args.bpm:
+        cmd += ["--bpm", str(args.bpm)]
+    if is_local and args.onset_threshold is not None:
+        cmd += ["--onset-threshold", str(args.onset_threshold)]
 
     # --no-beat-tracking only if the model supports it
     if args.no_beat_tracking and args.model.lower() in SUPPORTS_NO_BEAT_TRACKING:
         cmd.append("--no-beat-tracking")
 
     env = os.environ.copy()
+    # The Modal scripts pick their GPU at import time from an env var (the
+    # `gpu=` argument of the @app.function decorator), not from a CLI flag.
+    gpu_env = GPU_ENV_VARS.get(args.model.lower())
+    if gpu_env and args.gpu and not is_local:
+        env[gpu_env] = args.gpu
 
     print(f"[transcribe] Command: {' '.join(cmd)}", flush=True)
 
@@ -267,15 +300,6 @@ def main() -> int:
             n, total = int(m.group(1)), int(m.group(2))
             if total > 0:
                 pct = 0.1 + (n / total) * 0.8
-        # Pattern "Chunk n/m" (MIROS)
-        elif "Chunk" in line and "/" in line:
-            try:
-                part = line.split("Chunk")[1].split(":")[0].strip()
-                n, total = int(part.split("/")[0]), int(part.split("/")[1])
-                if total > 0:
-                    pct = 0.1 + (n / total) * 0.8
-            except (ValueError, IndexError):
-                pass
 
         write_progress(pf, "running", pct, line[:80])
 
@@ -288,8 +312,9 @@ def main() -> int:
         tail_lines = list(tail)
         last = next((ln for ln in reversed(tail_lines) if ln.strip()), "")
         detail = f" Last: {last[:160]}" if last else " Check the log for details."
+        where = "Local transcription" if is_local else "Modal"
         write_progress(pf, "error", 0,
-                       f"Modal failed with code {proc.returncode}.{detail}",
+                       f"{where} failed with code {proc.returncode}.{detail}",
                        ["--- last output lines ---"] + tail_lines)
         return 1
 
@@ -312,6 +337,14 @@ def main() -> int:
 
     # Count non-empty instruments
     n_instruments = count_instruments(final_mid)
+    if n_instruments == 0 or (n_instruments < 0 and final_mid.stat().st_size < 64):
+        # An empty MIDI used to be reported as "Completed". It almost always
+        # means the model heard nothing (very quiet or wrong item).
+        write_progress(pf, "error", 0,
+                       "No notes were transcribed. Check that the selected item "
+                       "is audible and is the instrument you want; for a single "
+                       "instrument try Basic Pitch.")
+        return 1
     instr_str = str(n_instruments) if n_instruments >= 0 else "?"
 
     # Read back the embedded tempo so the caller can force the REAPER
