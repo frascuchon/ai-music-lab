@@ -25,9 +25,9 @@
 plugins plus the standalone Setup wizard:
 
   · Audio2Midi — audio to MIDI transcription (Basic Pitch, YourMT3+)
-  · MidiGenerator — MIDI generation from text or seed MIDI (6 models)
-  · Text2Audio — text to audio generation and audio editing (14+ models)
-  · Stems Separator — stem separation with Demucs (local) and SAM Audio (cloud)
+  · MidiGenerator — MIDI generation from text, or accompaniment for a melody (Amadeus, Anticipatory, MIDI-GPT)
+  · Text2Audio — text to audio generation and audio editing (ACE-Step, Stable Audio Open, MusicGen, AudioGen)
+  · Stems Separator — stem separation with Demucs (local) and SAM Audio (cloud or local)
   · Setup — global environment configuration (uv, Modal, per-tool prewarm)
 
 Native gfx UI: no external REAPER extension dependencies.
@@ -35,6 +35,79 @@ Native gfx UI: no external REAPER extension dependencies.
 Requirements: Python 3.11+, uv, Modal account (free tier sufficient for most models)]]></description>
         <link rel="website">https://github.com/frascuchon/ai-music-lab</link>
       </metadata>
+      <version name="1.2.0" author="AI Music Lab" time="2026-10-29T00:00:00Z">
+        <changelog><![CDATA[New in this release:
+  · MidiGenerator: accompany a melody with Anticipatory (no seed track needed) and
+    MIDI-GPT; arrangement controls (parts, density, creativity). Retired text2midi,
+    MuseCoco, MIDI-LLM and ChatMusician from the UI.
+  · Audio2Midi: local Basic Pitch for single instruments (adjustable note threshold,
+    ghost-note cleanup, input level normalisation); MIROS removed.
+  · Local/remote execution toggle for Anticipatory, SAO, SAO-edit, MusicGen, AudioGen
+    and SAM Audio (models that cannot run locally keep it disabled with the reason).
+  · Text2Audio trimmed to the models that proved useful: Generate = ACE-Step, Stable
+    Audio Open, MusicGen, AudioGen; Edit = SAO style transfer, ACE-Step.
+  · MIDI is imported track by track without InsertMedia, so existing clips and tracks
+    are no longer wrapped or moved.
+  · StemsSeparator: SAM Audio OOM fix (larger default GPU, bounded chunking, errors
+    shown in the panel). Fresh random seed per Amadeus generation.]]></changelog>
+        <source file="ai-music-lab.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/ai-music-lab.lua</source>
+
+        <source file="shared/panel_setup.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/panel_setup.lua</source>
+        <source file="shared/setup_helpers.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/setup_helpers.py</source>
+        <source file="shared/model_execution.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/model_execution.py</source>
+        <source file="shared/pyproject.toml">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/pyproject.toml</source>
+        <source file="shared/uv.lock">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/uv.lock</source>
+        <source file="shared/lib/common.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/common.lua</source>
+        <source file="shared/lib/gui.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/gui.lua</source>
+        <source file="shared/lib/theme.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/theme.lua</source>
+        <source file="shared/lib/widgets_extra.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/widgets_extra.lua</source>
+        <source file="shared/lib/collapse_state.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/collapse_state.lua</source>
+        <source file="shared/lib/model_switch.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/model_switch.lua</source>
+        <source file="shared/lib/model_execution.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/model_execution.lua</source>
+        <source file="shared/lib/process_control.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/process_control.lua</source>
+        <source file="shared/lib/track_placement.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/track_placement.lua</source>
+        <source file="shared/lib/midi_import.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/lib/midi_import.lua</source>
+
+        <source file="Audio2Midi/panel.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/panel.lua</source>
+        <source file="Audio2Midi/transcribe.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/transcribe.py</source>
+        <source file="Audio2Midi/research/pyproject.toml">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/research/pyproject.toml</source>
+        <source file="Audio2Midi/research/uv.lock">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/research/uv.lock</source>
+        <source file="Audio2Midi/research/research_basic_pitch.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/research/research_basic_pitch.py</source>
+        <source file="Audio2Midi/research/research_yourmt3_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Audio2Midi/research/research_yourmt3_modal.py</source>
+
+        <source file="MidiGenerator/panel.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/panel.lua</source>
+        <source file="MidiGenerator/smf_writer.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/smf_writer.lua</source>
+        <source file="MidiGenerator/midigen.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/midigen.py</source>
+        <source file="MidiGenerator/prompt_adapters.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/prompt_adapters.py</source>
+        <source file="MidiGenerator/accompaniment.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/accompaniment.py</source>
+        <source file="MidiGenerator/harmony.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/harmony.py</source>
+        <source file="MidiGenerator/midigpt_spec.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/midigpt_spec.py</source>
+        <source file="MidiGenerator/research/pyproject.toml">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/pyproject.toml</source>
+        <source file="MidiGenerator/research/uv.lock">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/uv.lock</source>
+        <source file="MidiGenerator/research/research_amadeus_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_amadeus_modal.py</source>
+        <source file="MidiGenerator/research/research_anticipatory.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_anticipatory.py</source>
+        <source file="MidiGenerator/research/research_anticipatory_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_anticipatory_modal.py</source>
+        <source file="MidiGenerator/research/research_midigpt_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/MidiGenerator/research/research_midigpt_modal.py</source>
+
+        <source file="Text2Audio/panel.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/panel.lua</source>
+        <source file="Text2Audio/text2audio.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/text2audio.py</source>
+        <source file="Text2Audio/text2audio_local.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/text2audio_local.py</source>
+        <source file="Text2Audio/research/pyproject.toml">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/pyproject.toml</source>
+        <source file="Text2Audio/research/uv.lock">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/uv.lock</source>
+        <source file="Text2Audio/research/research_acestep_gen_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_acestep_gen_modal.py</source>
+        <source file="Text2Audio/research/research_stable_audio_open_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_stable_audio_open_modal.py</source>
+        <source file="Text2Audio/research/research_musicgen_gen_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_musicgen_gen_modal.py</source>
+        <source file="Text2Audio/research/research_audiogen_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_audiogen_modal.py</source>
+        <source file="Text2Audio/research/research_sao_edit_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_sao_edit_modal.py</source>
+        <source file="Text2Audio/research/research_acestep_edit_modal.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/Text2Audio/research/research_acestep_edit_modal.py</source>
+
+        <source file="StemsSeparator/panel.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/panel.lua</source>
+        <source file="StemsSeparator/separate_demucs.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/separate_demucs.py</source>
+        <source file="StemsSeparator/separate_sam.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/separate_sam.py</source>
+        <source file="StemsSeparator/separate_sam_local.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/separate_sam_local.py</source>
+        <source file="StemsSeparator/modal_sam_audio.py">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/StemsSeparator/modal_sam_audio.py</source>
+      </version>
+
       <version name="1.1.0" author="AI Music Lab" time="2026-10-01T00:00:00Z">
         <changelog><![CDATA[New in this release:
   · Renamed Text2Audio to "AudioGenerator" in the UI (technical paths unchanged).

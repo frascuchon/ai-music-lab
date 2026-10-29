@@ -4,9 +4,7 @@ Genera MIDI desde texto (Amadeus) o a partir de un MIDI semilla (Anticipatory) u
 
 ## Instalación
 
-1. Asegúrate de tener el directorio `shared/` junto a `MidiGenerator/`.
-2. En REAPER: `Actions → Load ReaScript → MidiGenerator/MidiGenerator.lua`.
-3. Ejecuta `shared/Setup.lua` para comprobar dependencias (uv, Modal CLI) y precargar pesos.
+Se instala con ReaPack como parte del plugin unificado **AI Music Lab** (pestaña MidiGenerator); ver la [guía de instalación](../../README.md#quick-install-about-10-minutes) del README principal. La configuración (uv, Modal, tokens) se hace desde el botón **Setup** del panel.
 
 ## Modelos disponibles
 
@@ -76,13 +74,13 @@ Los modelos se ejecutan en Modal (cloud CUDA). Costes aproximados:
 |-----|-------|---------|
 | A10G | ~$0.05/min | Amadeus, Anticipatory |
 
-Precarga los pesos con `shared/Setup.lua → sección MidiGenerator` para evitar el tiempo de descarga en la primera generación.
+Precarga los pesos con el botón **Setup** para evitar el tiempo de descarga en la primera generación.
 
 ## Estructura de ficheros
 
 ```
 MidiGenerator/
-├── MidiGenerator.lua      — Plugin REAPER (UI gfx + integración)
+├── panel.lua              — Panel REAPER (UI gfx + integración)
 ├── midigen.py             — Orquestador Python (lanza modal run)
 ├── prompt_adapters.py     — Traducción rule-based de prompts por modelo
 ├── research/

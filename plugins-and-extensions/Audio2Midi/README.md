@@ -21,42 +21,12 @@ Plugin REAPER para transcribir audio a MIDI: en local para un instrumento solo, 
 
 ## Instalación
 
-### 1. Estructura de carpetas requerida
-
-```
-plugins-and-extensions/
-├── shared/          ← infraestructura común (uv, modal CLI, lib/)
-└── Audio2Midi/      ← este plugin
-    ├── Audio2Midi.lua
-    ├── transcribe.py
-    └── research/
-        ├── research_basic_pitch.py     (local, uv run)
-        ├── research_miros_modal.py
-        └── research_yourmt3_modal.py
-```
-
-`shared/` debe ser hermano de `Audio2Midi/`. No cambies esta estructura.
-
-### 2. Registrar los scripts en REAPER
-
-En REAPER: **Actions → Load ReaScript** → añadir:
-- `shared/Setup.lua` — wizard de configuración global
-- `Audio2Midi/Audio2Midi.lua` — acción principal
-
-### 3. Primera configuración (Setup global)
-
-Ejecuta `shared/Setup.lua` en REAPER y completa los pasos:
-
-1. **Entorno común** — instala `uv` si falta → instala deps (modal CLI) → haz login en Modal.
-2. **Audio2Midi** — sin pasos extra. Basic Pitch descarga sus dependencias con `uv` la primera vez (≈30 s) y YourMT3+ descarga sus pesos (~2 GB) en su Modal Volume en el primer uso.
-
-> Requisito de cuenta: necesitas cuenta gratuita en [modal.com](https://modal.com).
-> Los primeros $30/mes de cómputo son gratuitos.
+Se instala con ReaPack como parte del plugin unificado **AI Music Lab** (pestaña Audio2Midi); ver la [guía de instalación](../../README.md#quick-install-about-10-minutes) del README principal. La configuración (uv, Modal, tokens) se hace desde el botón **Setup** del panel.
 
 ## Uso
 
 1. En REAPER, **selecciona** una pista, un item de audio, o un split (sección recortada).
-2. Abre **Audio2Midi.lua** desde el Action List.
+2. Abre **AI Music Lab** desde el Action List y ve a la pestaña Audio2Midi.
 3. Pulsa **R** para capturar la selección. La UI mostrará el archivo fuente y,
    si es una sección, el rango de tiempo en amarillo.
 4. Elige **modelo** y **GPU**.
@@ -87,7 +57,7 @@ El botón `...` permite elegir cualquier archivo WAV manualmente (sin capturar d
 
 | Archivo | Descripción |
 |---------|-------------|
-| `Audio2Midi.lua` | Script REAPER (UI + integración) |
+| `panel.lua` | Script REAPER (UI + integración) |
 | `transcribe.py` | Backend CLI: invoca Modal, gestiona progreso |
 | `research/research_basic_pitch.py` | Transcripción local (Basic Pitch, `uv run`) |
 | `research/research_yourmt3_modal.py` | App Modal para YourMT3+ |
