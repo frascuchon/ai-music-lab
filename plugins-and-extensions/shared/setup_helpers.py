@@ -174,11 +174,21 @@ def _save_report(pf: Path | None, cmd: list[str], returncode: int,
 
 
 def _stream(pf: Path | None, cmd: list[str], *, done_msg: str = "Completed",
-            env: dict | None = None) -> int:
+            env: dict | None = None, final: bool = True,
+            capture: list[str] | None = None) -> int:
+    """Run cmd streaming its output into the progress file.
+
+    final=False is for a step of a multi-step flow: it neither reports "done"
+    nor "error" (the caller decides), and capture collects the command's whole
+    output so a failure report can include every attempt."""
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, env=env)
     except OSError as exc:
+        if capture is not None:
+            capture.append(f"launch failed: {exc}")
+        if not final:
+            return 1
         report = _save_report(pf, cmd, -1, [f"launch failed: {exc}"])
         write(pf, "error", 0, f"Failed to launch {Path(cmd[0]).name if cmd else cmd}: {exc}",
               [f"REPORT|{report}"] if report else None)
@@ -192,10 +202,14 @@ def _stream(pf: Path | None, cmd: list[str], *, done_msg: str = "Completed",
         if line:
             tail.append(line)
             full.append(line)
+            if capture is not None:
+                capture.append(line)
             write(pf, "running", min(pct, 0.95), line[:120])
             pct = min(pct + 0.04, 0.95)
     proc.stdout.close()
     proc.wait()
+    if not final:
+        return proc.returncode
     if proc.returncode == 0:
         write(pf, "done", 1.0, done_msg)
     else:
@@ -282,9 +296,12 @@ def _chk_modal_cli() -> tuple[str, str]:
     uv = _find_uv()
     if uv is None:
         return "missing", "uv required for modal"
-    rc, out, _ = _run([str(uv), "run", "--project", str(SCRIPT_DIR),
-                       "modal", "--version"])
-    return ("ok", out[:60]) if rc == 0 else ("missing", "modal not available")
+    rc, out, err = _run([str(uv), "run", "--project", str(SCRIPT_DIR),
+                         "modal", "--version"])
+    if rc == 0:
+        return "ok", out[:60]
+    last = next((ln for ln in reversed((err or out).splitlines()) if ln.strip()), "")
+    return "missing", (f"modal not available: {last}" if last else "modal not available")
 
 
 def _chk_modal_auth() -> tuple[str, str]:
@@ -406,6 +423,14 @@ def cmd_install_uv(args) -> None:
 # ---------------------------------------------------------------------------
 
 def cmd_sync_deps(args) -> None:
+    """Install the modal CLI into shared/.venv, healing the usual breakages.
+
+    1. plain `uv sync`;
+    2. if that fails (corrupt/stale .venv, interpreter that no longer exists,
+       damaged uv cache): delete shared/.venv and `uv sync --reinstall --refresh`;
+    3. finally verify `modal --version` really runs — a sync that "succeeds"
+       but leaves a broken CLI used to surface only as an unexplained
+       'modal not available'."""
     pf = Path(args.progress) if args.progress else None
     uv = _find_uv()
     if uv is None:
@@ -413,9 +438,39 @@ def cmd_sync_deps(args) -> None:
         write(pf, "error", 0, "uv not found — install it first",
               [f"REPORT|{report}"] if report else None)
         return
+    project = ["--project", str(SCRIPT_DIR)]
+    log: list[str] = []
+
+    def attempt(label: str, cmd: list[str]) -> int:
+        log.append(f"### {label}: {' '.join(cmd)}")
+        rc = _stream(pf, cmd, final=False, capture=log)
+        log.append(f"### exit code {rc}")
+        return rc
+
     write(pf, "running", 0.05, "Installing project dependencies (modal, protobuf)...")
-    _stream(pf, [str(uv), "sync", "--project", str(SCRIPT_DIR)],
-            done_msg="Dependencies installed — modal CLI ready")
+    cmd = [str(uv), "sync", *project]
+    rc = attempt("uv sync", cmd)
+    if rc != 0:
+        venv = SCRIPT_DIR / ".venv"
+        write(pf, "running", 0.5, "First attempt failed — recreating the environment...")
+        if venv.is_dir():
+            shutil.rmtree(venv, ignore_errors=True)
+            log.append(f"### removed {venv}")
+        cmd = [str(uv), "sync", *project, "--reinstall", "--refresh"]
+        rc = attempt("uv sync (clean environment)", cmd)
+    if rc == 0:
+        write(pf, "running", 0.9, "Verifying the modal CLI...")
+        cmd = [str(uv), "run", *project, "modal", "--version"]
+        rc = attempt("verify modal", cmd)
+    if rc == 0:
+        write(pf, "done", 1.0, "Dependencies installed — modal CLI ready")
+        return
+    tail = [ln for ln in log if ln.strip() and not ln.startswith("###")][-40:]
+    report = _save_report(pf, cmd, rc, log)
+    extra = ["--- last output lines ---"] + tail if tail else []
+    if report:
+        extra.append(f"REPORT|{report}")
+    write(pf, "error", 0.95, _tail_error_message(cmd, rc, tail), extra or None)
 
 
 # ---------------------------------------------------------------------------

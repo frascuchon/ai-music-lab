@@ -274,3 +274,72 @@ def test_real_install_on_python_311_configures_modal(tmp_path):
     ver = subprocess.run([uv, "run", "--frozen", "--offline", "--project", str(proj),
                           "modal", "--version"], capture_output=True, text=True, env=env)
     assert ver.returncode == 0 and "modal client version" in ver.stdout, ver.stderr
+
+
+# --- sync-deps self-healing and verification --------------------------------
+
+def _fake_uv_logged(tmp_path, script):
+    """Fake uv that logs its arguments to calls.txt, then runs `script`."""
+    d = tmp_path / "bin"
+    d.mkdir()
+    uv = d / "uv"
+    uv.write_text(f'#!/bin/sh\necho "$@" >> "{tmp_path}/calls.txt"\n{script}\n')
+    uv.chmod(uv.stat().st_mode | stat.S_IEXEC)
+    return d
+
+
+def _calls(tmp_path):
+    return (tmp_path / "calls.txt").read_text().splitlines()
+
+
+def test_sync_deps_recovers_from_corrupt_environment(tmp_path):
+    """First `uv sync` fails (broken .venv); the helper wipes it and retries
+    with --reinstall, then verifies modal, instead of giving up."""
+    venv = HELPER.parent / ".venv"
+    if venv.exists():
+        pytest.skip("shared/.venv exists in this checkout; refusing to delete it")
+    d = _fake_uv_logged(tmp_path, '''
+case "$*" in
+  *--reinstall*) echo "reinstalled"; exit 0;;
+  sync*) mkdir -p "%s"; echo "error: failed to inspect python interpreter"; exit 2;;
+  run*) echo "modal client version: 1.4.3"; exit 0;;
+esac''' % venv)
+    try:
+        _, out = _run_helper(tmp_path, "sync-deps", d)
+    finally:
+        shutil.rmtree(venv, ignore_errors=True)
+    assert out.startswith("done|1.000|"), out
+    calls = _calls(tmp_path)
+    assert any("--reinstall" in c for c in calls)
+    assert calls[-1].startswith("run") and "modal --version" in calls[-1]
+
+
+def test_sync_deps_fails_if_modal_cli_is_unusable(tmp_path):
+    """A sync that exits 0 but leaves a broken CLI must not report success."""
+    d = _fake_uv_logged(tmp_path, '''
+case "$1" in
+  sync) echo "Installed 1 package"; exit 0;;
+  run) echo "ImportError: cannot import name 'api_pb2'" >&2; exit 1;;
+esac''')
+    _, out = _run_helper(tmp_path, "sync-deps", d)
+    first = out.splitlines()[0]
+    assert first.startswith("error|") and "cannot import name 'api_pb2'" in first
+    report_path = next(l for l in out.splitlines() if l.startswith("REPORT|")).split("|", 1)[1]
+    assert "verify modal" in Path(report_path).read_text()
+
+
+def test_failure_report_contains_every_attempt(tmp_path):
+    d = _fake_uv_logged(tmp_path, 'echo "error: network unreachable"; exit 1')
+    _, out = _run_helper(tmp_path, "sync-deps", d)
+    report_path = next(l for l in out.splitlines() if l.startswith("REPORT|")).split("|", 1)[1]
+    report = Path(report_path).read_text()
+    assert report.count("network unreachable") >= 2          # both attempts kept
+    assert "### uv sync:" in report and "clean environment" in report
+
+
+def test_check_modal_cli_detail_includes_reason(tmp_path):
+    d = _fake_uv(tmp_path, 'if [ "$1" = "--version" ]; then echo uv 1; exit 0; fi\n'
+                           'echo "ModuleNotFoundError: No module named grpclib" >&2\nexit 1\n')
+    _, out = _run_helper(tmp_path, "check", d)
+    line = next(l for l in out.splitlines() if l.startswith("CHECK|modal-cli|"))
+    assert "missing" in line and "No module named grpclib" in line
