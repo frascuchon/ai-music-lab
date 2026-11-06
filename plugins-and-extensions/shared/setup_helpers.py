@@ -93,7 +93,27 @@ def _find_uv() -> Path | None:
     return fallback if fallback.is_file() else None
 
 
+# REAPER launches helpers with a minimal PATH (no ~/.cargo/bin, no Homebrew),
+# so tools uv spawns while building a package from source (Rust, git...) are
+# not found even though they work from a terminal.
+EXTRA_PATH_DIRS = (
+    Path.home() / ".cargo" / "bin",
+    Path.home() / ".local" / "bin",
+    Path("/opt/homebrew/bin"),
+    Path("/usr/local/bin"),
+)
+
+
+def _tool_env(base: dict | None = None) -> dict:
+    env = dict(os.environ if base is None else base)
+    current = env.get("PATH", "").split(os.pathsep) if env.get("PATH") else []
+    extra = [str(d) for d in EXTRA_PATH_DIRS if str(d) not in current and d.is_dir()]
+    env["PATH"] = os.pathsep.join(current + extra)
+    return env
+
+
 def _run(cmd: list[str], **kwargs) -> tuple[int, str, str]:
+    kwargs.setdefault("env", _tool_env())
     r = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
     return r.returncode, r.stdout.strip(), r.stderr.strip()
 
@@ -105,6 +125,12 @@ def _tail_error_message(cmd: list[str], returncode: int,
     user nothing to act on, especially for commands (brew, pip, uv, modal)
     whose real failure reason is only visible in their own stdout/stderr."""
     cmd_name = Path(cmd[0]).name if cmd else "Command"
+    if any("Rust compiler" in ln for ln in tail_lines):
+        pkg = next((m.group(1) for ln in tail_lines
+                    if (m := re.search(r"Building ([A-Za-z0-9_.\-]+)", ln))), "a package")
+        return (f"{cmd_name} failed: {pkg} has no prebuilt wheel for this machine and "
+                "Rust is not installed (install it from rustup.rs, or pin an older "
+                f"{pkg} version in shared/pyproject.toml)")
     last = next((ln for ln in reversed(tail_lines) if ln.strip()), "")
     if last:
         return f"{cmd_name} failed (code {returncode}): {last[:160]}"
@@ -183,7 +209,7 @@ def _stream(pf: Path | None, cmd: list[str], *, done_msg: str = "Completed",
     output so a failure report can include every attempt."""
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, env=env)
+                                text=True, env=_tool_env(env))
     except OSError as exc:
         if capture is not None:
             capture.append(f"launch failed: {exc}")
@@ -244,7 +270,34 @@ def _find_versioned_python3(bindir: Path) -> Path | None:
     return best
 
 
-def _chk_python(ini_path: Path) -> tuple[str, str]:
+PYTHON_PREFIXES = ("/opt/homebrew", "/usr/local")
+
+
+def find_stable_python(libpath: str, prefixes=None) -> Path | None:
+    """Replacement for a stale reaper.ini Python path (mirrors common.lua's
+    find_stable_python). Homebrew's Cellar path embeds the full version
+    (python@3.11/3.11.9_1/...) and disappears on `brew upgrade`, so first try
+    the same X.Y through the unversioned links, then the newest python3.N."""
+    prefixes = PYTHON_PREFIXES if prefixes is None else prefixes
+    m = (re.search(r"python@(\d+\.\d+)", libpath)
+         or re.search(r"Versions/(\d+\.\d+)", libpath)
+         or re.search(r"python(\d+\.\d+)", libpath))
+    if m:
+        ver = m.group(1)
+        for prefix in prefixes:
+            for cand in (Path(prefix) / "opt" / f"python@{ver}" / "bin" / "python3",
+                         Path(prefix) / "opt" / f"python@{ver}" / "bin" / f"python{ver}",
+                         Path(prefix) / "bin" / f"python{ver}"):
+                if cand.exists():
+                    return cand
+    for prefix in prefixes:
+        newest = _find_versioned_python3(Path(prefix) / "bin")
+        if newest is not None:
+            return newest
+    return None
+
+
+def _chk_python(ini_path: Path, prefixes=None) -> tuple[str, str]:
     if not ini_path.exists():
         return "missing", f"reaper.ini not found: {ini_path}"
     libpath = None
@@ -278,10 +331,15 @@ def _chk_python(ini_path: Path) -> tuple[str, str]:
         if parent.parent == parent:
             break
         parent = parent.parent
+    stale = ""
     if exe is None:
-        return "missing", f"Python not found: {libpath}"
+        exe = find_stable_python(libpath, prefixes)
+        if exe is None:
+            return "missing", f"Python not found: {libpath}"
+        stale = " [reaper.ini path is stale — update it in Preferences > Plug-ins > ReaScript]"
     rc, out, _ = _run([str(exe), "--version"])
-    return ("ok", f"{exe.name} ({out})") if rc == 0 else ("missing", str(exe))
+    return (("ok", f"{exe.name} ({out}){stale}") if rc == 0
+            else ("missing", str(exe)))
 
 
 def _chk_uv() -> tuple[str, str]:
@@ -509,7 +567,7 @@ def cmd_modal_login(args) -> None:
 
     proc = subprocess.Popen(
         [str(uv), "run", "--project", str(SCRIPT_DIR), "modal", "token", "new"],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=_tool_env(),
     )
     assert proc.stdout
     tail: deque[str] = deque(maxlen=40)

@@ -9,6 +9,11 @@ dependencies = [
     # modal 1.x uses api_pb2.EnvironmentRole.ValueType (protobuf 5+ type alias)
     # at module import time, so we pin >=5 even though modal only says !=4.24.0
     "protobuf>=5",
+    # modal depends on cbor2. cbor2 6.x ships prebuilt wheels for Apple Silicon
+    # only; on an Intel Mac uv falls back to compiling it from source, which needs
+    # Rust — and REAPER launches uv with a minimal PATH that lacks ~/.cargo/bin,
+    # so "Install deps" fails with "can't find Rust compiler". 5.x has Intel wheels.
+    "cbor2<6",
 ]
 
 [build-system]

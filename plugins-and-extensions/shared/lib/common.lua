@@ -70,7 +70,47 @@ function M.detect_reaper_python()
     if not up or up == parent then break end
     parent = up
   end
+  -- The configured path is gone. Typical cause: Homebrew's Cellar path embeds the
+  -- full version (python@3.11/3.11.9_1/...), which disappears on `brew upgrade`.
+  local stable = M.find_stable_python(libpath)
+  if stable then
+    return stable, "reaper.ini points to a missing Python; using " .. stable
+  end
   return "python3", "Not found: " .. libpath
+end
+
+-- Prefixes searched for a Python that replaces a vanished versioned install.
+M.PYTHON_PREFIXES = { "/opt/homebrew", "/usr/local" }
+
+local function file_exists(path)
+  local f = io.open(path, "r")
+  if f then f:close(); return true end
+  return false
+end
+
+-- Resolve a replacement for a stale reaper.ini Python path: first the same
+-- X.Y through Homebrew's unversioned links (opt/python@X.Y, bin/pythonX.Y),
+-- then the newest python3.N in any prefix bin/. Returns a path or nil.
+function M.find_stable_python(libpath)
+  local ver = libpath:match("python@(%d+%.%d+)")
+            or libpath:match("Versions/(%d+%.%d+)")
+            or libpath:match("python(%d+%.%d+)")
+  for _, prefix in ipairs(M.PYTHON_PREFIXES) do
+    if ver then
+      for _, cand in ipairs({
+        prefix .. "/opt/python@" .. ver .. "/bin/python3",
+        prefix .. "/opt/python@" .. ver .. "/bin/python" .. ver,
+        prefix .. "/bin/python" .. ver,
+      }) do
+        if file_exists(cand) then return cand end
+      end
+    end
+  end
+  for _, prefix in ipairs(M.PYTHON_PREFIXES) do
+    local newest = M._find_versioned_python3(prefix .. "/bin")
+    if newest then return newest end
+  end
+  return nil
 end
 
 -- Returns nil if file missing/empty/unparseable, else:

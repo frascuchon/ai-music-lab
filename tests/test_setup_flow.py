@@ -266,12 +266,14 @@ def test_real_install_on_python_311_configures_modal(tmp_path):
     for name in ("pyproject.toml", "uv.lock"):
         shutil.copy(PLUGINS / "shared" / name, proj / name)
     env = {**os.environ, "UV_PYTHON_DOWNLOADS": "never"}
-    sync = subprocess.run([uv, "sync", "--frozen", "--offline", "--python", "3.11",
+    sync = subprocess.run([uv, "sync", "--frozen", "--python", "3.11",
                            "--project", str(proj)], capture_output=True, text=True, env=env)
-    if sync.returncode != 0 and "offline" in (sync.stderr + sync.stdout).lower():
-        pytest.skip("packages not in the local uv cache")
+    out = (sync.stderr + sync.stdout).lower()
+    if sync.returncode != 0 and any(w in out for w in (
+            "dns error", "failed to fetch", "connection", "timed out", "network")):
+        pytest.skip("no network access to PyPI")
     assert sync.returncode == 0, sync.stdout + sync.stderr
-    ver = subprocess.run([uv, "run", "--frozen", "--offline", "--project", str(proj),
+    ver = subprocess.run([uv, "run", "--frozen", "--project", str(proj),
                           "modal", "--version"], capture_output=True, text=True, env=env)
     assert ver.returncode == 0 and "modal client version" in ver.stdout, ver.stderr
 
@@ -343,3 +345,129 @@ def test_check_modal_cli_detail_includes_reason(tmp_path):
     _, out = _run_helper(tmp_path, "check", d)
     line = next(l for l in out.splitlines() if l.startswith("CHECK|modal-cli|"))
     assert "missing" in line and "No module named grpclib" in line
+
+
+# --- stale reaper.ini Python (Homebrew upgrade) ------------------------------
+
+def _make_python(path, version="3.11.9"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f'#!/bin/sh\necho "Python {version}"\n')
+    path.chmod(0o755)
+
+
+def _import_helpers():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("setup_helpers_under_test", HELPER)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_stale_brew_cellar_path_resolves_to_upgraded_python(tmp_path):
+    """reaper.ini keeps python@3.11/3.11.4_1 but brew upgraded it to 3.11.9_2."""
+    brew = tmp_path / "brew"
+    _make_python(brew / "opt" / "python@3.11" / "bin" / "python3.11")
+    ini = tmp_path / "reaper.ini"
+    ini.write_text("pythonlibpath64=" + str(
+        brew / "Cellar/python@3.11/3.11.4_1/Frameworks/Python.framework/Versions/3.11/lib") + "\n")
+    status, detail = _import_helpers()._chk_python(ini, prefixes=[str(brew)])
+    assert status == "ok", detail
+    assert "python3.11" in detail and "stale" in detail
+
+
+def test_stale_path_falls_back_to_newest_python_in_prefix(tmp_path):
+    brew = tmp_path / "brew"
+    _make_python(brew / "bin" / "python3.12", "3.12.1")
+    ini = tmp_path / "reaper.ini"
+    ini.write_text(f"pythonlibpath64={tmp_path}/gone/python@3.11/3.11.4/lib\n")
+    status, detail = _import_helpers()._chk_python(ini, prefixes=[str(brew)])
+    assert status == "ok" and "python3.12" in detail
+
+
+def test_stale_path_with_no_python_anywhere_reports_missing(tmp_path):
+    ini = tmp_path / "reaper.ini"
+    ini.write_text(f"pythonlibpath64={tmp_path}/gone/python@3.11/3.11.4/lib\n")
+    status, detail = _import_helpers()._chk_python(ini, prefixes=[str(tmp_path / "none")])
+    assert status == "missing" and "Python not found" in detail
+
+
+def test_lua_detect_python_survives_brew_upgrade(tmp_path):
+    lua = shutil.which("lua")
+    if not lua:
+        pytest.skip("lua not installed")
+    brew = tmp_path / "brew"
+    _make_python(brew / "opt" / "python@3.11" / "bin" / "python3.11")
+    res = tmp_path / "res"
+    res.mkdir()
+    (res / "reaper.ini").write_text(
+        f"pythonlibpath64={brew}/Cellar/python@3.11/3.11.4_1/Frameworks/Python.framework/Versions/3.11/lib\n")
+    script = f'''
+reaper = {{ GetResourcePath = function() return "{res}" end,
+            GetOS = function() return "OSX64" end }}
+package.path = "{PLUGINS}/shared/lib/?.lua;" .. package.path
+local common = dofile("{PLUGINS}/shared/lib/common.lua")
+common.PYTHON_PREFIXES = {{ "{brew}" }}
+local py, err = common.detect_reaper_python()
+io.write(py, "\\n", tostring(err))
+'''
+    out = subprocess.run([lua, "-e", script], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    py, err = out.stdout.split("\n", 1)
+    assert py == f"{brew}/opt/python@3.11/bin/python3.11", out.stdout
+    assert "missing Python" in err
+
+
+# --- every dependency installs without a compiler on every supported Mac -----
+
+def _locked_packages():
+    import tomllib
+    data = tomllib.loads((PLUGINS / "shared" / "uv.lock").read_text())
+    return [p for p in data["package"] if p["name"] != "reaper-ai-plugins-shared"]
+
+
+def test_lock_has_prebuilt_wheels_for_intel_and_apple_silicon_macs():
+    """Regression: cbor2 6.x had only arm64 wheels, so on an Intel Mac uv built
+    it from source ("can't find Rust compiler" — REAPER's PATH has no
+    ~/.cargo/bin) and Install deps failed. Every locked package must be
+    installable from a wheel on both Mac architectures."""
+    problems = []
+    for pkg in _locked_packages():
+        wheels = [w["url"].rsplit("/", 1)[-1] for w in pkg.get("wheels", [])]
+        if any(w.endswith("-none-any.whl") for w in wheels):
+            continue
+        intel = any("macosx" in w and ("x86_64" in w or "universal2" in w) for w in wheels)
+        arm = any("macosx" in w and ("arm64" in w or "universal2" in w) for w in wheels)
+        if not (intel and arm):
+            problems.append(f"{pkg['name']}=={pkg['version']} (intel={intel}, arm64={arm})")
+    assert not problems, "no prebuilt macOS wheel for: " + ", ".join(problems)
+
+
+def test_cbor2_is_pinned_below_6():
+    import tomllib
+    deps = tomllib.loads((PLUGINS / "shared" / "pyproject.toml").read_text())["project"]["dependencies"]
+    assert any(d.replace(" ", "").startswith("cbor2<6") for d in deps)
+    cbor2 = next(p for p in _locked_packages() if p["name"] == "cbor2")
+    assert cbor2["version"].startswith("5.")
+
+
+def test_uv_subprocesses_get_cargo_and_homebrew_on_path(tmp_path, monkeypatch):
+    cargo = tmp_path / ".cargo" / "bin"
+    cargo.mkdir(parents=True)
+    mod = _import_helpers()
+    monkeypatch.setattr(mod, "EXTRA_PATH_DIRS", (cargo, tmp_path / "missing"))
+    env = mod._tool_env({"PATH": "/usr/bin:/bin"})
+    parts = env["PATH"].split(os.pathsep)
+    assert str(cargo) in parts and str(tmp_path / "missing") not in parts
+    assert parts[:2] == ["/usr/bin", "/bin"]          # existing order preserved
+
+
+def test_rust_compiler_failure_gets_an_actionable_message(tmp_path):
+    body = "\n".join([
+        'echo "Building cbor2==6.1.1"',
+        'echo "error: can\'t find Rust compiler" >&2',
+        "exit 1",
+    ]) + "\n"
+    d = _fake_uv(tmp_path, body)
+    _, out = _run_helper(tmp_path, "sync-deps", d)
+    first = out.splitlines()[0]
+    assert "cbor2" in first and "no prebuilt wheel" in first and "Rust" in first
