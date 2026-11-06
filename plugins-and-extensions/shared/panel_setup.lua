@@ -364,22 +364,25 @@ function M.draw()
 
     g.spacing()
     -- HF Token
-    g.text("Hugging Face — secret for gated models (SAM Audio, Stable Audio Open, MIDI-GPT)")
-    if g.button("Create token at huggingface.co/settings/tokens", -1, t.BTN_H) then
-      os.execute('open "https://huggingface.co/settings/tokens" &')
-    end
+    g.text("Hugging Face — token for gated models")
+    g.text_wrapped("Some models (SAM Audio, Stable Audio Open, MIDI-GPT) ask you to accept "
+      .. "their license once. Do it with the same Hugging Face account that owns the token.")
     g.spacing()
-    -- The token must belong to an account that accepted each model's license.
-    g.text("Accept the license with that account:")
+    g.text_disabled("1. Accept the license of the models you plan to use:")
     for _, lic in ipairs({
       { "SAM Audio (large)",  "https://huggingface.co/facebook/sam-audio-large" },
       { "SAM Audio (base)",   "https://huggingface.co/facebook/sam-audio-base" },
       { "Stable Audio Open",  "https://huggingface.co/stabilityai/stable-audio-open-1.0" },
       { "MIDI-GPT",           "https://huggingface.co/Metacreation/MIDI-GPT" },
     }) do
-      if g.button(lic[1] .. "##lic_" .. lic[1], -1, t.BTN_H) then
+      if g.button(lic[1] .. "##lic_" .. lic[1], -1, t.BTN_H, { icon = "link" }) then
         os.execute('open "' .. lic[2] .. '" &')
       end
+    end
+    g.spacing()
+    g.text_disabled("2. Create a token and save it here:")
+    if g.button("Create token at huggingface.co/settings/tokens", -1, t.BTN_H, { icon = "link" }) then
+      os.execute('open "https://huggingface.co/settings/tokens" &')
     end
     g.spacing()
     g.row_label("HF Token:", t.sc(72))

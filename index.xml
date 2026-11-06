@@ -38,7 +38,9 @@ Requirements: Python 3.11+, uv, Modal account (free tier sufficient for most mod
       <version name="1.2.7" author="AI Music Lab" time="2026-11-06T00:00:00Z">
         <changelog><![CDATA[Changes:
   · Setup: the Hugging Face section now links to the license page of every gated model
-    (SAM Audio, Stable Audio Open, MIDI-GPT), so the token's account can accept them.
+    (SAM Audio, Stable Audio Open, MIDI-GPT), so the token's account can accept them,
+    with a short two-step explanation and a small "open in browser" icon on each button.
+  · Buttons no longer show the internal "##id" suffix of their label (e.g. "Open report").
   · Basic Pitch (local): on Intel Macs, numba/llvmlite/numpy are pinned to versions with
     x86_64 wheels, so "uv run" no longer tries to build llvmlite from source. Other
     platforms are not affected.]]></changelog>

@@ -419,10 +419,26 @@ end
 
 -- ── BUTTON ────────────────────────────────────────────────────────
 
+-- Small vector glyphs drawn with gfx primitives (no font/emoji dependency).
+-- (x, y) is the top-left corner of an s x s box.
+local ICONS = {
+  -- "open in browser": a box with an arrow leaving its top-right corner
+  link = function(x, y, s)
+    local b = math.max(1, math.floor(s * 0.22))
+    gfx.rect(x, y + b, s - b, s - b, 0)
+    gfx.line(x + math.floor(s * 0.35), y + math.floor(s * 0.65), x + s, y, 1)
+    gfx.line(x + math.floor(s * 0.55), y, x + s, y, 1)
+    gfx.line(x + s, y, x + s, y + math.floor(s * 0.45), 1)
+  end,
+}
+
 -- opts.solid: {norm={r,g,b}, hover={r,g,b}, active={r,g,b}} for solid-fill buttons
+-- opts.icon:  name from ICONS, drawn small before the label
+-- A "##id" suffix on the label only disambiguates widgets; it is never drawn.
 function M.button(label, w, h, opts)
   opts = opts or {}
   local t = theme
+  label = label:match("^(.-)##") or label
   h = h or t.BTN_H
   local nw = ctx.next_width; ctx.next_width = nil
   w = resolve_w(nw ~= nil and nw or w)
@@ -451,7 +467,14 @@ function M.button(label, w, h, opts)
     local tw, th = gfx.measurestr(label)
     local fc = t.C.FG
     gfx.set(fc[1], fc[2], fc[3], a)
-    gfx.x = x + math.floor((w - tw) / 2)
+    local draw_icon = opts.icon and ICONS[opts.icon]
+    local isz  = math.floor(h * 0.36)
+    local igap = draw_icon and (isz + 6) or 0
+    local lx = x + math.floor((w - tw - igap) / 2)
+    if draw_icon then
+      draw_icon(lx, gy + math.floor((h - isz) / 2), isz)
+    end
+    gfx.x = lx + igap
     gfx.y = gy + math.floor((h - th) / 2)
     gfx.drawstr(label)
   end

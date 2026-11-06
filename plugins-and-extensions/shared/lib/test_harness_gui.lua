@@ -125,6 +125,39 @@ case_("same_line_or_wrap exactly at the boundary still counts as fitting", funct
   assert(ctx.y == 0, tostring(ctx.y))
 end)
 
+-- ---------------------------------------------------------------------
+-- button: "##id" suffix is never drawn; optional small icon
+
+case_("button label drops the ##id suffix", function()
+  setup_region()
+  gui.button("MIDI-GPT##lic_MIDI-GPT", 200, 28)
+  assert(#drawstr_calls == 1, tostring(#drawstr_calls))
+  assert(drawstr_calls[1].s == "MIDI-GPT", drawstr_calls[1].s)
+end)
+
+case_("button icon is drawn with lines, stays inside the button and keeps the label clean", function()
+  setup_region()
+  local lines = 0
+  local orig = gfx.line
+  gfx.line = function() lines = lines + 1 end
+  gui.button("Stable Audio Open##lic_x", 200, 28, { icon = "link" })
+  gfx.line = orig
+  assert(lines == 3, tostring(lines))
+  assert(#drawstr_calls == 1 and drawstr_calls[1].s == "Stable Audio Open", drawstr_calls[1].s)
+  -- the label starts to the right of the icon, still inside the button (x 20..220)
+  assert(gfx.x > 20 and gfx.x < 220, tostring(gfx.x))
+end)
+
+case_("button without icon draws no lines", function()
+  setup_region()
+  local lines = 0
+  local orig = gfx.line
+  gfx.line = function() lines = lines + 1 end
+  gui.button("Plain", 200, 28)
+  gfx.line = orig
+  assert(lines == 0, tostring(lines))
+end)
+
 if failures > 0 then
   print(failures .. " failure(s)")
   os.exit(1)
