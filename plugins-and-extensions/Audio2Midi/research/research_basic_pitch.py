@@ -9,6 +9,11 @@
 #     "soundfile",
 #     "numpy",
 #     "setuptools<81",  # resampy (via basic-pitch) imports pkg_resources
+#     # Intel Macs: numba>=0.63 / llvmlite>=0.46 ship no x86_64 macOS wheels, so uv would
+#     # build llvmlite from source (needs LLVM) and fail. numba 0.62 needs numpy<2.4.
+#     "numba<0.63; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+#     "llvmlite<0.46; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+#     "numpy<2.4; sys_platform == 'darwin' and platform_machine == 'x86_64'",
 # ]
 # ///
 """Local audio -> MIDI for a SINGLE instrument (guitar, voice, piano, bass...)

@@ -364,9 +364,22 @@ function M.draw()
 
     g.spacing()
     -- HF Token
-    g.text("Hugging Face — secret for SAM Audio")
+    g.text("Hugging Face — secret for gated models (SAM Audio, Stable Audio Open, MIDI-GPT)")
     if g.button("Create token at huggingface.co/settings/tokens", -1, t.BTN_H) then
       os.execute('open "https://huggingface.co/settings/tokens" &')
+    end
+    g.spacing()
+    -- The token must belong to an account that accepted each model's license.
+    g.text("Accept the license with that account:")
+    for _, lic in ipairs({
+      { "SAM Audio (large)",  "https://huggingface.co/facebook/sam-audio-large" },
+      { "SAM Audio (base)",   "https://huggingface.co/facebook/sam-audio-base" },
+      { "Stable Audio Open",  "https://huggingface.co/stabilityai/stable-audio-open-1.0" },
+      { "MIDI-GPT",           "https://huggingface.co/Metacreation/MIDI-GPT" },
+    }) do
+      if g.button(lic[1] .. "##lic_" .. lic[1], -1, t.BTN_H) then
+        os.execute('open "' .. lic[2] .. '" &')
+      end
     end
     g.spacing()
     g.row_label("HF Token:", t.sc(72))
