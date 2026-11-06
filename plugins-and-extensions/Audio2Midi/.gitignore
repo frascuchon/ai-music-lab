@@ -5,7 +5,6 @@ evaluation/_ground_truth/
 research/__pycache__/
 research/*.pyc
 research/.venv/
-research/uv.lock
 
 # Fixtures de audio (descargados por fetch_fixtures.sh)
 research/fixtures/*.wav
