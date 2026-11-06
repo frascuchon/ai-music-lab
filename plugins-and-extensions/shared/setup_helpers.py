@@ -43,6 +43,8 @@ or equivalent), so the first real run simply absorbs the download time
 instead of requiring a separate manual pre-warm step.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -107,7 +109,68 @@ def _tail_error_message(cmd: list[str], returncode: int,
     if last:
         return f"{cmd_name} failed (code {returncode}): {last[:160]}"
     return (f"{cmd_name} failed (code {returncode}) with no output — "
-            "see reaperai_setup.log for details.")
+            f"see {REPORT_NAME} for details.")
+
+
+REPORT_NAME = "reaperai_setup_report.txt"
+
+
+def _probe(cmd: list[str]) -> str:
+    """One-line result of a diagnostic command; never raises."""
+    try:
+        rc, out, err = _run(cmd, timeout=20)
+    except Exception as exc:  # missing binary, timeout...
+        return f"<{type(exc).__name__}: {exc}>"
+    text = (out or err or "").splitlines()
+    return (text[0] if text else "") + ("" if rc == 0 else f"  [exit {rc}]")
+
+
+def _diagnostic_report(cmd: list[str], returncode: int,
+                       output: list[str]) -> str:
+    """Everything needed to debug (or paste to an assistant) a failed
+    install: what ran, in which environment, and the command's full output."""
+    uv = _find_uv()
+    lines = [
+        "AI Music Lab — setup failure report",
+        f"time:            {time.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"command:         {' '.join(map(str, cmd))}",
+        f"exit code:       {returncode}",
+        "",
+        "-- environment --",
+        f"platform:        {platform.platform()} ({platform.machine()})",
+        f"helper python:   {sys.executable} ({platform.python_version()})",
+        f"uv:              {uv} — {_probe([str(uv), '--version']) if uv else 'NOT FOUND'}",
+    ]
+    if uv:
+        lines += [
+            f"python for uv:   {_probe([str(uv), 'python', 'find', '--project', str(SCRIPT_DIR)])}",
+            f"project dir:     {SCRIPT_DIR}",
+        ]
+    lines += [
+        f"pyproject.toml:  {'ok' if (SCRIPT_DIR / 'pyproject.toml').is_file() else 'MISSING'}",
+        f"uv.lock:         {'ok' if (SCRIPT_DIR / 'uv.lock').is_file() else 'MISSING'}",
+        f"dir writable:    {os.access(SCRIPT_DIR, os.W_OK)}",
+        f"HOME:            {Path.home()}",
+        f"PATH:            {os.environ.get('PATH', '')}",
+        f"proxy env:       {', '.join(k for k in ('HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'https_proxy', 'http_proxy') if os.environ.get(k)) or 'none'}",
+        "requirements:    Python >=3.11 (modal 1.x supports 3.10–3.14), "
+        "network access to pypi.org",
+        "",
+        "-- command output --",
+    ]
+    lines += output or ["<no output>"]
+    return "\n".join(lines) + "\n"
+
+
+def _save_report(pf: Path | None, cmd: list[str], returncode: int,
+                 output: list[str]) -> Path | None:
+    """Write the diagnostic report next to the progress file; None on failure."""
+    target = (pf.parent if pf else Path(tempfile.gettempdir())) / REPORT_NAME
+    try:
+        target.write_text(_diagnostic_report(cmd, returncode, output))
+    except Exception:
+        return None
+    return target
 
 
 def _stream(pf: Path | None, cmd: list[str], *, done_msg: str = "Completed",
@@ -116,15 +179,19 @@ def _stream(pf: Path | None, cmd: list[str], *, done_msg: str = "Completed",
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, env=env)
     except OSError as exc:
-        write(pf, "error", 0, f"Failed to launch {Path(cmd[0]).name if cmd else cmd}: {exc}")
+        report = _save_report(pf, cmd, -1, [f"launch failed: {exc}"])
+        write(pf, "error", 0, f"Failed to launch {Path(cmd[0]).name if cmd else cmd}: {exc}",
+              [f"REPORT|{report}"] if report else None)
         return 1
     assert proc.stdout
     pct = 0.1
     tail: deque[str] = deque(maxlen=40)
+    full: deque[str] = deque(maxlen=500)
     for line in proc.stdout:
         line = line.rstrip()
         if line:
             tail.append(line)
+            full.append(line)
             write(pf, "running", min(pct, 0.95), line[:120])
             pct = min(pct + 0.04, 0.95)
     proc.stdout.close()
@@ -133,8 +200,12 @@ def _stream(pf: Path | None, cmd: list[str], *, done_msg: str = "Completed",
         write(pf, "done", 1.0, done_msg)
     else:
         tail_lines = list(tail)
+        report = _save_report(pf, cmd, proc.returncode, list(full))
+        extra = ["--- last output lines ---"] + tail_lines if tail_lines else []
+        if report:
+            extra.append(f"REPORT|{report}")
         write(pf, "error", pct, _tail_error_message(cmd, proc.returncode, tail_lines),
-              ["--- last output lines ---"] + tail_lines if tail_lines else None)
+              extra or None)
     return proc.returncode
 
 
@@ -338,7 +409,9 @@ def cmd_sync_deps(args) -> None:
     pf = Path(args.progress) if args.progress else None
     uv = _find_uv()
     if uv is None:
-        write(pf, "error", 0, "uv not found — install it first")
+        report = _save_report(pf, ["uv", "sync"], -1, ["uv not found"])
+        write(pf, "error", 0, "uv not found — install it first",
+              [f"REPORT|{report}"] if report else None)
         return
     write(pf, "running", 0.05, "Installing project dependencies (modal, protobuf)...")
     _stream(pf, [str(uv), "sync", "--project", str(SCRIPT_DIR)],
@@ -411,9 +484,15 @@ def cmd_modal_login(args) -> None:
                 write(pf, "done", 1.0, "modal token new completed")
             else:
                 tail_lines = list(tail)
+                report = _save_report(pf, [str(uv), "run", "--project",
+                                           str(SCRIPT_DIR), "modal", "token", "new"],
+                                      rc, tail_lines)
+                extra = ["--- last output lines ---"] + tail_lines if tail_lines else []
+                if report:
+                    extra.append(f"REPORT|{report}")
                 write(pf, "error", pct,
                       _tail_error_message(["modal token new"], rc, tail_lines),
-                      ["--- last output lines ---"] + tail_lines if tail_lines else None)
+                      extra or None)
             return
         time.sleep(0.5)
 
@@ -491,7 +570,11 @@ def main() -> None:
         # wait for a "done"/"error" state with no timeout, so the Setup tab
         # looks permanently hung instead of surfacing the real failure.
         pf = Path(getattr(args, "progress", "") or "") or None
-        write(pf, "error", 0, f"{args.cmd} crashed: {exc}")
+        import traceback
+        report = _save_report(pf, [sys.executable, __file__, args.cmd], -1,
+                              traceback.format_exc().splitlines())
+        write(pf, "error", 0, f"{args.cmd} crashed: {exc}",
+              [f"REPORT|{report}"] if report else None)
         raise
 
 

@@ -59,14 +59,24 @@ local PF = {
   hfsecret     = TMPDIR .. "reaperai_setup_hfsecret.txt",
 }
 
+-- Background command for one helper subcommand. If the interpreter dies
+-- before the helper can report anything (ImportError, SyntaxError, a Python
+-- too old for the script...), the progress file would stay on "running"
+-- forever and the user would only ever see a bare "Error"/spinner. The
+-- fallback turns that into an "error" line carrying the last log line.
+local function build_cmd(subcmd_args, pf)
+  local log = TMPDIR .. "reaperai_setup.log"
+  return string.format(
+    "( %s %s %s --progress %s >>%s 2>&1 || { head -n1 %s | grep -q '^running' && " ..
+    "printf 'error|0.00|%%s\\n' \"$(tail -n1 %s | cut -c1-160)\" > %s; } ) &",
+    q(PYTHON), q(HELPER), subcmd_args, q(pf), q(log), q(pf), q(log), q(pf))
+end
+
 local function launch(key, subcmd_args)
   local pf  = PF[key]
-  local log = TMPDIR .. "reaperai_setup.log"
   local f = io.open(pf, "w")
   if f then f:write("running|0.00|Starting..."); f:close() end
-  local cmd = string.format('%s %s %s --progress %s >>%s 2>&1 &',
-    q(PYTHON), q(HELPER), subcmd_args, q(pf), q(log))
-  os.execute(cmd)
+  os.execute(build_cmd(subcmd_args, pf))
 end
 
 -- ── STATE ────────────────────────────────────────────────────────
@@ -100,7 +110,7 @@ end
 init_checks()
 
 local ST = {
-  check_state     = "idle",
+  check_state     = "idle", check_msg     = "",
   uv_state        = "idle", uv_msg        = "",
   sync_state      = "idle", sync_msg      = "",
   login_state     = "idle", login_msg     = "",
@@ -125,6 +135,7 @@ local function poll_check()
     end
   elseif r.state == "error" then
     ST.check_state = "error"
+    ST.check_msg = r.msg or ""
   end
 end
 
@@ -135,6 +146,11 @@ local function poll_simple(state_key, msg_key, pf_key)
   if msg_key then ST[msg_key] = r.msg or "" end
   if r.state == "done" or r.state == "error" then
     ST[state_key] = r.state
+    ST[state_key .. "_report"] = nil
+    for _, line in ipairs(r.extra) do
+      local path = line:match("^REPORT|(.+)$")
+      if path then ST[state_key .. "_report"] = path end
+    end
   end
 end
 
@@ -143,10 +159,7 @@ local function run_check()
   for _, c in ipairs(CHECKS) do c.status = "?"; c.detail = "" end
   local f = io.open(PF.check, "w")
   if f then f:write("running|0.00|..."); f:close() end
-  local log = TMPDIR .. "reaperai_setup.log"
-  local cmd = string.format('%s %s check --progress %s >>%s 2>&1 &',
-    q(PYTHON), q(HELPER), q(PF.check), q(log))
-  os.execute(cmd)
+  os.execute(build_cmd("check", PF.check))
 end
 
 -- ── STATUS HELPERS ───────────────────────────────────────────────
@@ -164,6 +177,19 @@ local function status_icon(s)
 end
 
 local pending_recheck = false
+
+-- Error line + path of the diagnostic report written by setup_helpers.py,
+-- with a button to open it (so the user can debug it or paste it to an assistant).
+local function error_details(state_key, msg)
+  g.text_wrapped(msg ~= "" and msg or "Failed — see reaperai_setup.log")
+  local report = ST[state_key .. "_report"]
+  if report then
+    g.text_disabled("Full report: " .. report)
+    if g.button("Open report##" .. state_key, t.sc(110), t.ITEM_H) then
+      os.execute('open ' .. q(report) .. ' &')
+    end
+  end
+end
 
 -- ── MODULE ───────────────────────────────────────────────────────
 local M = { title = "Setup" }
@@ -262,6 +288,7 @@ function M.draw()
             g.text_colored(ST.uv_msg ~= "" and ST.uv_msg:sub(1,40) or "Installing...", "YELLOW")
           elseif ST.uv_state == "error" then
             g.same_line_or_wrap(t.sc(40), 6); g.text_colored("Error", "RED")
+            error_details("uv_state", ST.uv_msg)
           end
 
         elseif c.name == "modal-cli" and c.status == "missing" and uv_ok then
@@ -276,6 +303,7 @@ function M.draw()
             g.text_colored(ST.sync_msg ~= "" and ST.sync_msg:sub(1,38) or "Installing...", "YELLOW")
           elseif ST.sync_state == "error" then
             g.same_line_or_wrap(t.sc(40), 6); g.text_colored("Error", "RED")
+            error_details("sync_state", ST.sync_msg)
           end
 
         elseif c.name == "modal-auth" and c.status == "missing" then
@@ -290,6 +318,7 @@ function M.draw()
             g.same_line_or_wrap(t.sc(90), 6); g.text_colored(msg, "YELLOW")
           elseif ST.login_state == "error" then
             g.same_line_or_wrap(t.sc(80), 6); g.text_colored("Error — retry", "RED")
+            error_details("login_state", ST.login_msg)
           end
         end
       end
@@ -326,6 +355,7 @@ function M.draw()
             g.same_line_or_wrap(t.sc(80), 6); g.text_colored("Installing...", "YELLOW")
           elseif ST.demucs_state == "error" then
             g.same_line_or_wrap(t.sc(130), 6); g.text_colored("Error — check the log", "RED")
+            error_details("demucs_state", ST.demucs_msg)
           end
         end
       end

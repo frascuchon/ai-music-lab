@@ -28,6 +28,8 @@ Progress protocol (written to --progress):
     state|pct|msg\n          state = running | done | error
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import re
