@@ -105,8 +105,15 @@ TORCH_PINS = ("torch==2.10.0", "torchaudio==2.10.0", "torchvision==0.25.0",
 # Instalamos desde repo clonado, eliminando nano-vllm (paquete interno de StepFun que
 # no existe en PyPI para Linux pero es dependencia de ace-step; solo se necesita para
 # las fases LLM que este script deshabilita explícitamente).
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_acestep_edit_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg", "libsndfile1"])
     # Pasos de instalación separados para claridad y para que Modal cachee cada capa:
     # 1. Clonar repo y filtrar deps incompatibles con el mirror de Modal:

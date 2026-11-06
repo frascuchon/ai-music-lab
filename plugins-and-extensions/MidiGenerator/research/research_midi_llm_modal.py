@@ -61,8 +61,15 @@ SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 # Container image — CUDA 12.1 + vLLM + anticipation
 # ---------------------------------------------------------------------------
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_midi_llm_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg"])
     .pip_install(
         # Exact versions from the official MIDI-LLM requirements.txt

@@ -68,11 +68,21 @@ _TORCH_SKIP = "|".join([
     "wandb",    # no necesario para inferencia
     "ssr_eval", # paquete roto en PyPI
 ])
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_mustango_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg", "libsndfile1"])
     # 1. Clonar repo
-    .run_commands(f"git clone --depth 1 https://github.com/AMAAI-Lab/mustango {REPO_DIR}")
+    .run_commands(
+        f"git clone https://github.com/AMAAI-Lab/mustango {REPO_DIR} && "
+        f"git -C {REPO_DIR} checkout --detach 22348841584467cae584b0e7864327b379925e01"
+    )
     # 2. Pre-instalar torch (satisface deps antes de requirements.txt)
     .pip_install("torch", "torchaudio", "torchvision")
     # 2b. setuptools explícito: librosa (vía requirements.txt) importa

@@ -23,20 +23,32 @@ local TMPDIR    = common.TMPDIR
 local PYTHON, PYTHON_ERR = common.detect_reaper_python()
 
 -- ── CONSTANTS ────────────────────────────────────────────────────
--- Basic Pitch: one instrument, runs locally. YourMT3+: full mixes, runs on Modal.
-local A2M_MODELS  = { "basicpitch", "yourmt3" }
+-- Basic Pitch: one instrument, runs locally. MIROS: one instrument, Modal.
+-- YourMT3+: full mixes / several instruments, Modal.
+local A2M_MODELS  = { "basicpitch", "miros", "yourmt3" }
 local A2M_LABELS  = {
   "Basic Pitch  (single instrument, local, Apache 2.0)",
+  "MIROS  (single instrument, A10G, internal use)",
   "YourMT3+  (multi-instr., Apache 2.0)",
 }
 local A2M_SCRIPTS = {
   basicpitch = SCRIPT_DIR .. "research/research_basic_pitch.py",
+  miros      = SCRIPT_DIR .. "research/research_miros_modal.py",
   yourmt3    = SCRIPT_DIR .. "research/research_yourmt3_modal.py",
 }
--- Models that run on this machine (no Modal, no GPU choice)
+-- Models meant for ONE instrument. For several instruments / full mixes the
+-- panel points the user to YourMT3+.
+local A2M_SINGLE_INSTRUMENT = { basicpitch = true, miros = true }
+local A2M_SINGLE_WARNING =
+  "Single instrument only. For a mix or several instruments use YourMT3+."
+-- Models that run on this machine by default (no Modal, no GPU choice)
 local A2M_LOCAL = { basicpitch = true }
--- Default GPU per Modal model (T4 is enough for YourMT3+); index in A2M_GPUS
-local A2M_GPU_DEFAULT = { basicpitch = 1, yourmt3 = 3 }
+-- Local models that can also run on Modal (CPU container, still no GPU choice)
+local A2M_SCRIPTS_REMOTE = {
+  basicpitch = SCRIPT_DIR .. "research/research_basic_pitch_modal.py",
+}
+-- Default GPU per Modal model (MIROS needs A10G or better; T4 is enough for YourMT3+); index in A2M_GPUS
+local A2M_GPU_DEFAULT = { basicpitch = 1, miros = 1, yourmt3 = 3 }
 local A2M_GPUS   = { "A10G", "A100", "T4" }
 
 local TRANSCRIBE_PY = SCRIPT_DIR .. "transcribe.py"
@@ -58,6 +70,7 @@ local S = {
   gpu_idx         = A2M_GPU_DEFAULT[A2M_MODELS[1]],
   estimate_tempo  = true,  -- local models: false = use the project tempo
   onset           = 0.7,   -- Basic Pitch note threshold (higher = fewer notes)
+  remote          = false, -- Basic Pitch only: true = run on Modal instead of here
   -- runtime
   running         = false,
   pid             = nil,
@@ -72,6 +85,11 @@ local S = {
 }
 
 -- ── CORE HELPERS ─────────────────────────────────────────────────
+-- True when the model runs on this machine under the current settings.
+local function runs_locally(model_key)
+  return A2M_LOCAL[model_key] and not (S.remote and A2M_SCRIPTS_REMOTE[model_key])
+end
+
 local function add_log(s)
   table.insert(S.log, tostring(s):sub(1, 200))
   if #S.log > 200 then table.remove(S.log, 1) end
@@ -300,7 +318,8 @@ local function launch_transcribe()
   end
 
   local model_key = A2M_MODELS[S.model_idx]
-  local script    = A2M_SCRIPTS[model_key]
+  local local_run = runs_locally(model_key)
+  local script    = local_run and A2M_SCRIPTS[model_key] or A2M_SCRIPTS_REMOTE[model_key] or A2M_SCRIPTS[model_key]
   if not script then
     reaper.MB("Model script not configured: " .. tostring(model_key), "Audio2Midi", 0)
     return
@@ -317,10 +336,15 @@ local function launch_transcribe()
   local label = "Starting " .. (A2M_LABELS[S.model_idx] or model_key) .. "..."
   clear_run(label)
   add_log("Model: " .. (A2M_LABELS[S.model_idx] or model_key))
-  if A2M_LOCAL[model_key] then
+  if local_run then
     add_log("Execution: local (this machine)")
+  elseif A2M_LOCAL[model_key] then
+    add_log("Execution: remote (Modal, CPU)")
   else
     add_log("GPU: " .. A2M_GPUS[S.gpu_idx])
+  end
+  if A2M_SINGLE_INSTRUMENT[model_key] then
+    add_log("Note: " .. A2M_SINGLE_WARNING)
   end
 
   local section_args = ""
@@ -335,7 +359,8 @@ local function launch_transcribe()
   -- project tempo (the automatic estimate can be off by several BPM).
   local beat_arg = ""
   if A2M_LOCAL[model_key] then
-    beat_arg = string.format(" --onset-threshold %.2f", S.onset)
+    beat_arg = (local_run and "" or " --execution remote")
+      .. string.format(" --onset-threshold %.2f", S.onset)
     add_log(string.format("Note threshold: %.2f", S.onset))
     if S.estimate_tempo then
       add_log("Tempo: estimated from the audio")
@@ -344,6 +369,10 @@ local function launch_transcribe()
       beat_arg = beat_arg .. string.format(" --no-beat-tracking --bpm %.3f", bpm)
       add_log(string.format("Tempo: project (%.1f BPM)", bpm))
     end
+  end
+  -- MIROS runs beat tracking on Modal; "Estimate tempo" off skips it.
+  if model_key == "miros" and not S.estimate_tempo then
+    beat_arg = beat_arg .. " --no-beat-tracking"
   end
   local run_dir  = make_run_dir()
 
@@ -357,7 +386,7 @@ local function launch_transcribe()
     section_args, beat_arg,
     q(PROGRESS_F), q(LOG_F))
 
-  add_log(A2M_LOCAL[model_key] and "Launching local process..." or "Launching Modal process...")
+  add_log(local_run and "Launching local process..." or "Launching Modal process...")
   S.pid = common.launch_tracked(cmd)
 end
 
@@ -371,6 +400,7 @@ function M.init()
   add_log("Audio2Midi ready.")
   add_log("Python: " .. PYTHON)
   add_log("Basic Pitch: " .. A2M_SCRIPTS.basicpitch)
+  add_log("MIROS: " .. A2M_SCRIPTS.miros)
   add_log("YourMT3+: " .. A2M_SCRIPTS.yourmt3)
 end
 
@@ -393,6 +423,15 @@ function M.draw()
     S.gpu_idx = A2M_GPU_DEFAULT[A2M_MODELS[S.model_idx]] or 1
   end
   g.spacing()
+
+  -- ── EXECUTION (Local / Remote) — only models that have both backends ──
+  if A2M_SCRIPTS_REMOTE[A2M_MODELS[S.model_idx]] then
+    g.row_label("Execution:", t.sc(68))
+    g.next_width(t.sc(150))
+    local EXEC_LABELS = { "Local (this machine)", "Remote (Modal)" }
+    S.remote = widgets.combo("##a2m_exec", S.remote and 2 or 1, EXEC_LABELS) == 2
+    g.spacing()
+  end
 
   -- ── SOURCE (fixed, directly below Model — same position across every
   -- tab that has a source file to pick) ────────────────────────────
@@ -445,12 +484,12 @@ function M.draw()
   S.gpu_idx = widgets.combo("##a2m_gpu", S.gpu_idx, A2M_GPUS)
   if A2M_LOCAL[cur_model] then g.end_disabled() end
 
-  -- Tempo source (local models only)
-  if A2M_LOCAL[cur_model] then
+  -- Tempo source (local models and MIROS)
+  if A2M_LOCAL[cur_model] or cur_model == "miros" then
     g.same_line(t.sc(18))
     local et_changed, et_new = g.checkbox("Estimate tempo##et", S.estimate_tempo)
     if et_changed then S.estimate_tempo = et_new end
-    if not S.estimate_tempo then
+    if not S.estimate_tempo and cur_model ~= "miros" then
       g.same_line(t.sc(8))
       g.text_disabled("(uses project tempo)")
     end
@@ -469,9 +508,17 @@ function M.draw()
   -- Cost hint
   local hints = {
     basicpitch = "Runs on this machine, free  |  best for ONE instrument (guitar, voice, piano)",
+    miros      = "A10G: ~$0.05/min  |  MIROS requires A10G minimum (flash-attn Ampere+)  |  ONE instrument",
     yourmt3    = "A10G: ~$0.05/min  |  YourMT3+ works on T4 and above  |  for full mixes",
   }
-  g.text_disabled(hints[cur_model] or "")
+  if A2M_LOCAL[cur_model] and S.remote and A2M_SCRIPTS_REMOTE[cur_model] then
+    g.text_disabled("Runs on Modal (CPU container, a few cents)  |  best for ONE instrument")
+  else
+    g.text_disabled(hints[cur_model] or "")
+  end
+  if A2M_SINGLE_INSTRUMENT[cur_model] then
+    g.text_colored("⚠ " .. A2M_SINGLE_WARNING, "YELLOW")
+  end
 
   g.spacing()
   g.separator()

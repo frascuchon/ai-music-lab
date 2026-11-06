@@ -192,7 +192,7 @@ def main() -> int:
 
     # ACE-Step generation (acestep_gen) only — advanced inference params.
     # All optional; the Modal script clamps to valid ranges regardless.
-    p.add_argument("--dit-variant",     default="turbo", choices=["turbo", "base"],
+    p.add_argument("--dit-variant",     default="sft", choices=["turbo", "sft", "base"],
                    dest="dit_variant")
     p.add_argument("--steps",           type=int,   default=None)
     p.add_argument("--guidance-scale",  type=float, default=None, dest="guidance_scale")
@@ -324,7 +324,14 @@ def main() -> int:
                 cmd += ["--thinking"]
             if args.lm_temperature is not None:
                 cmd += ["--lm-temperature", str(args.lm_temperature)]
-            if args.lora_path.strip():
+            if args.dit_variant == "base" and not args.lora_path.strip():
+                write_progress(pf, "error", 0,
+                               "ACE-Step base needs a LoRA adapter (--lora-path); "
+                               "use the sft or turbo checkpoint without one.")
+                return 1
+            if args.lora_path.strip() and args.dit_variant != "base":
+                print("[text2audio] --lora-path ignored: LoRA is only used with the base checkpoint.")
+            elif args.lora_path.strip():
                 if not Path(args.lora_path).expanduser().is_dir():
                     write_progress(pf, "error", 0,
                                    f"LoRA adapter folder not found: {args.lora_path}")

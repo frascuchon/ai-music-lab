@@ -90,8 +90,15 @@ STRENGTH_MAP = {"subtle": 0.10, "moderate": 0.05, "strong": 0.0}
 # Container image
 # ---------------------------------------------------------------------------
 # audiocraft con MelodyFlow instalado desde el Space oficial (repo git de HF).
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_melodyflow_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     # PyAV (dep de audiocraft/encodec) requiere libav headers y pkg-config.
     # GIT_LFS_SKIP_SMUDGE=1 evita que pip falle al clonar el Space HF que tiene archivos LFS.
     .apt_install([
@@ -106,6 +113,7 @@ image = (
     # GIT_LFS_SKIP_SMUDGE=1 evita la descarga de archivos LFS del Space.
     .run_commands(
         "GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/spaces/facebook/MelodyFlow /root/MelodyFlow && "
+        "git -C /root/MelodyFlow checkout --detach 19da0cf4e7a8a33cb2f59cbc2f3c946ee60dc04e && "
         "pip install /root/MelodyFlow"
     )
     .pip_install("soundfile>=0.12.1")

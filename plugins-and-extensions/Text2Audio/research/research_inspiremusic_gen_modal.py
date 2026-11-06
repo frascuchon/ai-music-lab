@@ -56,17 +56,25 @@ MAX_GENERATE_SECONDS = float(os.environ.get("INSPIREMUSIC_MAX_SECONDS", "30.0"))
 # ---------------------------------------------------------------------------
 # Container image (idéntica a research_inspiremusic_modal.py)
 # ---------------------------------------------------------------------------
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_inspiremusic_gen_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg", "libsndfile1", "sox", "libsox-dev"])
-    .run_commands(f"git clone --recursive {REPO_URL} {REPO_DIR}")
     .run_commands(
-        f"grep -v 'flash[_-]attn' {REPO_DIR}/requirements.txt > /tmp/req_im.txt && "
-        "pip install -r /tmp/req_im.txt"
+        f"git clone {REPO_URL} {REPO_DIR} && "
+        f"git -C {REPO_DIR} checkout --detach 0aefb55b58b8df91accdc4aed20c99e44741e0a7 && "
+        f"git -C {REPO_DIR} submodule update --init --recursive"
     )
-    .pip_install("soundfile>=0.12.1", "huggingface_hub>=0.24.0")
-    .run_commands("pip install torchcodec")
-    .run_commands("pip install 'peft>=0.17.0'")
+    # requirements.txt pins peft==0.13.2 and a later step upgrades it, which pip's
+    # resolver rejects once versions are constrained. Install the exact set of
+    # packages of the working image (repo requirements, torchcodec, peft, ...) instead.
+    .run_commands("pip install --no-deps -r /opt/modal_constraints.txt")
     .run_commands(
         f"sed -i 's/attn_implementation=\"flash_attention_2\"/attn_implementation=\"sdpa\"/g'"
         f" {REPO_DIR}/inspiremusic/transformer/qwen_encoder.py"

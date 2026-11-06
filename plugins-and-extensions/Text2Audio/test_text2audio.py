@@ -288,3 +288,53 @@ class TestExecutionDispatch(TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestAceStepBaseRequiresLora(TestCase):
+    """ACE-Step base is only usable with a LoRA/LoKr adapter; sft/turbo never take one."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="t2a_lora_"))
+        self.progress_file = self.tmpdir / "progress.txt"
+        self.out_dir = self.tmpdir / "out"
+        self.shared_dir = self.tmpdir / "shared"
+        self.shared_dir.mkdir()
+        (self.shared_dir / "pyproject.toml").write_text("[project]\nname='shared'\n")
+        self.script = self.tmpdir / "research_acestep_gen_modal.py"
+        self.script.write_text("import sys; print(sys.argv[1:]); sys.exit(1)\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run(self, *extra):
+        args = [sys.executable, str(SCRIPT), "--shared-dir", str(self.shared_dir),
+                "--script", str(self.script), "--model", "acestep_gen",
+                "--mode", "generate", "--out-dir", str(self.out_dir),
+                "--prompt", "a calm piano loop", "--progress", str(self.progress_file), *extra]
+        return subprocess.run(args, capture_output=True, text=True, timeout=30)
+
+    def test_base_without_lora_is_rejected_before_launching_modal(self):
+        proc = self._run("--dit-variant", "base")
+        self.assertEqual(proc.returncode, 1)
+        state, _, msg, _ = parse_progress(self.progress_file)
+        self.assertEqual(state, "error")
+        self.assertIn("needs a LoRA", msg)
+
+    def test_base_with_missing_lora_folder_is_rejected(self):
+        self._run("--dit-variant", "base", "--lora-path", str(self.tmpdir / "nope"))
+        _, _, msg, _ = parse_progress(self.progress_file)
+        self.assertIn("not found", msg)
+
+    def test_base_with_lora_folder_forwards_it(self):
+        lora = self.tmpdir / "adapter"; lora.mkdir()
+        proc = self._run("--dit-variant", "base", "--lora-path", str(lora))
+        self.assertNotIn("needs a LoRA", self.progress_file.read_text())
+        self.assertIn("--lora-path", proc.stdout + self.progress_file.read_text() + proc.stderr)
+
+    def test_sft_ignores_lora_and_is_not_blocked(self):
+        lora = self.tmpdir / "adapter"; lora.mkdir()
+        proc = self._run("--dit-variant", "sft", "--lora-path", str(lora))
+        text = self.progress_file.read_text()
+        self.assertNotIn("needs a LoRA", text)
+        self.assertNotIn("--lora-path", text)
+        self.assertIn("ignored", proc.stdout)

@@ -1,5 +1,5 @@
 -- @description AI Music Lab - unified plugin (Text2Audio, StemsSeparator, Audio2Midi, MidiGenerator, Setup)
--- @version 1.2.4
+-- @version 1.2.5
 -- @author AI Music Lab
 -- @about Single REAPER window with a tab per tool: AudioGenerator, StemsSeparator,
 --        Audio2Midi, MidiGenerator and Setup. Replaces the 4 previous
@@ -38,17 +38,7 @@ local SETUP_TAB_IDX = #PANELS + 1
 local ALL_PANELS = { text2audio, stemssep, audio2midi, midigenerator, setup_panel }
 
 -- ── STATE ────────────────────────────────────────────────────────
--- A deprecated per-plugin stub (see Audio2Midi/ai-music-lab-Audio2Midi.lua
--- etc.) can set this global before dofile-ing this script to land on the
--- right tab instead of always opening on the first one.
-local initial_tab = 1
-if _G.AI_MUSIC_LAB_INITIAL_TAB then
-  for i, p in ipairs(ALL_PANELS) do
-    if p.title == _G.AI_MUSIC_LAB_INITIAL_TAB then initial_tab = i; break end
-  end
-  _G.AI_MUSIC_LAB_INITIAL_TAB = nil
-end
-local S = { tab = initial_tab }
+local S = { tab = 1 }
 
 -- Global window collapse (all tabs): reduces the window to header-only.
 -- State is persisted across REAPER sessions via ExtState so the plugin
@@ -95,15 +85,8 @@ local IS_MAC = _os_id:find("osx") ~= nil or _os_id:find("mac") ~= nil
 -- stays anchored. This mirrors the quit+init pattern this script already
 -- uses once at startup (above) to handle a relaunch.
 local function resize_window(h)
-  local dock, wx, wy = gfx.dock(-1, 0, 0, 0, 0)
-  local w, old_h = gfx.w, gfx.h
-  if IS_MAC then
-    wy = collapse_state.anchor_top_y(wy, old_h, h)
-  end
-  gfx.quit()
-  gfx.init(WINDOW_TITLE, w, h, dock, wx, wy)
-  gfx.ext_retina = 1
-  theme.init_fonts(theme.SCALE)
+  collapse_state.recreate_window(gfx, WINDOW_TITLE, h, theme.SCALE, IS_MAC,
+    function() theme.init_fonts(theme.SCALE) end)
 end
 
 -- ── MAIN LOOP ────────────────────────────────────────────────────
@@ -152,7 +135,8 @@ local function loop()
     S.collapsed = collapse_state.toggle(S.collapsed)
     reaper.SetExtState(EXTSTATE_NS, "collapsed", S.collapsed and "1" or "0", true)
     reaper.SetExtState(EXTSTATE_NS, "expanded_h", tostring(S.expanded_h), true)
-    resize_window(collapse_state.target_height(S.collapsed, S.expanded_h, header_height()))
+    resize_window(collapse_state.target_height(
+      S.collapsed, S.expanded_h * theme.SCALE, header_height()))
     -- The window was just torn down and recreated: stop drawing into this
     -- frame (its gfx context is gone) and let the next frame draw cleanly
     -- against the freshly (re)created window. Update mb_prev manually
@@ -195,7 +179,10 @@ local function loop()
 
     -- Remember the current window height so it can be restored on expand,
     -- even if the user resized the window manually while expanded.
-    S.expanded_h = collapse_state.track_expanded_h(false, gfx.h, S.expanded_h)
+    -- Stored in logical units (see collapse_state.to_logical) so it
+    -- survives the scale change between sessions and recreates.
+    S.expanded_h = collapse_state.track_expanded_h(
+      false, collapse_state.to_logical(gfx.h, theme.SCALE), S.expanded_h)
   end
 
   gui.frame_end()

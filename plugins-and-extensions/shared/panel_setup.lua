@@ -181,6 +181,7 @@ local pending_recheck = false
 -- Error line + path of the diagnostic report written by setup_helpers.py,
 -- with a button to open it (so the user can debug it or paste it to an assistant).
 local function error_details(state_key, msg)
+  local g, t = gui, theme
   g.text_wrapped(msg ~= "" and msg or "Failed — see reaperai_setup.log")
   local report = ST[state_key .. "_report"]
   if report then

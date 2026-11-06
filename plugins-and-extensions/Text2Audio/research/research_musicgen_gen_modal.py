@@ -52,8 +52,15 @@ MAX_SECONDS = 30.0
 # ---------------------------------------------------------------------------
 # Container image
 # ---------------------------------------------------------------------------
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_musicgen_gen_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg", "libsndfile1"])
     .pip_install(
         "torch", "torchaudio",

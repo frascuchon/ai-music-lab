@@ -62,24 +62,31 @@ DEFAULT_GPU = os.environ.get("TEXT2MIDI_GPU", "A10G")
 # ---------------------------------------------------------------------------
 # Container image — CUDA 12 + PyTorch + dependencias text2midi
 # ---------------------------------------------------------------------------
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_text2midi_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg"])
     .pip_install(
-        # Core ML
-        "torch==2.4.0",
-        "transformers==4.44.2",
+        # Core ML — torch/transformers/accelerate versions come from the constraints
+        # file (they are what the repo's requirements.txt, installed last, ends up with).
+        "torch",
+        "transformers",
         "huggingface_hub>=0.24",
         # text2midi deps (from requirements.txt)
         "miditok>=3.0.3",
         "miditoolkit>=0.1.16",
         "pretty_midi>=0.2.10",
         "mido>=1.3",
-        "accelerate>=0.34",
+        "accelerate",
         "jsonlines>=4.0",
         "psutil>=6.0",
         "tqdm>=4.66",
-        extra_index_url="https://download.pytorch.org/whl/cu121",
     )
     .pip_install(
         # MoE layer used by the decoder (latest available is 0.1.x)
@@ -87,7 +94,8 @@ image = (
         "einops>=0.8",
     )
     .run_commands(
-        f"git clone --depth=1 {REPO_URL} {REPO_DIR}",
+        f"git clone {REPO_URL} {REPO_DIR}",
+        f"git -C {REPO_DIR} checkout --detach f3245ee402b29ba00b86c6eb9813032f3f05954f",
         f"pip install -r {REPO_DIR}/requirements.txt -q 2>/dev/null || true",
     )
 )

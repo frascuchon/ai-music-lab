@@ -117,21 +117,30 @@ def _clap_text_embed(clap_model, text: str) -> "torch.Tensor":
     return torch.nn.functional.normalize(emb.float(), dim=-1)
 
 
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent / "shared" / "modal_constraints"
+                / "modal_sam_audio.txt")
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg", "libsndfile1"])
-    .pip_install(
-        "soundfile",
-        "tqdm",
-        "huggingface_hub",
-        "ftfy",
-        "decord",
-    )
-    .pip_install(
-        "torch",
-        "torchaudio",
-        "xformers",
-        "git+https://github.com/facebookresearch/sam-audio.git",
+    # Exact set of PyPI packages of the working image, installed without dependency
+    # resolution: sam-audio's own requirements (dacvae, protobuf, ...) contradict each
+    # other, and the protobuf>=5 the Modal client needs is applied on top of them.
+    .run_commands("pip install --no-deps -r /opt/modal_constraints.txt")
+    # sam-audio and the five packages it takes from git (referenced there without a
+    # revision, i.e. HEAD), each at the commit this image was validated with.
+    .run_commands(
+        "pip install --no-deps "
+        "'sam_audio @ git+https://github.com/facebookresearch/sam-audio.git@68b48d48fff1ad776d3afefbe634eb5f5d60ba7b' "
+        "'dacvae @ git+https://github.com/facebookresearch/dacvae.git@414c20785fc3a28373073ea8ef7a1316eeeaca6e' "
+        "'imagebind @ git+https://github.com/facebookresearch/ImageBind.git@53680b02d7e37b19b124fa37bae4b6c98c38f5be' "
+        "'laion_clap @ git+https://github.com/lematt1991/CLAP.git@b85cb7ecac0af7d064cbf03ebd990e709e959fe7' "
+        "'perception-models @ git+https://github.com/facebookresearch/perception_models@e72b6810b1133e1c879f2cc965d276eb73803f1f' "
+        "'pytorchvideo @ git+https://github.com/facebookresearch/pytorchvideo.git@6cdc929315aab1b5674b6dcf73b16ec99147735f'"
     )
     .run_commands(
         "python3 -c 'import base64; exec(base64.b64decode("

@@ -97,11 +97,19 @@ PRECISION = "16"
 # ---------------------------------------------------------------------------
 # Container image
 # ---------------------------------------------------------------------------
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_yourmt3_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg", "sox", "libsndfile1"])
     .run_commands(
-        f"GIT_LFS_SKIP_SMUDGE=1 git clone {SPACE_REPO} {SPACE_DIR}"
+        f"GIT_LFS_SKIP_SMUDGE=1 git clone {SPACE_REPO} {SPACE_DIR} && "
+        f"git -C {SPACE_DIR} checkout --detach 5e66c1ea173a8186e0d20432b841d3180cc015b5"
     )
     .run_commands(
         # Audit de la estructura clonada — aparece en los logs del build
@@ -128,7 +136,7 @@ image = (
         "psutil>=6.0",
         "wandb",          # importado en ymt3.py (top-level); solo necesario en runtime, no para log
         "omegaconf>=2.3", # usado por init_train
-        "git+https://github.com/craffel/mir_eval.git",
+        "git+https://github.com/craffel/mir_eval.git@fe73b3533737814f83dbd9739f06e90f5f82f758",
     )
 )
 

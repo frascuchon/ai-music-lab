@@ -19,8 +19,15 @@ import modal
 weights_vol = modal.Volume.from_name("midigpt-weights", create_if_missing=True)
 HF_CACHE = "/vol/weights/hf_cache"
 
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_midigpt_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .pip_install("midigpt[inference]", "huggingface_hub", "pretty_midi", "mido", "numpy")
 )
 app = modal.App("midigpt-research", image=image)

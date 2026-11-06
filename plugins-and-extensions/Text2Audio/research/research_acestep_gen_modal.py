@@ -97,17 +97,37 @@ DEFAULT_SEED = int(os.environ.get("ACESTEP_SEED", "42"))
 DIT_CONFIG_BY_VARIANT = {
     "turbo": "acestep-v15-turbo",
     "base": "acestep-v15-base",
+    "sft": "acestep-v15-sft",
 }
 STEPS_RANGE_BY_VARIANT = {
     "turbo": (1, 20),
     "base": (1, 200),
+    "sft": (1, 200),
 }
-STEPS_DEFAULT_BY_VARIANT = {"turbo": 8, "base": 32}
+# Per-variant defaults, chosen from a Modal sweep (8 samples/config, A10G, CLAP
+# text-audio score; floor = worst sample). Base, no LoRA:
+#   32 steps / guidance 7   mean 0.479  floor 0.38   <- default (most stable)
+#   50 steps / guidance 5   mean 0.480  floor 0.27-0.34
+#   64 steps / guidance 8   mean 0.437  floor 0.13  (0.18 with ADG): some samples
+#   come out as near-noise, so the "best quality" recipe in ACE-Step's docs
+#   (64 steps, guidance 7-9, ADG) is NOT used; high guidance/ADG are opt-in.
+# Turbo scored higher (mean 0.518) and is far faster. shift=3.0 everywhere
+# (the library default of 1.0 is not what the official UI uses).
+STEPS_DEFAULT_BY_VARIANT = {"turbo": 8, "base": 32, "sft": 50}
+GUIDANCE_DEFAULT_BY_VARIANT = {"turbo": 7.0, "base": 7.0, "sft": 7.0}
 GUIDANCE_SCALE_RANGE = (1.0, 15.0)  # base/SFT only — ignored (hard-overridden) for turbo
 SHIFT_RANGE = (1.0, 5.0)
 CFG_INTERVAL_RANGE = (0.0, 1.0)      # base/SFT only
 LM_TEMPERATURE_RANGE = (0.0, 2.0)
 LORA_SCALE_RANGE = (0.0, 1.0)       # set_lora_scale() clamps to this anyway; matched here for clear logging
+
+
+# ACE-Step conditions the DiT on caption + lyrics. An empty lyrics string is NOT
+# "no vocals": the DiT then invents sung/mumbled vocals over the caption.
+# GenerationParams.instrumental is not read on the direct DiT path (only by the
+# LM/UI helpers); the official Gradio "Instrumental" checkbox simply sets
+# lyrics="[Instrumental]" (ui_helpers.py), which is what we do by default.
+INSTRUMENTAL_LYRICS = "[Instrumental]"
 
 
 def _clamp(value, lo, hi, name: str):
@@ -145,8 +165,15 @@ TORCH_PINS = ("torch==2.10.0", "torchaudio==2.10.0", "torchvision==0.25.0",
 # ---------------------------------------------------------------------------
 # Container image (idéntica a la del script de edición)
 # ---------------------------------------------------------------------------
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_acestep_gen_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg", "libsndfile1"])
     .run_commands(
         "git clone https://github.com/ace-step/ACE-Step-1.5.git /root/ACEStep && "
@@ -166,7 +193,29 @@ app = modal.App("acestep-gen-inference", image=image)
 # Helpers (dentro del container)
 # ---------------------------------------------------------------------------
 
-def _init_handlers(dit_variant: str = "turbo", lora_path: str = "", lora_scale: float = 1.0):
+LM_MODEL = "acestep-5Hz-lm-1.7B"   # ACE-Step's default 5Hz LM (fits an A10G next to the DiT)
+
+
+def _init_llm(llm_handler) -> None:
+    """Load the 5Hz LM so thinking=True actually runs. generate_music() only uses the
+    LM when llm_handler.llm_initialized, so a bare LLMHandler() silently turns
+    "thinking" into a no-op (the DiT alone then gets no audio-code hints).
+    The "pt" backend is used because nano-vllm is stripped from the image."""
+    from acestep.model_downloader import ensure_lm_model
+
+    ckpt = f"{WEIGHTS_MOUNT}/checkpoints"
+    ok, msg = ensure_lm_model(LM_MODEL, Path(ckpt))
+    if not ok:
+        raise RuntimeError(f"Could not fetch LM {LM_MODEL}: {msg}")
+    status, success = llm_handler.initialize(
+        checkpoint_dir=ckpt, lm_model_path=LM_MODEL, backend="pt", device="cuda")
+    if not success:
+        raise RuntimeError(f"Could not initialize LM {LM_MODEL}: {status}")
+    print(f"[init] LM {LM_MODEL} ready")
+
+
+def _init_handlers(dit_variant: str = "turbo", lora_path: str = "", lora_scale: float = 1.0,
+                   thinking: bool = False):
     from acestep.handler import AceStepHandler
     from acestep.llm_inference import LLMHandler
 
@@ -178,8 +227,12 @@ def _init_handlers(dit_variant: str = "turbo", lora_path: str = "", lora_scale: 
         config_path=dit_config,
         device="cuda",
     )
-    llm_handler = LLMHandler()  # sin .initialize() — fases LM omitidas
-    print(f"[init] DiT {dit_config} listo ({time.time()-t0:.1f}s), LM deshabilitado")
+    llm_handler = LLMHandler()
+    print(f"[init] DiT {dit_config} listo ({time.time()-t0:.1f}s)")
+    if thinking:
+        _init_llm(llm_handler)
+    else:
+        print("[init] LM deshabilitado (thinking=False)")
 
     if lora_path:
         _load_lora(dit_handler, lora_path, lora_scale)
@@ -278,6 +331,7 @@ def generate_batch(
     lm_temperature: float = 0.85,
     lora_files: dict[str, bytes] | None = None,
     lora_scale: float = 1.0,
+    lyrics: str = INSTRUMENTAL_LYRICS,
 ) -> list[bytes]:
     """
     Cada job: {"text": str, "seconds": float}.
@@ -303,7 +357,8 @@ def generate_batch(
 
     lora_path = _materialize_lora_dir(lora_files)
     dit_handler, llm_handler = _init_handlers(
-        dit_variant=dit_variant, lora_path=lora_path, lora_scale=lora_scale)
+        dit_variant=dit_variant, lora_path=lora_path, lora_scale=lora_scale,
+        thinking=thinking)
     weights_vol.commit()
 
     results = []
@@ -313,6 +368,7 @@ def generate_batch(
             wav_bytes = _generate_one(dit_handler, llm_handler, {
                 "task_type": "text2music",
                 "caption": job["text"],
+                "lyrics": job.get("lyrics", lyrics),
                 "duration": float(job.get("seconds") or 30.0),
                 "thinking": thinking,
                 "inference_steps": inference_steps,
@@ -389,17 +445,18 @@ def main(
     seed: int = DEFAULT_SEED,
     out_dir: str = ".",
     force: bool = False,
-    dit_variant: str = "turbo",
+    dit_variant: str = "sft",
     steps: int = -1,  # -1 = use STEPS_DEFAULT_BY_VARIANT[dit_variant]
-    guidance_scale: float = 7.0,
+    guidance_scale: float = -1.0,  # -1 = use GUIDANCE_DEFAULT_BY_VARIANT[dit_variant]
     shift: float = 3.0,
-    use_adg: bool = False,
+    use_adg: bool = False,  # opt-in on the CLI; the REAPER panel defaults it on for base
     cfg_interval_start: float = 0.0,
     cfg_interval_end: float = 1.0,
     thinking: bool = False,
     lm_temperature: float = 0.85,
     lora_path: str = "",
     lora_scale: float = 1.0,
+    lyrics: str = INSTRUMENTAL_LYRICS,
 ):
     """
     Genera música desde un prompt de texto (ACE-Step text2music).
@@ -412,10 +469,13 @@ def main(
             --lora-path /path/to/my_adapter --lora-scale 0.8 \\
             --out-dir /tmp/acestep_gen_test
 
-    dit_variant: "turbo" (fast, 8-20 steps, no CFG — the default) or "base"
+    dit_variant: "sft" (default: best quality, 50 steps, CFG), "turbo" (fast, 8-20
+    steps, no CFG, but judged lower quality by ear) or "base"
     (32-200 steps, CFG-capable via guidance_scale/use_adg/cfg_interval_*).
-    steps=-1 (default) picks the variant's own default (8 for turbo, 32 for
-    base) — see STEPS_DEFAULT_BY_VARIANT above.
+    steps=-1 / guidance_scale=-1 (defaults) pick the variant's own default (turbo:
+    8 steps; base: 32 steps, guidance 7.0; ADG is opt-in via --use-adg) — see the *_DEFAULT_BY_VARIANT
+    tables above. lyrics defaults to "[Instrumental]" (empty lyrics make the DiT
+    invent vocals).
 
     Todos los parámetros de inferencia se clampan a rangos válidos (ver
     STEPS_RANGE_BY_VARIANT/GUIDANCE_SCALE_RANGE/etc. arriba) tanto aquí como dentro de
@@ -438,6 +498,8 @@ def main(
         dit_variant_key = "turbo"
     if steps is None or steps < 0:
         steps = STEPS_DEFAULT_BY_VARIANT[dit_variant_key]
+    if guidance_scale is None or guidance_scale < 0:
+        guidance_scale = GUIDANCE_DEFAULT_BY_VARIANT[dit_variant_key]
 
     lora_files = None
     if lora_path:
@@ -463,6 +525,7 @@ def main(
         lm_temperature=lm_temperature,
         lora_files=lora_files,
         lora_scale=lora_scale,
+        lyrics=lyrics,
     )
     if not wav_bytes:
         print("[main] ERROR: la generación devolvió vacío.")

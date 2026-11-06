@@ -76,8 +76,15 @@ LAST_CALL_FILE = "/tmp/.anticipatory_last_call.json"
 # ---------------------------------------------------------------------------
 # Container image — PyTorch CUDA 12.1 + anticipation desde GitHub
 # ---------------------------------------------------------------------------
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_anticipatory_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.12")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git"])  # requerido para pip install git+...
     .pip_install(
         "torch",
@@ -90,7 +97,7 @@ image = (
         extra_index_url="https://download.pytorch.org/whl/cu121",
     )
     .run_commands(
-        "pip install 'git+https://github.com/jthickstun/anticipation.git'",
+        "pip install 'git+https://github.com/jthickstun/anticipation.git@af37397922665a0fb8d474d7988b0f3755a38d45'",
     )
     # Melody-only accompaniment: automatic prompt + channel->instrument mapping
     .add_local_file(str(Path(__file__).resolve().parent.parent / "harmony.py"),

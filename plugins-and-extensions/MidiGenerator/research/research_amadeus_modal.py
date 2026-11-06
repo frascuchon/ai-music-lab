@@ -74,12 +74,20 @@ DEFAULT_GPU = os.environ.get("AMADEUS_GPU", "A10G")
 # ---------------------------------------------------------------------------
 # Container image — CUDA 12 + PyTorch + dependencias Amadeus + repo clonado
 # ---------------------------------------------------------------------------
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_amadeus_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "fluidsynth", "fluid-soundfont-gm", "ffmpeg"])
     .run_commands(
         # Clonar el repo de Amadeus (código del modelo y utils)
         f"git clone https://github.com/lingyu123-su/Amadeus {AMADEUS_DIR}",
+        f"git -C {AMADEUS_DIR} checkout --detach 91035af8d17a9d86b39cd26d8f476b5046643e60",
         # Bug en sub_decoder_zoo.py: `from turtle import st` arrastra tkinter
         # que no existe en containers headless. La importación es dead code.
         f"sed -i '/from turtle import/d' {AMADEUS_DIR}/Amadeus/sub_decoder_zoo.py",

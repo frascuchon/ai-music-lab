@@ -66,17 +66,24 @@ MAX_SECONDS = 30.0
 #   de torch a la versión actual de Modal (>=2.4). audiocraft funciona en
 #   runtime con torch más nuevo; xformers (ligado a 2.1.0) puede dar warning
 #   pero MAGNeT no lo usa para la generación de audio.
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_magnet_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install([
         "git", "ffmpeg", "libsndfile1", "pkg-config",
         "libavcodec-dev", "libavformat-dev", "libavdevice-dev",
         "libavutil-dev", "libswscale-dev", "libswresample-dev",
     ])
-    # 1. audiocraft instala torch==2.1.0 + xformers==0.0.22 + resto de deps
-    .pip_install("audiocraft")
-    # 2. Upgrade torch a versión actual (satisface transformers >=2.4 requirement)
-    .run_commands("pip install --upgrade torch torchaudio torchvision")
+    # audiocraft pins torch==2.1.0 but this image deliberately runs a much newer torch
+    # (see the note above), which pip's resolver refuses to install together. Install
+    # the exact set of packages of the working image instead, with no resolution step.
+    .run_commands("pip install --no-deps -r /opt/modal_constraints.txt")
     .pip_install("soundfile>=0.12.1")
     .env({
         "HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache",

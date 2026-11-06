@@ -7,11 +7,14 @@ Plugin REAPER para transcribir audio a MIDI: en local para un instrumento solo, 
 | Modelo | Descripción | GPU | Licencia |
 |--------|-------------|-----|---------|
 | **Basic Pitch** (por defecto) | Un solo instrumento (guitarra, voz, piano). Se ejecuta en local (CPU), sin Modal. Devuelve una pista. | ninguna | Apache 2.0 |
+| **MIROS** | Un solo instrumento, en Modal. El panel avisa de que no es para mezclas: con varios instrumentos usa YourMT3+. | A10G+ (no T4) | uso interno |
 | **YourMT3+** | Multi-instrumento. Robusto, F1 77.5% Slakh. | T4+ | Apache 2.0 |
 
-**Qué modelo elegir:** para un instrumento solo, Basic Pitch; para una mezcla con varios instrumentos, YourMT3+. En una guitarra distorsionada solista, Basic Pitch coincidió con una referencia pYIN en ~66 % de los fotogramas frente a ~35 % de YourMT3+, que además repartía la guitarra en varias pistas.
+**Qué modelo elegir:** para un instrumento solo, Basic Pitch (local) o MIROS (Modal); para una mezcla con varios instrumentos, YourMT3+. En una guitarra distorsionada solista, Basic Pitch coincidió con una referencia pYIN en ~66 % de los fotogramas frente a ~35 % de YourMT3+, que además repartía la guitarra en varias pistas.
 
 > MIROS se retiró de la interfaz: en esa misma guitarra apenas detectaba notas (~19 %). Su script y las notas de evaluación siguen en `research/` y `RESEARCH.md`.
+
+**Pistas vacías:** tras transcribir, `transcribe.py` descarta del MIDI las pistas de instrumento que no contienen ninguna nota (no se importan como clips vacíos) y lo indica en el estado ("N empty discarded"). Si no queda ninguna nota, se informa de error.
 
 **Limpieza de Basic Pitch:** con guitarra distorsionada el modelo añade "notas fantasma" una octava (o octava+quinta) por debajo de la nota real, y notas sueltas en la cola de eco tras terminar la música. Se eliminan automáticamente (en un clip real: 12 de 82 notas, sin perder ninguna correcta). Desmarcar **Estimate tempo** hace que use el tempo del proyecto en lugar de estimarlo. El control **Threshold** (0,3–0,9, por defecto 0,7) fija cuántas notas se aceptan: más alto, menos notas y más seguras. Sobre una guitarra real, subir de 0,5 a 0,7 llevó la F por nota (±50 ms, frente a pYIN) de 0,46 a 0,64.
 
@@ -60,6 +63,7 @@ El botón `...` permite elegir cualquier archivo WAV manualmente (sin capturar d
 | `panel.lua` | Script REAPER (UI + integración) |
 | `transcribe.py` | Backend CLI: invoca Modal, gestiona progreso |
 | `research/research_basic_pitch.py` | Transcripción local (Basic Pitch, `uv run`) |
+| `research/research_miros_modal.py` | App Modal para MIROS |
 | `research/research_yourmt3_modal.py` | App Modal para YourMT3+ |
 
 ## Notas técnicas

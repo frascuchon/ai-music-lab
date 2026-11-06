@@ -75,12 +75,22 @@ STAGE2_DIR = f"{MUZIC_DIR}/2-attribute2music_model"
 # en /opt/conda/bin/ se sobreescriben para que apunten a Python 3.11.
 CONDA_PYTHON = "/opt/conda/bin/python3.8"
 
+# Exact versions of the two interpreters' packages (captured from the image that
+# works; see tools/modal_freeze.py): conda Python 3.8 (fairseq & co) and the
+# Python 3.11 Modal runs the functions with. Each pip call gets its own file.
+_CONSTRAINTS_DIR = Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+_CONSTRAINTS_CONDA = _CONSTRAINTS_DIR / "research_musecoco_modal.conda.txt"
+_CONSTRAINTS_SYSTEM = _CONSTRAINTS_DIR / "research_musecoco_modal.system.txt"
+_PIP_CONDA = "PIP_CONSTRAINT=/opt/modal_constraints_conda.txt"
+
 image = (
     modal.Image.from_registry(
         "pytorch/pytorch:1.11.0-cuda11.3-cudnn8-devel",
         # Python 3.11 para el runner de Modal (requiere ≥ 3.10)
         add_python="3.11",
     )
+    .add_local_file(str(_CONSTRAINTS_CONDA), "/opt/modal_constraints_conda.txt", copy=True)
+    .add_local_file(str(_CONSTRAINTS_SYSTEM), "/opt/modal_constraints_system.txt", copy=True)
     # Ubuntu 18.04 + CUDA 11.3 repos tienen claves GPG rotadas → apt-get update falla.
     # Eliminamos esas fuentes (CUDA ya está instalado en la imagen); sólo necesitamos
     # los repos base de Ubuntu para git/g++.
@@ -96,11 +106,11 @@ image = (
     # pytorch-fast-transformers: linear attention CUDA kernels usados por MuseCoco.
     # Debe compilarse con Python 3.8 + NVCC del devel image (~5 min, cacheado).
     .run_commands(
-        f"{CONDA_PYTHON} -m pip install pytorch-fast-transformers",
+        f"{_PIP_CONDA} {CONDA_PYTHON} -m pip install pytorch-fast-transformers",
     )
     # Deps de inferencia MuseCoco → conda Python 3.8 (fairseq 0.10.2 solo soporta 3.8)
     .run_commands(
-        f"{CONDA_PYTHON} -m pip install"
+        f"{_PIP_CONDA} {CONDA_PYTHON} -m pip install"
         " fairseq==0.10.2"
         " transformers==4.26.0"
         " datasets==2.14.6"
@@ -118,17 +128,19 @@ image = (
         " pretty_midi"
         " psutil",
         # sentencepiece aparte para evitar problemas de escaping con !
-        f"{CONDA_PYTHON} -m pip install 'sentencepiece!=0.1.92'",
+        f"{_PIP_CONDA} {CONDA_PYTHON} -m pip install 'sentencepiece!=0.1.92'",
     )
     # Deps de las funciones Modal (download_weights, logging) → Python 3.11
     .pip_install(
         "huggingface_hub",
         "pretty_midi",
         "tqdm",
+        extra_options="-c /opt/modal_constraints_system.txt",
     )
     # Clonar muzic repo (código personalizado fairseq + midiprocessor incluido)
     .run_commands(
-        "git clone --depth=1 https://github.com/microsoft/muzic.git /opt/muzic",
+        "git clone https://github.com/microsoft/muzic.git /opt/muzic && "
+        "git -C /opt/muzic checkout --detach a2efda0bfb297b1520282a61ca12513dc3517744",
     )
 )
 

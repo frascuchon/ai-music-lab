@@ -106,14 +106,19 @@ DEFAULT_SEED = int(os.environ.get("STABLE_AUDIO_SEED", "42"))
 # ---------------------------------------------------------------------------
 # Nota: stable-audio-tools instala torch 2.x como dep; lo instalamos explícitamente
 # con cu121 para asegurar la variante CUDA correcta.
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_stable_audio_open_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg", "libsndfile1"])
-    .pip_install(
-        "torch==2.4.0",
-        "torchaudio==2.4.0",
-        extra_index_url="https://download.pytorch.org/whl/cu121",
-    )
+    # (torch/torchaudio come in as stable-audio-tools dependencies and are pinned by the
+    # constraints file; an explicit torch==2.4.0 layer used to sit here but the next layer
+    # always replaced it with the 2.x release stable-audio-tools needs.)
     .pip_install(
         # stable-audio-tools: inferencia oficial de Stability AI
         # Incluye el pipeline de diffusers-compatible y el VAE propio

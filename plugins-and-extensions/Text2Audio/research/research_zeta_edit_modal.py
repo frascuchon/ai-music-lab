@@ -95,10 +95,20 @@ def _model_dir_name(model_id: str) -> str:
 # Container image
 # ---------------------------------------------------------------------------
 # Clona el repo oficial e instala sus requirements (torch 2.x, diffusers>=0.26, …).
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_zeta_edit_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg", "libsndfile1"])
-    .run_commands(f"git clone {REPO_URL} {REPO_DIR}")
+    .run_commands(
+        f"git clone {REPO_URL} {REPO_DIR} && "
+        f"git -C {REPO_DIR} checkout --detach 8dc937701a42f6fb53160912f8a96b42fe8261d8"
+    )
     .run_commands(f"pip install -r {REPO_DIR}/requirements.txt")
     # requirements.txt instala diffusers 0.38.0 + transformers 5.x, incompatibles entre sí.
     # diffusers 0.27.0 usa cached_download (eliminado de huggingface_hub ≥ 0.24).

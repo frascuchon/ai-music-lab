@@ -134,7 +134,12 @@ case_("detect_reaper_python falls back to 'python3' when nothing is found", func
   write_ini(resourcedir, "/no/such/lib/dir")
 
   reaper.GetResourcePath = function() return resourcedir end
+  -- find_stable_python scans the real /opt/homebrew/bin, so on a machine with
+  -- Homebrew Python this case would find one; stub it to keep the test hermetic.
+  local real_find = common.find_stable_python
+  common.find_stable_python = function() return nil end
   local path, err = common.detect_reaper_python()
+  common.find_stable_python = real_find
   assert(path == "python3", tostring(path))
   assert(err ~= nil)
 end)

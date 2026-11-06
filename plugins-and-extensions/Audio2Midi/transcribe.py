@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Backend CLI for Audio2Midi.lua — transcribes audio to MIDI via Modal cloud
-(YourMT3+) or locally (Basic Pitch, single-instrument).
+(YourMT3+, MIROS, or Basic Pitch with --execution remote) or locally (Basic Pitch,
+single-instrument; the default for it).
 
 Called by Audio2Midi.lua as a background process:
     python3 transcribe.py --shared-dir <shared/> --script <research_*.py>
-        --input <audio> --out-dir <dir> --model <basicpitch|yourmt3>
-        --gpu <A10G|A100|T4> [--start S] [--duration D]
+        --input <audio> --out-dir <dir> --model <basicpitch|miros|yourmt3>
+        [--execution local|remote] --gpu <A10G|A100|T4> [--start S] [--duration D]
         [--no-beat-tracking] --progress <pf> >> <log> 2>&1 &
 
 The script:
@@ -42,14 +43,27 @@ from pathlib import Path
 
 
 # Models that accept --no-beat-tracking in their Modal entrypoint
-SUPPORTS_NO_BEAT_TRACKING = {"basicpitch"}
+SUPPORTS_NO_BEAT_TRACKING = {"miros", "basicpitch"}
 
 # Models that run on this machine through `uv run <script>` (PEP 723 inline
 # dependencies) instead of `modal run`. They need no shared/ project and no GPU.
+# This is the DEFAULT execution of a model; --execution overrides it.
 LOCAL_MODELS = {"basicpitch"}
 
+# Models that can also run on Modal (the --script is then its *_modal.py).
+# Basic Pitch is CPU-only there, so it still gets no GPU env var.
+REMOTE_CAPABLE = {"basicpitch", "miros", "yourmt3"}
+# Models that can run on this machine at all.
+LOCAL_CAPABLE = {"basicpitch"}
+
+# Models whose script takes --onset-threshold / --bpm (local and Modal alike).
+TUNABLE_MODELS = {"basicpitch"}
+
 # Env var each research_*_modal.py reads to choose its Modal GPU.
-GPU_ENV_VARS = {"yourmt3": "YOURMT3_GPU"}
+GPU_ENV_VARS = {"miros": "MIROS_GPU", "yourmt3": "YOURMT3_GPU"}
+
+# GPUs a model cannot run on (MIROS needs flash-attn, which requires Ampere+).
+UNSUPPORTED_GPUS = {"miros": {"T4"}}
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +127,38 @@ def count_instruments(mid_path: Path) -> int:
         return -1
 
 
+def prune_empty_instruments(mid_path: Path) -> int:
+    """Rewrite the MIDI without instrument tracks that hold no notes.
+
+    Multi-track models can emit tracks that carry a name / program change /
+    stray note-offs but never play a note; imported as-is they become empty
+    clips and blank tracks in REAPER. Tracks with no channel messages at all
+    (the tempo / conductor track) are kept. Returns how many tracks were
+    dropped (0 if none, if no track has notes — the caller reports that as an
+    error — or if the file could not be read; the file is then untouched).
+    """
+    try:
+        import mido
+        mid = mido.MidiFile(str(mid_path))
+
+        def has_notes(tr):
+            return any(m.type == "note_on" and m.velocity > 0 for m in tr)
+
+        def is_instrument(tr):
+            return any(not m.is_meta and hasattr(m, "channel") for m in tr)
+
+        if not any(has_notes(tr) for tr in mid.tracks):
+            return 0
+        kept = [tr for tr in mid.tracks if has_notes(tr) or not is_instrument(tr)]
+        dropped = len(mid.tracks) - len(kept)
+        if dropped:
+            mid.tracks = kept
+            mid.save(str(mid_path))
+        return dropped
+    except Exception:
+        return 0
+
+
 def get_midi_tempo(mid_path: Path) -> float:
     """Return the (first) tempo embedded in the MIDI file, in BPM.
 
@@ -162,7 +208,10 @@ def main() -> int:
     p.add_argument("--script",     required=True,
                    help="Path to the Modal script to run (research_*_modal.py).")
     p.add_argument("--model",      default="basicpitch",
-                   help="Model name (basicpitch | yourmt3).")
+                   help="Model name (basicpitch | miros | yourmt3).")
+    p.add_argument("--execution",  choices=("local", "remote"), default=None,
+                   help="Where to run: this machine or Modal. Default: the "
+                        "model's usual one (basicpitch local, yourmt3 Modal).")
     p.add_argument("--gpu",        default="A10G",
                    help="GPU to use on Modal (A10G | A100 | T4).")
     p.add_argument("--start",      type=float, default=None,
@@ -171,12 +220,12 @@ def main() -> int:
                    help="Duration of the section (seconds).")
     p.add_argument("--no-beat-tracking", action="store_true",
                    dest="no_beat_tracking",
-                   help="Local models only: skip the automatic tempo estimate.")
+                   help="Basic Pitch only: skip the automatic tempo estimate.")
     p.add_argument("--bpm",        type=float, default=None,
-                   help="Local models only: write the MIDI at this tempo "
+                   help="Basic Pitch only: write the MIDI at this tempo "
                         "(e.g. the REAPER project's) instead of estimating it.")
     p.add_argument("--onset-threshold", type=float, default=None, dest="onset_threshold",
-                   help="Local models only: note-detection threshold (higher = fewer notes).")
+                   help="Basic Pitch only: note-detection threshold (higher = fewer notes).")
     p.add_argument("--progress",   default="",
                    help="Path to the progress file (state|pct|msg protocol).")
     args = p.parse_args()
@@ -199,7 +248,17 @@ def main() -> int:
                        "Check the model path in Audio2Midi/research/.")
         return 1
 
-    is_local = args.model.lower() in LOCAL_MODELS
+    model = args.model.lower()
+    if args.execution is None:
+        is_local = model in LOCAL_MODELS
+    else:
+        is_local = args.execution == "local"
+        capable = LOCAL_CAPABLE if is_local else REMOTE_CAPABLE
+        if model not in capable:
+            write_progress(pf, "error", 0,
+                           f"{args.model} cannot run {args.execution}ly "
+                           f"(supported: {', '.join(sorted(capable)) or 'none'}).")
+            return 1
 
     if not is_local and not (shared_dir / "pyproject.toml").exists():
         write_progress(pf, "error", 0,
@@ -233,6 +292,12 @@ def main() -> int:
             write_progress(pf, "error", 0, f"Error extracting section: {exc}")
             return 1
 
+    if not is_local and args.gpu in UNSUPPORTED_GPUS.get(model, ()):
+        write_progress(pf, "error", 0,
+                       f"{args.model} cannot run on {args.gpu} (flash-attn needs "
+                       "an Ampere or newer GPU). Choose A10G or A100.")
+        return 1
+
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Build modal run command ----------------------------------------------
@@ -255,19 +320,19 @@ def main() -> int:
             "--force",
         ]
 
-    if is_local and args.bpm:
+    if model in TUNABLE_MODELS and args.bpm:
         cmd += ["--bpm", str(args.bpm)]
-    if is_local and args.onset_threshold is not None:
+    if model in TUNABLE_MODELS and args.onset_threshold is not None:
         cmd += ["--onset-threshold", str(args.onset_threshold)]
 
     # --no-beat-tracking only if the model supports it
-    if args.no_beat_tracking and args.model.lower() in SUPPORTS_NO_BEAT_TRACKING:
+    if args.no_beat_tracking and model in SUPPORTS_NO_BEAT_TRACKING:
         cmd.append("--no-beat-tracking")
 
     env = os.environ.copy()
     # The Modal scripts pick their GPU at import time from an env var (the
     # `gpu=` argument of the @app.function decorator), not from a CLI flag.
-    gpu_env = GPU_ENV_VARS.get(args.model.lower())
+    gpu_env = GPU_ENV_VARS.get(model)
     if gpu_env and args.gpu and not is_local:
         env[gpu_env] = args.gpu
 
@@ -303,6 +368,16 @@ def main() -> int:
             if total > 0:
                 pct = 0.1 + (n / total) * 0.8
 
+        # Pattern "Chunk n/m" (MIROS)
+        if not m and "Chunk" in line and "/" in line:
+            try:
+                part = line.split("Chunk")[1].split(":")[0].strip()
+                n, total = int(part.split("/")[0]), int(part.split("/")[1])
+                if total > 0:
+                    pct = 0.1 + (n / total) * 0.8
+            except (ValueError, IndexError):
+                pass
+
         write_progress(pf, "running", pct, line[:80])
 
     proc.wait()
@@ -337,6 +412,11 @@ def main() -> int:
     except Exception:
         final_mid = raw_mid  # fallback: keep original name
 
+    # Discard instruments without notes (they would import as empty clips)
+    n_dropped = prune_empty_instruments(final_mid)
+    if n_dropped:
+        print(f"[transcribe] Discarded {n_dropped} empty instrument(s)", flush=True)
+
     # Count non-empty instruments
     n_instruments = count_instruments(final_mid)
     if n_instruments == 0 or (n_instruments < 0 and final_mid.stat().st_size < 64):
@@ -357,6 +437,8 @@ def main() -> int:
     n_label = (f"{n_instruments} instrument{'s' if n_instruments != 1 else ''}"
                if n_instruments >= 0 else "MIDI generated")
     done_msg = f"Completed — {n_label}"
+    if n_dropped:
+        done_msg += f" ({n_dropped} empty discarded)"
     write_progress(pf, "done", 1.0, done_msg, [
         str(final_mid),
         f"INSTRUMENTS|{instr_str}",

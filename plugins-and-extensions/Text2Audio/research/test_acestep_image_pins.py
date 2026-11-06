@@ -8,6 +8,7 @@ HEAD. Modal caches images per account, so it worked on the account that built
 it long ago, while a fresh build elsewhere resolved torch 2.15 (CUDA 13) next
 to torchaudio 2.11 and failed with a torchaudio dependency error.
 """
+import os
 import re
 import sys
 from pathlib import Path
@@ -57,7 +58,9 @@ class TestAceStepImagePins(TestCase):
         (Linux x86_64, Python 3.11) — no extra network needed beyond PyPI."""
         import shutil
         import subprocess
-        uv = shutil.which("uv")
+        # The real uv: other test modules put fake ones (uv_mock*) on PATH.
+        uv = shutil.which("uv", path=os.pathsep.join(
+            d for d in os.environ.get("PATH", "").split(os.pathsep) if "uv_mock" not in d))
         if not uv:
             self.skipTest("uv not installed")
         r = subprocess.run(

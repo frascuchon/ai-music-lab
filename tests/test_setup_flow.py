@@ -30,6 +30,16 @@ REAPER_RUN_SCRIPTS = [
 ]
 
 
+
+def _real_uv():
+    """The real `uv`, ignoring the fake ones other test modules put on PATH
+    (tmp dirs named uv_mock*) — a mock answering exit 0 would make the uv-based
+    checks pass vacuously, or fail depending on collection order."""
+    path = os.pathsep.join(p for p in os.environ.get("PATH", "").split(os.pathsep)
+                           if "uv_mock" not in p and "/sandbox/" not in p)
+    return shutil.which("uv", path=path)
+
+
 def _uses_pep604_annotation(tree):
     def has_bitor(node):
         return node is not None and any(
@@ -98,11 +108,26 @@ def _fake_uv(tmp_path, body):
     return d
 
 
+def _sandboxed_helper(tmp_path):
+    """Copy of setup_helpers.py in its own shared/ dir.
+
+    The helper derives its project dir from its own location and its self-healing
+    step deletes `<project>/.venv`. Running the repository's copy from tests would
+    wipe the developer's real shared/.venv every time the suite runs."""
+    sandbox = tmp_path / "sandbox" / "shared"
+    sandbox.mkdir(parents=True, exist_ok=True)
+    helper = sandbox / "setup_helpers.py"
+    if not helper.exists():
+        shutil.copy(HELPER, helper)
+        (sandbox / "pyproject.toml").write_text("[project]\nname='sandbox'\nversion='0'\n")
+    return helper
+
+
 def _run_helper(tmp_path, cmd, path_dir):
     pf = tmp_path / "progress.txt"
     env = {"PATH": f"{path_dir}:/usr/bin:/bin", "HOME": str(tmp_path)}
-    r = subprocess.run([sys.executable, "-I", str(HELPER), cmd, "--progress", str(pf)],
-                       capture_output=True, text=True, env=env)
+    r = subprocess.run([sys.executable, "-I", str(_sandboxed_helper(tmp_path)), cmd,
+                        "--progress", str(pf)], capture_output=True, text=True, env=env)
     return r, pf.read_text() if pf.exists() else ""
 
 
@@ -142,7 +167,7 @@ def test_check_reports_modal_cli_ok_after_sync(tmp_path):
 
 def test_shared_project_is_installable():
     """The lockfile matches pyproject.toml and pins a usable modal."""
-    uv = shutil.which("uv")
+    uv = _real_uv()
     if not uv:
         pytest.skip("uv not installed")
     shared = PLUGINS / "shared"
@@ -228,7 +253,7 @@ def test_helper_crash_writes_report_with_traceback(tmp_path):
     pf = tmp_path / "p.txt"
     env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
     # --python <missing> makes pip launch fail inside the helper
-    subprocess.run([sys.executable, "-I", str(HELPER), "install-demucs",
+    subprocess.run([sys.executable, "-I", str(_sandboxed_helper(tmp_path)), "install-demucs",
                     "--python", str(tmp_path / "no-python"), "--progress", str(pf)],
                    capture_output=True, text=True, env=env)
     out = pf.read_text()
@@ -255,7 +280,7 @@ def test_modal_python_requirement_matches_project():
 def test_real_install_on_python_311_configures_modal(tmp_path):
     """End to end on the Python of the reporting machine: a clean `uv sync`
     from the shipped pyproject/uv.lock installs a working modal CLI."""
-    uv = shutil.which("uv")
+    uv = _real_uv()
     if not uv:
         pytest.skip("uv not installed")
     found = subprocess.run([uv, "python", "find", "3.11"], capture_output=True, text=True)
@@ -297,19 +322,14 @@ def _calls(tmp_path):
 def test_sync_deps_recovers_from_corrupt_environment(tmp_path):
     """First `uv sync` fails (broken .venv); the helper wipes it and retries
     with --reinstall, then verifies modal, instead of giving up."""
-    venv = HELPER.parent / ".venv"
-    if venv.exists():
-        pytest.skip("shared/.venv exists in this checkout; refusing to delete it")
+    venv = _sandboxed_helper(tmp_path).parent / ".venv"      # never the repo's own .venv
     d = _fake_uv_logged(tmp_path, '''
 case "$*" in
   *--reinstall*) echo "reinstalled"; exit 0;;
   sync*) mkdir -p "%s"; echo "error: failed to inspect python interpreter"; exit 2;;
   run*) echo "modal client version: 1.4.3"; exit 0;;
 esac''' % venv)
-    try:
-        _, out = _run_helper(tmp_path, "sync-deps", d)
-    finally:
-        shutil.rmtree(venv, ignore_errors=True)
+    _, out = _run_helper(tmp_path, "sync-deps", d)
     assert out.startswith("done|1.000|"), out
     calls = _calls(tmp_path)
     assert any("--reinstall" in c for c in calls)
@@ -471,3 +491,14 @@ def test_rust_compiler_failure_gets_an_actionable_message(tmp_path):
     _, out = _run_helper(tmp_path, "sync-deps", d)
     first = out.splitlines()[0]
     assert "cbor2" in first and "no prebuilt wheel" in first and "Rust" in first
+
+
+def test_tests_never_touch_the_repositorys_own_venv(tmp_path):
+    """Guard for the sandboxing above: running the failing-sync scenarios must leave
+    plugins-and-extensions/shared/.venv exactly as it was."""
+    repo_venv = PLUGINS / "shared" / ".venv"
+    marker = repo_venv / "pyvenv.cfg"
+    existed = marker.exists()
+    d = _fake_uv_logged(tmp_path, 'echo "error: boom"; exit 1')
+    _run_helper(tmp_path, "sync-deps", d)
+    assert marker.exists() == existed

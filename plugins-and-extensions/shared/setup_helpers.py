@@ -135,7 +135,7 @@ def _tail_error_message(cmd: list[str], returncode: int,
     if last:
         return f"{cmd_name} failed (code {returncode}): {last[:160]}"
     return (f"{cmd_name} failed (code {returncode}) with no output — "
-            f"see {REPORT_NAME} for details.")
+            f"see {REPORT_NAME} and reaperai_setup.log for details.")
 
 
 REPORT_NAME = "reaperai_setup_report.txt"
@@ -460,10 +460,15 @@ def cmd_install_uv(args) -> None:
     pf = Path(args.progress) if args.progress else None
     write(pf, "running", 0.1, "Downloading uv installer...")
     try:
-        with urllib.request.urlopen("https://astral.sh/uv/install.sh", timeout=30) as resp:
+        # astral.sh answers 403 to urllib's default "Python-urllib" user agent.
+        req = urllib.request.Request("https://astral.sh/uv/install.sh",
+                                     headers={"User-Agent": "curl/8.7.1"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
             install_bytes = resp.read()
     except Exception as e:
-        write(pf, "error", 0, f"Error downloading installer: {e}")
+        report = _save_report(pf, ["download", "https://astral.sh/uv/install.sh"], -1, [str(e)])
+        write(pf, "error", 0, f"Error downloading installer: {e}",
+              [f"REPORT|{report}"] if report else None)
         return
     with tempfile.NamedTemporaryFile(suffix=".sh", delete=False, mode="wb") as f:
         f.write(install_bytes)

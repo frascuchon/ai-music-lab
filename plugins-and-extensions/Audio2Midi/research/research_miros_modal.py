@@ -93,11 +93,19 @@ DEFAULT_GPU = os.environ.get("MIROS_GPU", "A10G")
 # ---------------------------------------------------------------------------
 # Container image
 # ---------------------------------------------------------------------------
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_miros_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg", "sox", "libsndfile1", "curl"])
     .run_commands(
-        f"git clone {MIROS_REPO_URL} {REPO_DIR}"
+        f"git clone {MIROS_REPO_URL} {REPO_DIR} && "
+        f"git -C {REPO_DIR} checkout --detach 668a0aa6357bb3f09e767c9ece378956c2ffd182"
     )
     .run_commands(
         # Auditoría de la estructura clonada — aparece en los logs del build
@@ -123,8 +131,8 @@ image = (
         "scikit-learn",
         "wandb",
         "gdown",                                          # descarga checkpoints Google Drive
-        "git+https://github.com/craffel/mir_eval.git",
-        "git+https://github.com/katsura-jp/pytorch-cosine-annealing-with-warmup.git",
+        "git+https://github.com/craffel/mir_eval.git@fe73b3533737814f83dbd9739f06e90f5f82f758",
+        "git+https://github.com/katsura-jp/pytorch-cosine-annealing-with-warmup.git@12d03c07553aedd3d9e9155e2b3e31ce8c64081a",
     )
     .run_commands(
         # flash-attn 2.7.2 wheel precompilada (cu12+torch2.4+py3.10). Ampere+ only (A10G OK).

@@ -61,7 +61,7 @@ class TestResolveDitConfig(TestCase):
         self.assertEqual(rm._resolve_dit_config("TURBO"), "acestep-v15-turbo")
 
     def test_unknown_variant_falls_back_to_turbo(self):
-        self.assertEqual(rm._resolve_dit_config("sft"), "acestep-v15-turbo")
+        self.assertEqual(rm._resolve_dit_config("xl-sft"), "acestep-v15-turbo")
         self.assertEqual(rm._resolve_dit_config(""), "acestep-v15-turbo")
         self.assertEqual(rm._resolve_dit_config(None), "acestep-v15-turbo")
 
@@ -280,3 +280,78 @@ class TestGenerateBatchClampsParams(TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestInstrumentalLyricsAndVariantDefaults(TestCase):
+    """Empty lyrics make the DiT invent vocals; ACE-Step's own "Instrumental"
+    checkbox sets lyrics="[Instrumental]". Measured on Modal: CLAP 0.516 ->
+    0.565 for turbo on the repo's post-rock instrumental example."""
+
+    def _captured(self, **overrides):
+        return TestGenerateBatchClampsParams._run_with(self, **overrides)
+
+    def test_lyrics_default_is_instrumental(self):
+        self.assertEqual(self._captured()["lyrics"], "[Instrumental]")
+
+    def test_explicit_lyrics_are_forwarded(self):
+        self.assertEqual(self._captured(lyrics="[Verse]\nla la")["lyrics"], "[Verse]\nla la")
+
+    def test_base_defaults_are_the_stable_sweep_winner(self):
+        # 64 steps / guidance 8 (+/- ADG) produced near-noise samples in the sweep.
+        self.assertEqual(rm.STEPS_DEFAULT_BY_VARIANT["base"], 32)
+        self.assertEqual(rm.GUIDANCE_DEFAULT_BY_VARIANT["base"], 7.0)
+        self.assertEqual(rm.STEPS_DEFAULT_BY_VARIANT["turbo"], 8)
+
+    def test_defaults_cover_every_variant(self):
+        for v in rm.DIT_CONFIG_BY_VARIANT:
+            self.assertIn(v, rm.STEPS_DEFAULT_BY_VARIANT)
+            self.assertIn(v, rm.GUIDANCE_DEFAULT_BY_VARIANT)
+
+
+class TestLlmInitOnlyWhenThinking(TestCase):
+    """generate_music() only uses the LM when llm_handler.llm_initialized, so
+    thinking=True used to be a silent no-op. _init_llm must load it, and fail
+    loudly instead of quietly degrading to no-LM."""
+
+    def _fake_downloader(self, ok=True):
+        import types
+        mod = types.ModuleType("acestep.model_downloader")
+        mod.ensure_lm_model = MagicMock(return_value=(ok, "msg"))
+        return mod
+
+    def test_initializes_pt_backend_on_cuda(self):
+        llm = MagicMock()
+        llm.initialize.return_value = ("ok", True)
+        with patch.dict(sys.modules, {"acestep": MagicMock(), "acestep.model_downloader": self._fake_downloader()}):
+            rm._init_llm(llm)
+        kw = llm.initialize.call_args.kwargs
+        self.assertEqual(kw["backend"], "pt")
+        self.assertEqual(kw["lm_model_path"], rm.LM_MODEL)
+        self.assertEqual(kw["device"], "cuda")
+
+    def test_failed_init_raises(self):
+        llm = MagicMock()
+        llm.initialize.return_value = ("boom", False)
+        with patch.dict(sys.modules, {"acestep": MagicMock(), "acestep.model_downloader": self._fake_downloader()}):
+            with self.assertRaises(RuntimeError):
+                rm._init_llm(llm)
+
+    def test_failed_download_raises(self):
+        with patch.dict(sys.modules, {"acestep": MagicMock(), "acestep.model_downloader": self._fake_downloader(ok=False)}):
+            with self.assertRaises(RuntimeError):
+                rm._init_llm(MagicMock())
+
+    def test_init_handlers_skips_lm_without_thinking(self):
+        import types
+        fake_handler_mod = types.ModuleType("acestep.handler")
+        fake_handler_mod.AceStepHandler = MagicMock()
+        fake_llm_mod = types.ModuleType("acestep.llm_inference")
+        fake_llm_mod.LLMHandler = MagicMock()
+        with patch.dict(sys.modules, {"acestep": types.ModuleType("acestep"),
+                                      "acestep.handler": fake_handler_mod,
+                                      "acestep.llm_inference": fake_llm_mod}), \
+             patch.object(rm, "_init_llm") as init_llm:
+            rm._init_handlers(dit_variant="turbo", thinking=False)
+            init_llm.assert_not_called()
+            rm._init_handlers(dit_variant="turbo", thinking=True)
+            init_llm.assert_called_once()

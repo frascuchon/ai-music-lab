@@ -115,7 +115,7 @@ def estimate_bpm(y, sr) -> float:
     return bpm
 
 
-def main() -> int:
+def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--input", required=True)
     p.add_argument("--out", required=True, help="Output .mid path.")
@@ -134,7 +134,7 @@ def main() -> int:
                    help="Use this tempo instead of estimating it (e.g. the project's).")
     p.add_argument("--no-cleanup", action="store_true", dest="no_cleanup",
                    help="Keep sub-octave ghost notes and tail noise.")
-    args = p.parse_args()
+    args = p.parse_args(argv)
 
     in_path, out_path = Path(args.input), Path(args.out)
     if not in_path.exists():

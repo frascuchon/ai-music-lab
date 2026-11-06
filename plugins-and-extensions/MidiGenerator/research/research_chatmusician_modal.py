@@ -100,8 +100,15 @@ DEFAULT_GPU = os.environ.get("CHATMUSICIAN_GPU", "A10G")
 # ---------------------------------------------------------------------------
 # Container image — CUDA 12 + PyTorch + abcmidi + dependencias HF
 # ---------------------------------------------------------------------------
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_chatmusician_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["abcmidi", "ffmpeg"])
     .pip_install(
         "torch==2.4.0",

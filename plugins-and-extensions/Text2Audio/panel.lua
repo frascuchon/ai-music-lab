@@ -74,16 +74,24 @@ local INTENSITY_LABELS = { "Subtle", "Moderate", "Strong" }
 -- guidance_scale 8.0 -> 1.0"). Those controls are hidden entirely for
 -- turbo below rather than just grayed out, since setting them there is a
 -- no-op.
-local ACESTEP_VARIANTS        = { "turbo", "base" }
+local ACESTEP_VARIANTS        = { "turbo", "sft", "base" }
 local ACESTEP_VARIANT_LABELS  = {
   "Turbo  (fast, 8-20 steps, no CFG)",
-  "Base  (32-200 steps, CFG-capable — larger download)",
+  "SFT  (best quality, 50 steps, CFG — slower, larger download)",
+  "Base  (32-200 steps, CFG — requires a LoRA adapter)",
 }
 local ACESTEP_STEPS_RANGE_BY_VARIANT = {
   turbo = { 1, 20  },
+  sft   = { 1, 200 },
   base  = { 1, 200 },
 }
-local ACESTEP_STEPS_DEFAULT_BY_VARIANT = { turbo = 8, base = 32 }
+-- Mirrors research_acestep_gen_modal.py *_DEFAULT_BY_VARIANT. Modal sweep (8 samples,
+-- CLAP): sft 50/g7 0.546 > turbo 0.518 > base 32/g7 0.479; base at 64 steps /
+-- guidance 8 (+/- ADG) is worst and sometimes near-noise, so ADG stays off.
+-- ACE-Step's docs also rate base "Medium" quality: it is meant for LoRA / fine-tunes.
+local ACESTEP_STEPS_DEFAULT_BY_VARIANT    = { turbo = 8,   sft = 50,  base = 32   }
+local ACESTEP_GUIDANCE_DEFAULT_BY_VARIANT = { turbo = 7.0, sft = 7.0, base = 7.0  }
+local ACESTEP_ADG_DEFAULT_BY_VARIANT      = { turbo = false, sft = false, base = false }
 local ACESTEP_GUIDANCE_RANGE   = { 1.0, 15.0 }  -- base only
 local ACESTEP_SHIFT_RANGE      = { 1.0, 5.0  }
 local ACESTEP_CFG_RANGE        = { 0.0, 1.0  }  -- base only
@@ -165,15 +173,15 @@ local S = {
   duration          = 8.0,
   gen_model_idx     = 1,
   -- ACE-Step 1.5 advanced inference parameters (acestep_gen only)
-  acestep_variant_idx = 1,   -- 1=turbo, 2=base
-  acestep_steps       = 8,
+  acestep_variant_idx = 2,   -- 1=turbo, 2=sft (default: best by ear + CLAP), 3=base
+  acestep_steps       = 50,      -- ACESTEP_STEPS_DEFAULT_BY_VARIANT.sft
   acestep_guidance    = 7.0,
   acestep_shift       = 3.0,
   acestep_seed        = -1,     -- -1 = random
   acestep_use_adg     = false,
   acestep_cfg_start   = 0.0,
   acestep_cfg_end     = 1.0,
-  acestep_thinking    = false,
+  acestep_thinking    = true,    -- 5Hz LM planner: CLAP 0.518 -> 0.565 on turbo, floor 0.50 -> 0.52 on sft
   acestep_lm_temp     = 0.85,
   acestep_lora_path   = "",
   acestep_lora_scale  = 1.0,
@@ -403,7 +411,22 @@ local function stop_t2a()
   S.done    = true
 end
 
+-- ACE-Step base is meant to run with a LoRA/LoKr adapter (alone it scores far
+-- below SFT/turbo and some samples come out as near-noise), so generating with
+-- the base checkpoint and no adapter folder is blocked.
+local function acestep_base_without_lora()
+  return S.mode == 1
+    and GEN_MODELS[S.gen_model_idx] == "acestep_gen"
+    and ACESTEP_VARIANTS[S.acestep_variant_idx] == "base"
+    and not S.acestep_lora_path:match("%S")
+end
+
 local function launch_t2a()
+  if acestep_base_without_lora() then
+    reaper.MB("ACE-Step base needs a LoRA/LoKr adapter folder.\n"
+      .. "Pick an adapter, or switch the checkpoint to SFT.", "AudioGenerator", 0)
+    return
+  end
   local run_dir = make_run_dir()
 
   -- ── GENERATE mode ──
@@ -442,9 +465,9 @@ local function launch_t2a()
       extra = extra .. string.format(" --steps %d --shift %.2f", steps, shift)
       extra = extra .. string.format(" --seed %d", math.floor(S.acestep_seed + 0.5))
 
-      -- CFG params only meaningful for "base" — omit entirely for turbo
+      -- CFG params only meaningful for base/sft — omit entirely for turbo
       -- rather than send values the model would silently ignore.
-      if variant == "base" then
+      if variant ~= "turbo" then
         local guidance = clamp(S.acestep_guidance, ACESTEP_GUIDANCE_RANGE[1], ACESTEP_GUIDANCE_RANGE[2])
         local cfg_s    = clamp(S.acestep_cfg_start, ACESTEP_CFG_RANGE[1], ACESTEP_CFG_RANGE[2])
         local cfg_e    = clamp(S.acestep_cfg_end, ACESTEP_CFG_RANGE[1], ACESTEP_CFG_RANGE[2])
@@ -458,7 +481,7 @@ local function launch_t2a()
         extra = extra .. " --thinking"
         extra = extra .. string.format(" --lm-temperature %.2f", lm_temp)
       end
-      if S.acestep_lora_path:match("%S") then
+      if variant == "base" and S.acestep_lora_path:match("%S") then
         local lora_scale = clamp(S.acestep_lora_scale, ACESTEP_LORA_SCALE_RANGE[1], ACESTEP_LORA_SCALE_RANGE[2])
         extra = extra .. " --lora-path " .. q(S.acestep_lora_path)
         extra = extra .. string.format(" --lora-scale %.2f", lora_scale)
@@ -729,12 +752,14 @@ function M.draw()
         S.acestep_variant_idx = widgets.combo("##ace_variant", S.acestep_variant_idx, ACESTEP_VARIANT_LABELS)
         if S.acestep_variant_idx ~= old_variant_idx then
           local variant = ACESTEP_VARIANTS[S.acestep_variant_idx] or "turbo"
-          S.acestep_steps = ACESTEP_STEPS_DEFAULT_BY_VARIANT[variant]
+          S.acestep_steps    = ACESTEP_STEPS_DEFAULT_BY_VARIANT[variant]
+          S.acestep_guidance = ACESTEP_GUIDANCE_DEFAULT_BY_VARIANT[variant]
+          S.acestep_use_adg  = ACESTEP_ADG_DEFAULT_BY_VARIANT[variant]
         end
         local variant = ACESTEP_VARIANTS[S.acestep_variant_idx] or "turbo"
         local steps_range = ACESTEP_STEPS_RANGE_BY_VARIANT[variant]
-        if variant == "base" then
-          g.text_disabled("Base checkpoint downloads separately on first use (larger than turbo).")
+        if variant ~= "turbo" then
+          g.text_disabled("This checkpoint downloads separately on first use (larger than turbo).")
         end
         g.spacing()
 
@@ -761,7 +786,7 @@ function M.draw()
         -- CFG controls — base checkpoint only; turbo is CFG-distilled and
         -- generate_music() hard-overrides guidance_scale to 1.0 for it, so
         -- these are hidden entirely for turbo rather than shown-but-inert.
-        if variant == "base" then
+        if variant ~= "turbo" then
           g.spacing()
           g.row_label("Guidance:", lw)
           g.next_width(t.sc(120))
@@ -795,8 +820,9 @@ function M.draw()
           if rv then S.acestep_lm_temp = nv end
         end
 
+        if variant == "base" then
         g.spacing()
-        g.text("LoRA / LoKr adapter (optional):")
+        g.text("LoRA / LoKr adapter (required for base):")
         g.row_label("Folder:", lw)
         g.next_width(-(2 * t.SPACING_X + t.sc(44)))
         local pchg, pnv = widgets.input_text("##ace_lora_path", S.acestep_lora_path)
@@ -823,6 +849,7 @@ function M.draw()
           g.text_disabled("Folder must contain adapter_config.json + adapter_model.safetensors, "
             .. "or a lokr_weights.safetensors (Side-Step / PEFT output).")
         end
+        end -- variant == "base"
       end
       g.spacing()
     end
@@ -902,9 +929,15 @@ function M.draw()
     and (S.mode == 1 and "STOP  (Generating...)" or "STOP  (Editing...)")
     or  (S.mode == 1 and "GENERATE AUDIO"        or "EDIT AUDIO")
 
+  local blocked = (not S.running) and acestep_base_without_lora()
+  if blocked then g.begin_disabled(true) end
   g.next_width(-1)
   if g.button(btn_lbl, nil, t.sc(36), { solid = S.running and stop_colors or btn_colors }) then
     if S.running then stop_t2a() else launch_t2a() end
+  end
+  if blocked then
+    g.end_disabled()
+    g.text_colored("Base needs a LoRA adapter: choose a folder above, or switch to SFT.", "YELLOW")
   end
   g.spacing()
 

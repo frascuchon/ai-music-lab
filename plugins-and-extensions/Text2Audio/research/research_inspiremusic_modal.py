@@ -80,23 +80,28 @@ SUPPORTED_CATEGORIES = {"continuation"}
 # ---------------------------------------------------------------------------
 # El repo se usa como paquete vía PYTHONPATH (patrón CosyVoice/FunAudioLLM: clone
 # --recursive para el submódulo third_party/Matcha-TTS + requirements.txt).
+# Exact version of every package this model's image contains (captured from the image
+# that works; see tools/modal_freeze.py). Applied to every pip call through
+# PIP_CONSTRAINT so a rebuild never drifts to newer releases of torch & co.
+_CONSTRAINTS = (Path(__file__).resolve().parent.parent.parent / "shared" / "modal_constraints"
+                / "research_inspiremusic_modal.txt")
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .add_local_file(str(_CONSTRAINTS), "/opt/modal_constraints.txt", copy=True)
+    .env({"PIP_CONSTRAINT": "/opt/modal_constraints.txt"})
     .apt_install(["git", "ffmpeg", "libsndfile1", "sox", "libsox-dev"])
-    .run_commands(f"git clone --recursive {REPO_URL} {REPO_DIR}")
+    .run_commands(
+        f"git clone {REPO_URL} {REPO_DIR} && "
+        f"git -C {REPO_DIR} checkout --detach 0aefb55b58b8df91accdc4aed20c99e44741e0a7 && "
+        f"git -C {REPO_DIR} submodule update --init --recursive"
+    )
     # flash-attn requiere CUDA headers en build time (no disponibles durante image build).
     # Se omite de requirements.txt ya que es una optimización opcional, no requerida
     # para la inferencia de continuación. El resto de dependencias se instala sin cambios.
-    .run_commands(
-        f"grep -v 'flash[_-]attn' {REPO_DIR}/requirements.txt > /tmp/req_im.txt && "
-        "pip install -r /tmp/req_im.txt"
-    )
-    .pip_install("soundfile>=0.12.1", "huggingface_hub>=0.24.0")
-    # torchaudio >= 2.1 requiere torchcodec para torchaudio.load()
-    .run_commands("pip install torchcodec")
-    # requirements.txt instala peft==0.13.2 pero inspiremusic/flow/flow_matching.py requiere
-    # peft>=0.17.0. Upgrade en paso separado.
-    .run_commands("pip install 'peft>=0.17.0'")
+    # requirements.txt pins peft==0.13.2 and a later step upgrades it, which pip's
+    # resolver rejects once versions are constrained. Install the exact set of
+    # packages of the working image (repo requirements, torchcodec, peft, ...) instead.
+    .run_commands("pip install --no-deps -r /opt/modal_constraints.txt")
     # qwen_encoder.py usa flash_attention_2 (hardcodeado); flash_attn no se puede compilar
     # sin CUDA headers. Reemplazar por 'sdpa' (Scaled Dot Product, nativo en PyTorch ≥ 2.0).
     .run_commands(

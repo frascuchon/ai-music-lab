@@ -186,6 +186,20 @@ class TestImportDoesNotTouchExistingTracks(TestCase):
         self.assertEqual(len(tracks), 3)
         self._assert_existing_untouched(tracks, 0, 3)
 
+    def test_instruments_without_notes_get_no_track_or_clip(self):
+        f = self.tmp / "mixed.mid"
+        make_midi(f, [
+            ("Gtr", 0, 24, [(0, 240, 60)]),
+            ("Ghost", 1, 33, []),
+            ("Silent", 2, 40, []),
+        ])
+        res, tracks = run_import(f, existing=2, insert_at=1)
+        self.assertEqual(res["instruments"], 1)
+        new = [t for t in tracks if not t["name"].startswith("exist ")]
+        self.assertEqual(len(new), 1)
+        self.assertEqual((new[0]["items"], new[0]["notes"]), (1, 1))
+        self._assert_existing_untouched(tracks, 0, 2)
+
     def test_running_status_and_note_on_zero_velocity(self):
         # MThd, one track: note-on, then running-status note-on vel 0 as note-off.
         trk = bytes([0x00, 0x90, 60, 100, 0x60, 60, 0, 0x00, 0xFF, 0x2F, 0x00])
