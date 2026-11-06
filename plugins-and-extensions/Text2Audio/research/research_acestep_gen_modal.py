@@ -128,16 +128,32 @@ def _resolve_dit_config(variant: str) -> str:
     return DIT_CONFIG_BY_VARIANT[key]
 
 # ---------------------------------------------------------------------------
+# Pinned image inputs
+# ---------------------------------------------------------------------------
+# The Modal image used to install torch/torchaudio/torchvision unpinned (the
+# +cu pins are stripped from ACE-Step's pyproject below, so nothing else fixed
+# them) and cloned ACE-Step's moving HEAD. Modal caches an image per account,
+# so it kept working where it was built long ago but a fresh build — another
+# user's account, or any image-cache miss — picked up whatever PyPI had that
+# day: torch 2.15 (CUDA 13) next to torchaudio 2.11, an ABI-mismatched pair
+# that fails with a torchaudio dependency error. Keep these in sync between
+# the gen and edit scripts (test_acestep_image_pins.py enforces it).
+ACESTEP_REF = "ca1e85fe9430179831e6bc6be790c332190a3866"   # ACE-Step-1.5, 2026-08-29
+TORCH_PINS = ("torch==2.10.0", "torchaudio==2.10.0", "torchvision==0.25.0",
+              "torchcodec==0.10.0")                         # the series ACE-Step targets
+
+# ---------------------------------------------------------------------------
 # Container image (idéntica a la del script de edición)
 # ---------------------------------------------------------------------------
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install(["git", "ffmpeg", "libsndfile1"])
     .run_commands(
-        "git clone --depth 1 https://github.com/ace-step/ACE-Step-1.5.git /root/ACEStep && "
+        "git clone https://github.com/ace-step/ACE-Step-1.5.git /root/ACEStep && "
+        f"git -C /root/ACEStep checkout --detach {ACESTEP_REF} && "
         "sed -i '/+cu[0-9]/d; /nano-vllm/d' /root/ACEStep/pyproject.toml"
     )
-    .pip_install("torch", "torchaudio", "torchvision")
+    .pip_install(*TORCH_PINS)
     .run_commands("pip install /root/ACEStep")
     .pip_install("soundfile>=0.12.1")
     .env({"HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache"})

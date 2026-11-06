@@ -87,6 +87,28 @@ INTENSITY_MAP: dict[str, dict[str, float]] = {
 # Progress protocol
 # ---------------------------------------------------------------------------
 
+# Lines that name the real failure, best first. Modal prints the useful part
+# (pip's resolver error, an ImportError traceback tail...) well before its own
+# generic closing line ("Image build for im-... failed"), so the last line alone
+# gives the user nothing to act on.
+_CAUSE_PATTERNS = re.compile(
+    r"(ImportError|ModuleNotFoundError|undefined symbol|OSError|RuntimeError|"
+    r"AttributeError|No matching distribution|Could not find a version|"
+    r"ResolutionImpossible|conflicting dependencies|CUDA out of memory|"
+    r"\berror:|\bERROR\b|\w+Error:|\w+Exception:)")
+_GENERIC_TAIL = re.compile(r"Image build for .* failed|Terminating task|"
+                           r"Runner failed|See https?://|Stopping app")
+
+
+def pick_cause(lines: list[str]) -> str:
+    """The most informative line of a failed run's output."""
+    clean = [ln for ln in lines if ln.strip() and not _GENERIC_TAIL.search(ln)]
+    for ln in reversed(clean):
+        if _CAUSE_PATTERNS.search(ln):
+            return ln
+    return clean[-1] if clean else (next((ln for ln in reversed(lines) if ln.strip()), ""))
+
+
 def write_progress(path: str, state: str, pct: float, msg: str,
                    extra: list[str] | None = None) -> None:
     if not path:
@@ -357,7 +379,7 @@ def _run_and_collect(cmd: list[str], env: dict, pf: str, out_dir: Path,
         return 1
 
     # ---- Parse stdout for progress ----------------------------------------
-    tail: deque[str] = deque(maxlen=40)  # last output lines, surfaced on failure
+    tail: deque[str] = deque(maxlen=120)  # last output lines, surfaced on failure
     for line in iter(proc.stdout.readline, ""):
         line = line.rstrip()
         if not line:
@@ -384,8 +406,8 @@ def _run_and_collect(cmd: list[str], env: dict, pf: str, out_dir: Path,
 
     if proc.returncode != 0:
         tail_lines = list(tail)
-        last = next((ln for ln in reversed(tail_lines) if ln.strip()), "")
-        detail = f" Last: {last[:160]}" if last else " Check the log for details."
+        last = pick_cause(tail_lines)
+        detail = f" Last: {last.strip()[:160]}" if last else " Check the log for details."
         write_progress(pf, "error", 0,
                        f"{'Local' if args.execution == 'local' else 'Modal'} "
                        f"failed with code {proc.returncode}.{detail}",

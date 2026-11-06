@@ -40,3 +40,17 @@ def test_source_is_published(name, url):
     assert ignored.returncode != 0, f"{rel} is gitignored, so it 404s on GitHub"
     tracked = _git("ls-files", "--error-unmatch", rel)
     assert tracked.returncode == 0, f"{rel} is not tracked by git (404 on GitHub)"
+
+
+def test_main_script_is_not_empty_and_matches_latest_version():
+    """Regression: 1.2.2/1.2.3 shipped an empty ai-music-lab.lua (0 bytes) after a
+    version bump truncated it. The ReaPack main script must have real content and
+    carry the same @version as the newest <version> in index.xml."""
+    main = ROOT / "plugins-and-extensions" / "ai-music-lab.lua"
+    text = main.read_text()
+    assert len(text) > 1000, f"{main.name} is nearly empty ({len(text)} bytes)"
+    assert "@version" in text
+    latest = next(ET.parse(ROOT / "index.xml").getroot().iter("version")).get("name")
+    declared = text.split("@version", 1)[1].split()[0]
+    assert declared == latest, f"@version {declared} != newest index.xml version {latest}"
+    assert "function" in text or "dofile" in text or "require" in text

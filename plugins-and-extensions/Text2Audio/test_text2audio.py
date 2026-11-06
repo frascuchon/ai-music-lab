@@ -129,6 +129,23 @@ class TestErrorReporting(TestCase):
             "exit-code-only message",
         )
 
+    def test_build_failure_reports_the_cause_not_modal_closing_line(self):
+        """A failed image build ends with a generic Modal line; the real reason
+        (here a torchaudio ImportError) is earlier and must be what the user sees."""
+        script = self.tmpdir / "stub_build_fail.py"
+        script.write_text(textwrap.dedent("""
+            import sys
+            print("Building image im-123")
+            print("ImportError: libtorchaudio.so: undefined symbol: _ZN3c10", flush=True)
+            print("Image build for im-123 failed.", flush=True)
+            sys.exit(1)
+        """))
+        self._run(script)
+        _, _, msg, extra = parse_progress(self.progress_file)
+        self.assertIn("undefined symbol", msg)
+        self.assertNotIn("Image build for", msg)
+        self.assertTrue(any("Image build for im-123 failed" in l for l in extra))
+
     def test_extra_lines_contain_full_tail_for_full_log_view(self):
         script = self._write_failing_stub("RuntimeError: CUDA out of memory")
         self._run(script)

@@ -84,6 +84,21 @@ SUPPORTED_CATEGORIES = {"style_transfer", "instrumentation", "mood_texture"}
 STRENGTH_MAP = {"subtle": 0.9, "moderate": 0.7, "strong": 0.4}
 
 # ---------------------------------------------------------------------------
+# Pinned image inputs
+# ---------------------------------------------------------------------------
+# The Modal image used to install torch/torchaudio/torchvision unpinned (the
+# +cu pins are stripped from ACE-Step's pyproject below, so nothing else fixed
+# them) and cloned ACE-Step's moving HEAD. Modal caches an image per account,
+# so it kept working where it was built long ago but a fresh build — another
+# user's account, or any image-cache miss — picked up whatever PyPI had that
+# day: torch 2.15 (CUDA 13) next to torchaudio 2.11, an ABI-mismatched pair
+# that fails with a torchaudio dependency error. Keep these in sync between
+# the gen and edit scripts (test_acestep_image_pins.py enforces it).
+ACESTEP_REF = "ca1e85fe9430179831e6bc6be790c332190a3866"   # ACE-Step-1.5, 2026-08-29
+TORCH_PINS = ("torch==2.10.0", "torchaudio==2.10.0", "torchvision==0.25.0",
+              "torchcodec==0.10.0")                         # the series ACE-Step targets
+
+# ---------------------------------------------------------------------------
 # Container image
 # ---------------------------------------------------------------------------
 # ACE-Step 1.5 requiere Python 3.11-3.12 (README).
@@ -102,14 +117,15 @@ image = (
     # 2. Pre-instalar torch (satisface la dep antes de que pip intente el cu-build custom).
     # 3. Instalar ace-step desde el repo local (torch ya satisfecho, nano-vllm eliminado).
     .run_commands(
-        "git clone --depth 1 https://github.com/ace-step/ACE-Step-1.5.git /root/ACEStep && "
+        "git clone https://github.com/ace-step/ACE-Step-1.5.git /root/ACEStep && "
+        f"git -C /root/ACEStep checkout --detach {ACESTEP_REF} && "
         # Eliminar deps problemáticas del pyproject.toml antes de instalar:
         #   +cu<NNN>: pinnings CUDA custom (torch, torchaudio, torchvision) que no existen en
         #             el mirror de Modal; instalamos torch estándar en el paso siguiente.
         #   nano-vllm: paquete interno de StepFun no disponible en PyPI; solo para fases LLM.
         "sed -i '/+cu[0-9]/d; /nano-vllm/d' /root/ACEStep/pyproject.toml"
     )
-    .pip_install("torch", "torchaudio", "torchvision")  # pre-instalar antes de ace-step
+    .pip_install(*TORCH_PINS)  # pre-instalar antes de ace-step
     .run_commands("pip install /root/ACEStep")
     .pip_install("soundfile>=0.12.1")
     .env({"HF_HOME": f"{WEIGHTS_MOUNT}/hf-cache"})
