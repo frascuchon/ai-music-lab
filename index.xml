@@ -42,7 +42,7 @@ Requirements: Python 3.11+, uv, Modal account (free tier sufficient for most mod
     and retries with --reinstall --refresh, then checks that `modal --version` really
     runs before reporting success.
   · Setup: the Modal CLI check now shows why it failed instead of "modal not available".
-  · Failure reports include every attempt's output (reaperai_setup_report.txt).]]>
+  · Failure reports include every attempt's output (reaperai_setup_report.txt).]]></changelog>
         <source file="ai-music-lab.lua" main="main">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/ai-music-lab.lua</source>
 
         <source file="shared/panel_setup.lua">https://raw.githubusercontent.com/frascuchon/ai-music-lab/main/plugins-and-extensions/shared/panel_setup.lua</source>
