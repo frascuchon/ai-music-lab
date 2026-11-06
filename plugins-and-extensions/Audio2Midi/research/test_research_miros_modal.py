@@ -27,6 +27,11 @@ from unittest import TestCase, mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import research_miros_modal as rm  # noqa: E402
 
+import importlib.util  # noqa: E402
+
+needs_librosa = unittest.skipUnless(
+    importlib.util.find_spec("librosa"), "librosa is not installed in this environment")
+
 
 def make_click_track(path: Path, bpm: float, duration_s: float, sr: int = 22050):
     """Write a simple metronome click WAV at the given BPM."""
@@ -69,6 +74,7 @@ def make_raw_midi_bytes(note_times: list[tuple[float, float, int]]) -> bytes:
     return data
 
 
+@needs_librosa
 class TestApplyBeatTrackingPreservesAbsoluteTime(TestCase):
     """The core invariant: regardless of the detected BPM, a note's
     absolute position in seconds must survive the tick re-encoding.
@@ -177,6 +183,7 @@ class TestApplyBeatTrackingPreservesAbsoluteTime(TestCase):
         self.assertAlmostEqual(mido.tempo2bpm(tempo_msgs[0].tempo), 130.0, places=1)
 
 
+@needs_librosa
 class TestApplyBeatTrackingClampsRange(TestCase):
     """BPM is folded into [60, 180] by doubling/halving (see docstring) —
     verify the clamp itself, since a broken clamp could independently

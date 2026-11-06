@@ -57,11 +57,15 @@ sys.exit(1)
 """))
 _UV_MOCK.chmod(0o755)
 _ORIG_PATH = os.environ.get("PATH", "")
-os.environ["PATH"] = str(_UV_MOCK_DIR) + ":" + _ORIG_PATH
 
 
 def setUpModule():
-    pass
+    # Applied per module run (not at import): other modules restore PATH in
+    # their own tearDownModule, which would otherwise drop this mock when the
+    # whole suite is collected first and run afterwards.
+    global _ORIG_PATH
+    _ORIG_PATH = os.environ.get("PATH", "")
+    os.environ["PATH"] = str(_UV_MOCK_DIR) + ":" + _ORIG_PATH
 
 
 def tearDownModule():

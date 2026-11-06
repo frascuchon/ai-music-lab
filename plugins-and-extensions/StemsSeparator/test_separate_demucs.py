@@ -29,6 +29,18 @@ PROGRESS_TMP = Path(tempfile.gettempdir()) / "test_demucs_progress.txt"
 LOG_TMP = Path(tempfile.gettempdir()) / "test_demucs_log.txt"
 
 
+def _demucs_runs():
+    """True when `python -m demucs` can actually load here (demucs plus a
+    working torchaudio/torchcodec); the end-to-end classes need it."""
+    r = subprocess.run([sys.executable, "-c", "import demucs.separate, torchcodec"],
+                       capture_output=True, timeout=120)
+    return r.returncode == 0
+
+
+needs_demucs = unittest.skipUnless(
+    _demucs_runs(), "demucs is not usable in this environment")
+
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -139,6 +151,7 @@ class TestDemucsAvailable(TestCase):
         self.assertIn("usage", p.stdout.lower())
 
 
+@needs_demucs
 class TestEndToEndSeparation(TestCase):
     """Run a real 5-second WAV through separate_demucs.py."""
 
@@ -185,6 +198,7 @@ class TestEndToEndSeparation(TestCase):
         self.assertIn("Completed", msg)
 
 
+@needs_demucs
 class TestStemsSubset(TestCase):
     """When only a subset of stems is requested, the progress file should
     only list those stems (Demucs always generates all stems on disk)."""
@@ -222,6 +236,7 @@ class TestStemsSubset(TestCase):
             )
 
 
+@needs_demucs
 class TestOutputDirCreated(TestCase):
     """Output directory (incl. model sub-dir) must be created if missing."""
 
@@ -242,6 +257,7 @@ class TestOutputDirCreated(TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+@needs_demucs
 class TestNonSilentAudio(TestCase):
     """Explicit guard: non-silent (sine wave) input must separate cleanly."""
 
