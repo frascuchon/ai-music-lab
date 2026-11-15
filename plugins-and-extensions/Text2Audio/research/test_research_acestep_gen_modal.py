@@ -278,6 +278,31 @@ class TestGenerateBatchClampsParams(TestCase):
         self.assertEqual(captured["shift"], 2.5)
 
 
+class TestAceStepXlAndPlanner(TestCase):
+    def test_xl_variants_map_to_their_checkpoints(self):
+        self.assertEqual(rm.DIT_CONFIG_BY_VARIANT["xl_turbo"], "acestep-v15-xl-turbo")
+        self.assertEqual(rm.DIT_CONFIG_BY_VARIANT["xl_sft"], "acestep-v15-xl-sft")
+        self.assertEqual(rm.DIT_CONFIG_BY_VARIANT["xl_base"], "acestep-v15-xl-base")
+
+    def test_every_variant_has_steps_range_and_defaults(self):
+        for v in rm.DIT_CONFIG_BY_VARIANT:
+            self.assertIn(v, rm.STEPS_RANGE_BY_VARIANT)
+            self.assertIn(v, rm.STEPS_DEFAULT_BY_VARIANT)
+            self.assertIn(v, rm.GUIDANCE_DEFAULT_BY_VARIANT)
+
+    def test_turbo_detection_covers_xl_turbo(self):
+        self.assertTrue(rm.is_turbo_variant("turbo"))
+        self.assertTrue(rm.is_turbo_variant("xl_turbo"))
+        self.assertFalse(rm.is_turbo_variant("xl_sft"))
+        self.assertFalse(rm.is_turbo_variant("base"))
+
+    def test_lm_sizes_resolve_and_fall_back_to_default(self):
+        self.assertEqual(rm._resolve_lm_model("0.6B"), "acestep-5Hz-lm-0.6B")
+        self.assertEqual(rm._resolve_lm_model("4B"), "acestep-5Hz-lm-4B")
+        self.assertEqual(rm._resolve_lm_model("bogus"), "acestep-5Hz-lm-1.7B")
+        self.assertEqual(rm._resolve_lm_model(""), "acestep-5Hz-lm-1.7B")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 

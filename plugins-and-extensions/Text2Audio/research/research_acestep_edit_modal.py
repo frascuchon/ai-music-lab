@@ -77,6 +77,24 @@ DEFAULT_SEED = int(os.environ.get("ACESTEP_SEED", "42"))
 
 MODEL_DIR_NAME = "acestep15"  # evaluation/edit/<model>/
 
+# Checkpoints usable for editing. lego/extract/complete only exist on "base"
+# (ACE-Step docs: Tutorial.md, "Task Types"); cover/repaint work on all of them.
+DIT_CONFIG_BY_VARIANT = {
+    "turbo": "acestep-v15-turbo",
+    "sft": "acestep-v15-sft",
+    "base": "acestep-v15-base",
+    "xl_turbo": "acestep-v15-xl-turbo",
+    "xl_sft": "acestep-v15-xl-sft",
+    "xl_base": "acestep-v15-xl-base",
+}
+STEPS_DEFAULT_BY_VARIANT = {"turbo": 8, "sft": 50, "base": 32,
+                            "xl_turbo": 8, "xl_sft": 50, "xl_base": 50}
+LEGO_VARIANTS = ("base", "xl_base")   # lego only exists on the base checkpoints
+TRACK_NAMES = ("woodwinds", "brass", "fx", "synth", "strings", "percussion",
+               "keyboard", "guitar", "bass", "drums", "backing_vocals", "vocals")
+EDIT_TASKS = ("cover", "repaint", "lego")
+INSTRUMENTAL_LYRICS = "[Instrumental]"
+
 # Categorías de prompts_edit.json que la tarea cover cubre
 SUPPORTED_CATEGORIES = {"style_transfer", "instrumentation", "mood_texture"}
 
@@ -145,7 +163,7 @@ app = modal.App("acestep-edit-inference", image=image)
 # Helpers (dentro del container)
 # ---------------------------------------------------------------------------
 
-def _init_handlers():
+def _init_handlers(dit_variant: str = ""):
     """
     Inicializa el handler DiT según la doc oficial (docs/en/API.md + INFERENCE.md).
     El LLMHandler se crea SIN inicializar: generate_music() detecta
@@ -154,15 +172,16 @@ def _init_handlers():
     from acestep.handler import AceStepHandler
     from acestep.llm_inference import LLMHandler
 
+    dit_config = DIT_CONFIG_BY_VARIANT.get((dit_variant or "").lower(), DIT_CONFIG)
     t0 = time.time()
     dit_handler = AceStepHandler()
     dit_handler.initialize_service(
         project_root=WEIGHTS_MOUNT,
-        config_path=DIT_CONFIG,
+        config_path=dit_config,
         device="cuda",
     )
     llm_handler = LLMHandler()  # sin .initialize() — fases LM omitidas
-    print(f"[init] DiT {DIT_CONFIG} listo ({time.time()-t0:.1f}s), LM deshabilitado")
+    print(f"[init] DiT {dit_config} listo ({time.time()-t0:.1f}s), LM deshabilitado")
     return dit_handler, llm_handler
 
 
@@ -199,7 +218,8 @@ def _generate_one(dit_handler, llm_handler, params_kwargs: dict) -> bytes:
 # Función Modal principal — batch de trabajos de edición
 # ---------------------------------------------------------------------------
 @app.function(volumes={WEIGHTS_MOUNT: weights_vol}, gpu=DEFAULT_GPU, timeout=7200)
-def generate_batch(jobs: list[dict], seed: int = DEFAULT_SEED) -> list[bytes]:
+def generate_batch(jobs: list[dict], seed: int = DEFAULT_SEED,
+                   dit_variant: str = "") -> list[bytes]:
     """
     Ejecuta un batch de trabajos. Cada job es un dict:
       - "task_type": "cover" | "repaint" | "text2music"
@@ -209,25 +229,40 @@ def generate_batch(jobs: list[dict], seed: int = DEFAULT_SEED) -> list[bytes]:
       - "audio_cover_strength": float    — solo cover
       - "repainting_start"/"repainting_end": float — solo repaint
       - "duration"/"bpm"/"keyscale":     — solo text2music
+      - "lego": "track_name" (one of TRACK_NAMES) + repainting_start/end; base only
+      - optional on any job: "lyrics", "bpm", "keyscale", "timesignature",
+        "vocal_language", "inference_steps", "guidance_scale", "shift",
+        "repaint_mode", "cover_noise_strength"
+    dit_variant: "turbo" (default) | "sft" | "base".
     Returns: list[bytes] WAV 48 kHz (b"" si falló).
     """
     import tempfile
 
-    dit_handler, llm_handler = _init_handlers()
+    dit_handler, llm_handler = _init_handlers(dit_variant)
     weights_vol.commit()  # persistir pesos si el setup no se ejecutó antes
 
     results = []
     for i, job in enumerate(jobs):
         t0 = time.time()
         try:
+            variant_key = (dit_variant or "turbo").lower()
+            if job["task_type"] == "lego" and variant_key not in LEGO_VARIANTS:
+                raise RuntimeError("lego (Add layer) needs a base checkpoint (base or xl_base)")
             params_kwargs = {
                 "task_type": job["task_type"],
                 "caption": job["caption"],
                 "thinking": False,  # sin LM handler
-                "inference_steps": 8,  # turbo (doc oficial)
-                "shift": 3.0,  # recomendado para turbo (doc oficial)
+                "inference_steps": int(job.get("inference_steps")
+                                       or STEPS_DEFAULT_BY_VARIANT.get(variant_key, 8)),
+                "shift": float(job.get("shift", 3.0)),  # recomendado (doc oficial)
                 "seed": seed + i,
             }
+            if job.get("guidance_scale") is not None and not variant_key.endswith("turbo"):
+                params_kwargs["guidance_scale"] = float(job["guidance_scale"])
+            for k in ("lyrics", "bpm", "keyscale", "timesignature", "vocal_language",
+                      "repaint_mode", "cover_noise_strength"):
+                if job.get(k) not in (None, ""):
+                    params_kwargs[k] = job[k]
             tmp_src = None
             if job.get("src_audio_bytes"):
                 suffix = Path(job.get("src_audio_name", "src.wav")).suffix or ".wav"
@@ -239,6 +274,13 @@ def generate_batch(jobs: list[dict], seed: int = DEFAULT_SEED) -> list[bytes]:
             if job["task_type"] == "cover":
                 params_kwargs["audio_cover_strength"] = float(job.get("audio_cover_strength", 0.7))
             elif job["task_type"] == "repaint":
+                params_kwargs["repainting_start"] = float(job.get("repainting_start", 0.0))
+                params_kwargs["repainting_end"] = float(job.get("repainting_end", -1.0))
+            elif job["task_type"] == "lego":
+                track = job.get("track_name", "")
+                if track not in TRACK_NAMES:
+                    raise RuntimeError(f"unknown lego track {track!r}")
+                params_kwargs["instruction"] = f"Generate the {track} track based on the audio context:"
                 params_kwargs["repainting_start"] = float(job.get("repainting_start", 0.0))
                 params_kwargs["repainting_end"] = float(job.get("repainting_end", -1.0))
             elif job["task_type"] == "text2music":
@@ -406,6 +448,92 @@ def repaint(
     out_p.mkdir(parents=True, exist_ok=True)
     out_wav.write_bytes(wav_bytes)
     print(f"[repaint] Guardado: {out_wav} ({len(wav_bytes)//1024} KB)")
+
+
+# ---------------------------------------------------------------------------
+# Entrypoint: edición completa para el plugin (cover | repaint | lego)
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def edit(
+    source_audio: str = "",
+    prompt: str = "",
+    task: str = "cover",
+    dit_variant: str = "turbo",
+    strength: float = 0.7,        # cover: audio_cover_strength (1.0 = fiel al original)
+    start: float = 0.0,           # repaint/lego: región, en segundos del audio fuente
+    end: float = -1.0,            # -1 = hasta el final
+    track_name: str = "",         # lego: instrumento a añadir (TRACK_NAMES)
+    lyrics_file: str = "",
+    bpm: int = 0,                 # 0 = automático
+    keyscale: str = "",
+    timesignature: str = "",
+    vocal_language: str = "",
+    steps: int = -1,              # -1 = por defecto de la variante
+    guidance_scale: float = -1.0, # -1 = por defecto; solo sft/base
+    shift: float = 3.0,
+    seed: int = DEFAULT_SEED,
+    out_dir: str = ".",
+    force: bool = False,
+):
+    """Cover / repaint / lego (Add layer) de un audio fuente, con control de
+    caption, letra, metadatos y checkpoint. lego requiere --dit-variant base | xl_base."""
+    task = (task or "cover").lower()
+    variant = (dit_variant or "turbo").lower()
+    if task not in EDIT_TASKS:
+        print(f"ERROR: --task debe ser uno de {EDIT_TASKS}"); raise SystemExit(1)
+    if variant not in DIT_CONFIG_BY_VARIANT:
+        print(f"ERROR: --dit-variant desconocido {dit_variant!r}"); raise SystemExit(1)
+    if task == "lego" and variant not in LEGO_VARIANTS:
+        print("ERROR: lego (Add layer) solo funciona con el checkpoint base (base o xl_base)."); raise SystemExit(1)
+    if task == "lego" and track_name not in TRACK_NAMES:
+        print(f"ERROR: --track-name debe ser uno de {TRACK_NAMES}"); raise SystemExit(1)
+    if not source_audio or not prompt:
+        print("ERROR: --source-audio y --prompt son requeridos."); raise SystemExit(1)
+    src_path = Path(source_audio).resolve()
+    if not src_path.exists():
+        print(f"ERROR: no existe {src_path}"); raise SystemExit(1)
+    out_p = Path(out_dir)
+    out_wav = out_p / "output.wav"
+    if out_wav.exists() and not force:
+        print(f"[edit] Ya existe {out_wav}. Usa --force para regenerar.")
+        return
+
+    job = {
+        "task_type": task,
+        "caption": prompt,
+        "src_audio_bytes": src_path.read_bytes(),
+        "src_audio_name": src_path.name,
+        "shift": shift,
+    }
+    if steps > 0:
+        job["inference_steps"] = steps
+    if guidance_scale >= 0:
+        job["guidance_scale"] = guidance_scale
+    if lyrics_file:
+        lyr = Path(lyrics_file).read_text(encoding="utf-8").strip()
+        if lyr:
+            job["lyrics"] = lyr
+    if bpm > 0:
+        job["bpm"] = bpm
+    for k, v in (("keyscale", keyscale), ("timesignature", timesignature),
+                 ("vocal_language", vocal_language)):
+        if v:
+            job[k] = v
+    if task == "cover":
+        job["audio_cover_strength"] = strength
+    else:
+        job["repainting_start"] = start
+        job["repainting_end"] = end
+    if task == "lego":
+        job["track_name"] = track_name
+
+    print(f"[edit] {task} ({variant}): '{prompt}' sobre {src_path.name}")
+    [wav_bytes] = generate_batch.remote([job], seed=seed, dit_variant=variant)
+    if not wav_bytes:
+        print("[edit] ERROR: la generación devolvió vacío."); raise SystemExit(1)
+    out_p.mkdir(parents=True, exist_ok=True)
+    out_wav.write_bytes(wav_bytes)
+    print(f"[edit] Guardado: {out_wav} ({len(wav_bytes)//1024} KB)")
 
 
 # ---------------------------------------------------------------------------

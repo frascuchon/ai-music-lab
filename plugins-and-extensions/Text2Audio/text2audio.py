@@ -76,6 +76,9 @@ MODEL_KIND: dict[str, str] = {
     "acestep":     "audio_edit_strength",
 }
 
+# ACE-Step checkpoints that need a LoRA to generate from text and that host lego.
+BASE_VARIANTS = ("base", "xl_base")
+
 # Intensity → numeric value mapping
 INTENSITY_MAP: dict[str, dict[str, float]] = {
     "sao_edit":   {"subtle": 0.4,  "moderate": 1.0,  "strong": 4.0},
@@ -192,7 +195,8 @@ def main() -> int:
 
     # ACE-Step generation (acestep_gen) only — advanced inference params.
     # All optional; the Modal script clamps to valid ranges regardless.
-    p.add_argument("--dit-variant",     default="sft", choices=["turbo", "sft", "base"],
+    p.add_argument("--dit-variant",     default=None,
+                   choices=["turbo", "sft", "base", "xl_turbo", "xl_sft", "xl_base"],
                    dest="dit_variant")
     p.add_argument("--steps",           type=int,   default=None)
     p.add_argument("--guidance-scale",  type=float, default=None, dest="guidance_scale")
@@ -202,9 +206,26 @@ def main() -> int:
     p.add_argument("--cfg-start",       type=float, default=None, dest="cfg_start")
     p.add_argument("--cfg-end",         type=float, default=None, dest="cfg_end")
     p.add_argument("--thinking",        action="store_true")
+    p.add_argument("--lm-size",         default=None, choices=["0.6B", "1.7B", "4B"],
+                   dest="lm_size", help="5Hz LM planner size (with --thinking).")
     p.add_argument("--lm-temperature",  type=float, default=None, dest="lm_temperature")
     p.add_argument("--lora-path",       default="", dest="lora_path")
     p.add_argument("--lora-scale",      type=float, default=None, dest="lora_scale")
+    # ACE-Step song controls (generation and edit): all optional.
+    p.add_argument("--lyrics-file",     default="", dest="lyrics_file",
+                   help="UTF-8 file with lyrics / structure tags (empty = instrumental).")
+    p.add_argument("--bpm",             type=int,   default=None)
+    p.add_argument("--keyscale",        default="")
+    p.add_argument("--timesignature",   default="")
+    p.add_argument("--vocal-language",  default="", dest="vocal_language")
+    # ACE-Step edit (model "acestep"): task + its controls.
+    p.add_argument("--ace-task",        default="cover", choices=["cover", "repaint", "lego"],
+                   dest="ace_task")
+    p.add_argument("--strength",        type=float, default=None,
+                   help="cover: audio_cover_strength 0-1 (overrides --intensity).")
+    p.add_argument("--repaint-start",   type=float, default=0.0, dest="repaint_start")
+    p.add_argument("--repaint-end",     type=float, default=-1.0, dest="repaint_end")
+    p.add_argument("--track-name",      default="", dest="track_name")
     args = p.parse_args()
 
     pf = args.progress
@@ -214,6 +235,8 @@ def main() -> int:
     script_path = Path(args.script)
     out_dir     = Path(args.out_dir)
     kind        = MODEL_KIND.get(args.model)
+    if args.dit_variant is None:  # generation defaults to xl_sft (best by ear), edit keeps its turbo default
+        args.dit_variant = "xl_sft" if kind == "text2audio" else "turbo"
 
     # ---- Validations -------------------------------------------------------
     if kind is None:
@@ -320,16 +343,19 @@ def main() -> int:
                 cmd += ["--cfg-interval-start", str(args.cfg_start)]
             if args.cfg_end is not None:
                 cmd += ["--cfg-interval-end", str(args.cfg_end)]
+            cmd += _ace_song_args(args)
             if args.thinking:
                 cmd += ["--thinking"]
+                if args.lm_size:
+                    cmd += ["--lm-size", args.lm_size]
             if args.lm_temperature is not None:
                 cmd += ["--lm-temperature", str(args.lm_temperature)]
-            if args.dit_variant == "base" and not args.lora_path.strip():
+            if args.dit_variant in BASE_VARIANTS and not args.lora_path.strip():
                 write_progress(pf, "error", 0,
                                "ACE-Step base needs a LoRA adapter (--lora-path); "
                                "use the sft or turbo checkpoint without one.")
                 return 1
-            if args.lora_path.strip() and args.dit_variant != "base":
+            if args.lora_path.strip() and args.dit_variant not in BASE_VARIANTS:
                 print("[text2audio] --lora-path ignored: LoRA is only used with the base checkpoint.")
             elif args.lora_path.strip():
                 if not Path(args.lora_path).expanduser().is_dir():
@@ -349,21 +375,65 @@ def main() -> int:
             "--force",
         ]
     elif kind == "audio_edit_strength":
-        strength = INTENSITY_MAP["acestep"].get(args.intensity, 0.7)
+        strength = (args.strength if args.strength is not None
+                    else INTENSITY_MAP["acestep"].get(args.intensity, 0.7))
+        if args.ace_task == "lego" and args.dit_variant not in BASE_VARIANTS:
+            write_progress(pf, "error", 0,
+                           "Add layer (lego) needs the ACE-Step base or XL-base checkpoint.")
+            return 1
+        if args.ace_task == "lego" and not args.track_name:
+            write_progress(pf, "error", 0, "Add layer: choose the instrument to add.")
+            return 1
+        cmd[-1] = f"{script_path}::edit"
         cmd += [
             "--source-audio", str(process_path),
             "--prompt",       args.prompt,
+            "--task",         args.ace_task,
+            "--dit-variant",  args.dit_variant,
             "--strength",     str(strength),
             "--out-dir",      str(out_dir),
             "--force",
         ]
+        if args.ace_task != "cover":
+            cmd += ["--start", str(args.repaint_start), "--end", str(args.repaint_end)]
+        if args.ace_task == "lego":
+            cmd += ["--track-name", args.track_name]
+        if args.steps is not None:
+            cmd += ["--steps", str(args.steps)]
+        if args.guidance_scale is not None:
+            cmd += ["--guidance-scale", str(args.guidance_scale)]
+        if args.shift is not None:
+            cmd += ["--shift", str(args.shift)]
+        if args.seed is not None:
+            cmd += ["--seed", str(args.seed)]
+        cmd += _ace_song_args(args)
 
     # Propagate GPU to the environment (used by SAO and SAO-edit via env vars)
     env = os.environ.copy()
     env["STABLE_AUDIO_GPU"] = args.gpu
+    # ACE-Step scripts read their GPU from ACESTEP_GPU (default A10G): without
+    # this the panel's GPU selector had no effect on them, and the XL DiT / 4B
+    # LM need more than an A10G's headroom.
+    env["ACESTEP_GPU"] = args.gpu
 
     print(f"[text2audio] Command: {' '.join(cmd)}", flush=True)
     return _run_and_collect(cmd, env, pf, out_dir, args, temp_dir)
+
+
+def _ace_song_args(args: argparse.Namespace) -> list[str]:
+    """CLI flags shared by the ACE-Step generate and edit Modal entrypoints."""
+    out: list[str] = []
+    if args.lyrics_file and Path(args.lyrics_file).is_file():
+        out += ["--lyrics-file", args.lyrics_file]
+    if args.bpm:
+        out += ["--bpm", str(args.bpm)]
+    if args.keyscale.strip():
+        out += ["--keyscale", args.keyscale.strip()]
+    if args.timesignature.strip():
+        out += ["--timesignature", args.timesignature.strip()]
+    if args.vocal_language.strip():
+        out += ["--vocal-language", args.vocal_language.strip()]
+    return out
 
 
 def _run_and_collect(cmd: list[str], env: dict, pf: str, out_dir: Path,

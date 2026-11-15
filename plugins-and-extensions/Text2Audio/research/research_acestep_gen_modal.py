@@ -98,12 +98,25 @@ DIT_CONFIG_BY_VARIANT = {
     "turbo": "acestep-v15-turbo",
     "base": "acestep-v15-base",
     "sft": "acestep-v15-sft",
+    # XL = 4B-parameter DiT (~9 GB weights; docs: min 12 GB VRAM, 20 GB+ recommended).
+    # Better coherence on long tracks and niche genres; needs a bigger GPU than turbo.
+    "xl_turbo": "acestep-v15-xl-turbo",
+    "xl_sft": "acestep-v15-xl-sft",
+    "xl_base": "acestep-v15-xl-base",
 }
 STEPS_RANGE_BY_VARIANT = {
     "turbo": (1, 20),
     "base": (1, 200),
     "sft": (1, 200),
+    "xl_turbo": (1, 20),
+    "xl_sft": (1, 200),
+    "xl_base": (1, 200),
 }
+
+
+def is_turbo_variant(variant: str) -> bool:
+    """Turbo checkpoints are CFG-distilled: guidance/ADG/CFG interval do nothing."""
+    return (variant or "").endswith("turbo")
 # Per-variant defaults, chosen from a Modal sweep (8 samples/config, A10G, CLAP
 # text-audio score; floor = worst sample). Base, no LoRA:
 #   32 steps / guidance 7   mean 0.479  floor 0.38   <- default (most stable)
@@ -113,8 +126,13 @@ STEPS_RANGE_BY_VARIANT = {
 #   (64 steps, guidance 7-9, ADG) is NOT used; high guidance/ADG are opt-in.
 # Turbo scored higher (mean 0.518) and is far faster. shift=3.0 everywhere
 # (the library default of 1.0 is not what the official UI uses).
-STEPS_DEFAULT_BY_VARIANT = {"turbo": 8, "base": 32, "sft": 50}
-GUIDANCE_DEFAULT_BY_VARIANT = {"turbo": 7.0, "base": 7.0, "sft": 7.0}
+# sft: 100 steps sounded better than 50 in blind listening (folk, techno; same
+# seed/caption) and raised CLAP (folk 0.477 -> 0.533, techno 0.242 -> 0.356).
+# XL defaults follow the ACE-Step docs (turbo 8, sft/base 50); not yet tuned by ear.
+STEPS_DEFAULT_BY_VARIANT = {"turbo": 8, "base": 32, "sft": 100,
+                            "xl_turbo": 8, "xl_sft": 50, "xl_base": 50}
+GUIDANCE_DEFAULT_BY_VARIANT = {"turbo": 7.0, "base": 7.0, "sft": 7.0,
+                               "xl_turbo": 7.0, "xl_sft": 7.0, "xl_base": 7.0}
 GUIDANCE_SCALE_RANGE = (1.0, 15.0)  # base/SFT only — ignored (hard-overridden) for turbo
 SHIFT_RANGE = (1.0, 5.0)
 CFG_INTERVAL_RANGE = (0.0, 1.0)      # base/SFT only
@@ -193,29 +211,46 @@ app = modal.App("acestep-gen-inference", image=image)
 # Helpers (dentro del container)
 # ---------------------------------------------------------------------------
 
-LM_MODEL = "acestep-5Hz-lm-1.7B"   # ACE-Step's default 5Hz LM (fits an A10G next to the DiT)
+# 5Hz LM planner sizes (ACE-Step docs): 0.6B fast/low VRAM, 1.7B default
+# (8-16 GB), 4B for >16 GB VRAM and complex / long-tail prompts.
+LM_MODEL_BY_SIZE = {
+    "0.6B": "acestep-5Hz-lm-0.6B",
+    "1.7B": "acestep-5Hz-lm-1.7B",
+    "4B":   "acestep-5Hz-lm-4B",
+}
+DEFAULT_LM_SIZE = "1.7B"
+LM_MODEL = LM_MODEL_BY_SIZE[DEFAULT_LM_SIZE]   # default; fits an A10G next to the DiT
 
 
-def _init_llm(llm_handler) -> None:
+def _resolve_lm_model(lm_size: str) -> str:
+    key = (lm_size or DEFAULT_LM_SIZE).strip()
+    if key not in LM_MODEL_BY_SIZE:
+        print(f"[params] Unknown LM size {lm_size!r} — using {DEFAULT_LM_SIZE}")
+        key = DEFAULT_LM_SIZE
+    return LM_MODEL_BY_SIZE[key]
+
+
+def _init_llm(llm_handler, lm_size: str = DEFAULT_LM_SIZE) -> None:
     """Load the 5Hz LM so thinking=True actually runs. generate_music() only uses the
     LM when llm_handler.llm_initialized, so a bare LLMHandler() silently turns
     "thinking" into a no-op (the DiT alone then gets no audio-code hints).
     The "pt" backend is used because nano-vllm is stripped from the image."""
     from acestep.model_downloader import ensure_lm_model
 
+    lm_model = _resolve_lm_model(lm_size)
     ckpt = f"{WEIGHTS_MOUNT}/checkpoints"
-    ok, msg = ensure_lm_model(LM_MODEL, Path(ckpt))
+    ok, msg = ensure_lm_model(lm_model, Path(ckpt))
     if not ok:
-        raise RuntimeError(f"Could not fetch LM {LM_MODEL}: {msg}")
+        raise RuntimeError(f"Could not fetch LM {lm_model}: {msg}")
     status, success = llm_handler.initialize(
-        checkpoint_dir=ckpt, lm_model_path=LM_MODEL, backend="pt", device="cuda")
+        checkpoint_dir=ckpt, lm_model_path=lm_model, backend="pt", device="cuda")
     if not success:
-        raise RuntimeError(f"Could not initialize LM {LM_MODEL}: {status}")
-    print(f"[init] LM {LM_MODEL} ready")
+        raise RuntimeError(f"Could not initialize LM {lm_model}: {status}")
+    print(f"[init] LM {lm_model} ready")
 
 
 def _init_handlers(dit_variant: str = "turbo", lora_path: str = "", lora_scale: float = 1.0,
-                   thinking: bool = False):
+                   thinking: bool = False, lm_size: str = DEFAULT_LM_SIZE):
     from acestep.handler import AceStepHandler
     from acestep.llm_inference import LLMHandler
 
@@ -230,7 +265,7 @@ def _init_handlers(dit_variant: str = "turbo", lora_path: str = "", lora_scale: 
     llm_handler = LLMHandler()
     print(f"[init] DiT {dit_config} listo ({time.time()-t0:.1f}s)")
     if thinking:
-        _init_llm(llm_handler)
+        _init_llm(llm_handler, lm_size)
     else:
         print("[init] LM deshabilitado (thinking=False)")
 
@@ -329,9 +364,11 @@ def generate_batch(
     cfg_interval_end: float = 1.0,
     thinking: bool = False,
     lm_temperature: float = 0.85,
+    lm_size: str = DEFAULT_LM_SIZE,
     lora_files: dict[str, bytes] | None = None,
     lora_scale: float = 1.0,
     lyrics: str = INSTRUMENTAL_LYRICS,
+    metadata: dict | None = None,
 ) -> list[bytes]:
     """
     Cada job: {"text": str, "seconds": float}.
@@ -358,7 +395,7 @@ def generate_batch(
     lora_path = _materialize_lora_dir(lora_files)
     dit_handler, llm_handler = _init_handlers(
         dit_variant=dit_variant, lora_path=lora_path, lora_scale=lora_scale,
-        thinking=thinking)
+        thinking=thinking, lm_size=lm_size)
     weights_vol.commit()
 
     results = []
@@ -379,6 +416,7 @@ def generate_batch(
                 "cfg_interval_end": cfg_interval_end,
                 "lm_temperature": lm_temperature,
                 "seed": seed + i,
+                **{k: v for k, v in (metadata or {}).items() if v not in (None, "", 0)},
             })
             print(
                 f"[generate] [{i+1}/{len(jobs)}] OK — '{job['text'][:50]}' "
@@ -445,7 +483,7 @@ def main(
     seed: int = DEFAULT_SEED,
     out_dir: str = ".",
     force: bool = False,
-    dit_variant: str = "sft",
+    dit_variant: str = "xl_sft",
     steps: int = -1,  # -1 = use STEPS_DEFAULT_BY_VARIANT[dit_variant]
     guidance_scale: float = -1.0,  # -1 = use GUIDANCE_DEFAULT_BY_VARIANT[dit_variant]
     shift: float = 3.0,
@@ -454,9 +492,15 @@ def main(
     cfg_interval_end: float = 1.0,
     thinking: bool = False,
     lm_temperature: float = 0.85,
+    lm_size: str = DEFAULT_LM_SIZE,   # 5Hz LM planner: 0.6B | 1.7B | 4B
     lora_path: str = "",
     lora_scale: float = 1.0,
     lyrics: str = INSTRUMENTAL_LYRICS,
+    lyrics_file: str = "",   # UTF-8 file with the lyrics (multi-line safe); wins over --lyrics
+    bpm: int = 0,            # 0 = let the model/LM choose
+    keyscale: str = "",      # e.g. "C major"; "" = auto
+    timesignature: str = "", # "2" | "3" | "4" | "6" (numerator); "" = auto
+    vocal_language: str = "",# ISO code, e.g. "en"; "" = auto-detect
 ):
     """
     Genera música desde un prompt de texto (ACE-Step text2music).
@@ -469,7 +513,7 @@ def main(
             --lora-path /path/to/my_adapter --lora-scale 0.8 \\
             --out-dir /tmp/acestep_gen_test
 
-    dit_variant: "sft" (default: best quality, 50 steps, CFG), "turbo" (fast, 8-20
+    dit_variant: "xl_sft" (default: best by ear, 50 steps, CFG), "sft" (100 steps, CFG), "turbo" (fast, 8-20
     steps, no CFG, but judged lower quality by ear) or "base"
     (32-200 steps, CFG-capable via guidance_scale/use_adg/cfg_interval_*).
     steps=-1 / guidance_scale=-1 (defaults) pick the variant's own default (turbo:
@@ -501,6 +545,14 @@ def main(
     if guidance_scale is None or guidance_scale < 0:
         guidance_scale = GUIDANCE_DEFAULT_BY_VARIANT[dit_variant_key]
 
+    if lyrics_file:
+        file_lyrics = Path(lyrics_file).read_text(encoding="utf-8").strip()
+        lyrics = file_lyrics or INSTRUMENTAL_LYRICS
+    metadata = {"bpm": int(bpm) if bpm and bpm > 0 else None,
+                "keyscale": keyscale.strip(),
+                "timesignature": timesignature.strip(),
+                "vocal_language": vocal_language.strip()}
+
     lora_files = None
     if lora_path:
         try:
@@ -523,9 +575,11 @@ def main(
         cfg_interval_end=cfg_interval_end,
         thinking=thinking,
         lm_temperature=lm_temperature,
+        lm_size=lm_size,
         lora_files=lora_files,
         lora_scale=lora_scale,
         lyrics=lyrics,
+        metadata=metadata,
     )
     if not wav_bytes:
         print("[main] ERROR: la generación devolvió vacío.")
