@@ -152,6 +152,26 @@ case_("detect_reaper_python falls back to 'python3' when reaper.ini is missing",
   assert(err ~= nil)
 end)
 
+case_("copy_into_project_media copies into the media path with a unique name", function()
+  local media = mktemp_dir()
+  local srcdir = mktemp_dir()
+  local src = srcdir .. "/out.wav"
+  local f = io.open(src, "wb"); f:write("RIFFdata"); f:close()
+  reaper.EnumProjects = function() return 0, "/p/Song.rpp" end
+  reaper.GetProjectPath = function() return media end
+  local d1 = common.copy_into_project_media(src, "a.wav")
+  local d2 = common.copy_into_project_media(src, "a.wav")
+  assert(d1 == media .. "/a.wav", tostring(d1))
+  assert(d2 == media .. "/a_2.wav", tostring(d2))
+  local g = io.open(d1, "rb"); assert(g:read("*a") == "RIFFdata"); g:close()
+end)
+
+case_("copy_into_project_media refuses an unsaved project", function()
+  reaper.EnumProjects = function() return 0, "" end
+  local d, why = common.copy_into_project_media("/x.wav")
+  assert(d == nil and why == "project not saved")
+end)
+
 if failures > 0 then
   print(failures .. " failure(s)")
   os.exit(1)

@@ -12,6 +12,46 @@ function M.q(s)
   return '"' .. s:gsub('"', '\\"') .. '"'
 end
 
+-- Copies a generated audio file into the saved project's media folder
+-- (reaper.GetProjectPath) under a unique name and returns the new path, so
+-- the project never references the temp folder where it was rendered.
+-- Returns nil + reason when the project is unsaved or the copy fails; the
+-- caller decides what to do (the source file is left untouched).
+function M.copy_into_project_media(src_path, name)
+  local _, projfn = reaper.EnumProjects(-1, "")
+  if type(projfn) ~= "string" or projfn == "" then
+    return nil, "project not saved"
+  end
+  local dir = reaper.GetProjectPath("")
+  if type(dir) ~= "string" or dir == "" then return nil, "no project media path" end
+  dir = dir:gsub("[/\\]+$", "")
+  os.execute("mkdir -p " .. M.q(dir))
+  name = (name or src_path:match("[^/\\]+$") or "audio.wav"):gsub('[/\\:*?"<>|]', "_")
+  local stem, ext = name:match("^(.*)(%.[^.]*)$")
+  if not stem then stem, ext = name, "" end
+  local dest, n = dir .. "/" .. name, 1
+  local function exists(path)
+    local f = io.open(path, "rb")
+    if f then f:close() end
+    return f ~= nil
+  end
+  while exists(dest) do
+    n = n + 1
+    dest = string.format("%s/%s_%d%s", dir, stem, n, ext)
+  end
+  local inp = io.open(src_path, "rb")
+  if not inp then return nil, "cannot read " .. src_path end
+  local out = io.open(dest, "wb")
+  if not out then inp:close(); return nil, "cannot write " .. dest end
+  while true do
+    local chunk = inp:read(1024 * 1024)
+    if not chunk then break end
+    out:write(chunk)
+  end
+  inp:close(); out:close()
+  return dest
+end
+
 -- Homebrew's python@3.x formula (the pythonlibpath REAPER records for a
 -- Framework build) ships bin/python3.10, bin/python3.11, etc. but NO plain
 -- "python3" symlink in that same bin/ dir — only the generic "python3",

@@ -379,7 +379,15 @@ import_audio = function()
   reaper.SetOnlyTrackSelected(new_track)
   reaper.SetEditCurPos(cursor, false, false)
 
-  reaper.InsertMedia(wav_path, 0)
+  -- Render happened in the temp folder: move a copy into the project's media
+  -- folder first so the project never points outside itself.
+  local dest, why = common.copy_into_project_media(wav_path)
+  if not dest then
+    add_log("Warning: audio stays outside the project (" .. tostring(why)
+      .. "). Save the project and generate again to keep it inside.")
+    dest = wav_path
+  end
+  reaper.InsertMedia(dest, 0)
   reaper.UpdateArrange()
   add_log("Imported: " .. track_name)
   reaper.Undo_EndBlock("AudioGenerator: import WAV", -1)

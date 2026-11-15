@@ -75,7 +75,7 @@ local S = {
   src_section_dur = 0,    -- section duration in source time (seconds)
   src_item_pos    = nil,  -- item position in project timeline
   src_is_section  = false,
-  outdir         = HOME .. "/stems",
+  outdir         = common.TMPDIR .. "ai_music_lab_stems",
   -- Demucs
   dm_stems       = { vocals=true, drums=true, bass=true, other=true,
                      guitar=false, piano=false },
@@ -261,7 +261,15 @@ import_stems = function()
       reaper.GetSetMediaTrackInfo_String(track, "P_NAME", track_name, true)
       reaper.SetOnlyTrackSelected(track)
       reaper.SetEditCurPos(cursor, false, false)
-      reaper.InsertMedia(fp, 0)
+      -- Copy the stem from the temp folder into the project's media folder
+      -- so the project never references files outside itself.
+      local dest, why = common.copy_into_project_media(fp, track_name .. ".wav")
+      if not dest then
+        add_log("Warning: " .. track_name .. " stays outside the project ("
+          .. tostring(why) .. "). Save the project and separate again.")
+        dest = fp
+      end
+      reaper.InsertMedia(dest, 0)
       imported = imported + 1
       add_log("Imported: " .. track_name)
     else
