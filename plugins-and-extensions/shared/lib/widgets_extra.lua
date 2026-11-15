@@ -650,10 +650,13 @@ function M.input_textarea(id, text, lines_visible, opts)
     ctx.focused_id = nil
   end
 
-  -- Mouse wheel scroll inside widget
+  -- Mouse wheel scroll inside widget: whole lines, at least one per notch
+  -- (the scroll is snapped to line boundaries below, so a sub-line delta
+  -- would otherwise be rounded away and the box would not move).
   if hover_field and ctx.mw ~= 0 then
     local delta = math.abs(ctx.mw) > 60 and (ctx.mw > 0 and -20 or 20) or -ctx.mw * 0.25
-    s.scroll_y = s.scroll_y + delta
+    local lines = math.max(1, math.floor(math.abs(delta) / ls + 0.5))
+    s.scroll_y = s.scroll_y + (delta < 0 and -1 or 1) * lines * ls
   end
 
   local focused = (ctx.focused_id == id)
@@ -745,12 +748,17 @@ function M.input_textarea(id, text, lines_visible, opts)
     if caret_top < s.scroll_y then
       s.scroll_y = caret_top
     elseif caret_top + lh > s.scroll_y + vis_h then
-      s.scroll_y = caret_top + lh - vis_h
+      s.scroll_y = math.ceil((caret_top + lh - vis_h) / ls) * ls
     end
   end
 
   local content_h = #wrapped * ls
-  local max_scroll = math.max(0, content_h - (h - pad * 2))
+  -- Scroll in whole lines. gfx.drawstr can clip text at the right/bottom edge
+  -- but NOT at the top, so a line that is only partly scrolled out cannot be
+  -- drawn half-hidden; snapping to line boundaries keeps every visible line
+  -- complete (the end of the text may leave up to one blank row below it).
+  local max_scroll = math.ceil(math.max(0, content_h - (h - pad * 2)) / ls) * ls
+  s.scroll_y = math.floor(s.scroll_y / ls + 0.5) * ls
   s.scroll_y = math.max(0, math.min(max_scroll, s.scroll_y))
 
   -- Skip draw if clipped by outer scroll_region
@@ -779,7 +787,10 @@ function M.input_textarea(id, text, lines_visible, opts)
   -- Draw wrapped lines
   for li, ln in ipairs(wrapped) do
     local line_y = gy + pad + (li - 1) * ls - s.scroll_y
-    if line_y + lh >= gy and line_y < gy + h then
+    -- line_y >= gy + 1: a line cut by the top edge is not drawn (it used to be
+    -- pinned to gy + 1 and overprinted the next line); the bottom is clipped
+    -- by drawstr's `bottom` argument.
+    if line_y >= gy + 1 and line_y < gy + h then
       -- Selection highlight on this line
       if sel_a ~= nil then
         local s_a = math.max(sel_a, ln.start)
@@ -788,15 +799,14 @@ function M.input_textarea(id, text, lines_visible, opts)
           local px_a = gfx.measurestr(ln.text:sub(1, s_a - ln.start))
           local px_b = gfx.measurestr(ln.text:sub(1, s_b - ln.start))
           local ac = t.C.ACCENT; gfx.set(ac[1], ac[2], ac[3], 0.3)
-          local dy = math.max(gy + 1, line_y)
-          gfx.rect(x + pad + px_a, dy, math.max(1, px_b - px_a), math.min(lh, gy + h - 1 - dy), 1)
+          gfx.rect(x + pad + px_a, line_y, math.max(1, px_b - px_a), math.min(lh, gy + h - 1 - line_y), 1)
         end
       end
       -- Text
       local fc = opts.readonly and t.C.FG_DIM or t.C.FG
       gfx.set(fc[1], fc[2], fc[3], 1)
       gfx.x = x + pad
-      gfx.y = math.max(gy + 1, line_y)
+      gfx.y = line_y
       gfx.drawstr(ln.text, 0, x + w - pad - sb_w, gy + h - 1)
     end
   end
