@@ -227,6 +227,17 @@ function M.same_line_or_wrap(min_w, spacing)
   end
 end
 
+-- Ends the current row: the next widget starts below the row, whatever the
+-- last item on it was. After `same_line(); text_disabled(...)` the cursor only
+-- drops by the TEXT height, which is shorter than a 22px widget row — so the
+-- following row used to be drawn over the bottom of the slider/combo (and an
+-- empty string measures 0 high, stacking the next row almost on top of it).
+-- Use `same_line(); inline_text(...); end_row()` for a trailing hint.
+function M.end_row()
+  ctx.x = ctx.row_x0
+  ctx.y = ctx.last_y + math.max(ctx.last_h, theme.ITEM_H) + theme.SPACING_Y
+end
+
 function M.spacing(n)
   ctx.y = ctx.y + (n or 1) * theme.SPACING_Y
 end

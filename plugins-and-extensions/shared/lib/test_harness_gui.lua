@@ -158,6 +158,37 @@ case_("button without icon draws no lines", function()
   assert(lines == 0, tostring(lines))
 end)
 
+local theme = require("theme")
+
+case_("the old same_line + text_disabled pattern does leave the next row overlapping", function()
+  gui.ctx.x, gui.ctx.y, gui.ctx.row_x0, gui.ctx.content_w = 12, 100, 12, 596
+  gui.row_label("BPM:", 90)
+  local row_y = gui.ctx.y
+  gui.same_line(10); gui.text_disabled("")
+  assert(gui.ctx.y < row_y + theme.ITEM_H, "expected the legacy pattern to under-advance, got " .. gui.ctx.y)
+end)
+
+case_("end_row moves below a full widget row even after a short trailing hint", function()
+  -- Regression: BPM slider + same_line + text_disabled("") left the cursor
+  -- ~one text-height below the row, so the next row (Key) overlapped the slider.
+  gui.ctx.x, gui.ctx.y, gui.ctx.row_x0, gui.ctx.content_w = 12, 100, 12, 596
+  gui.row_label("BPM:", 90)
+  local row_y = gui.ctx.y
+  gui.same_line(10); gui.inline_text(""); gui.end_row()
+  assert(gui.ctx.x == 12, "x not back at the row start: " .. gui.ctx.x)
+  assert(gui.ctx.y >= row_y + theme.ITEM_H, "next row overlaps: " .. gui.ctx.y .. " vs row " .. row_y)
+end)
+
+case_("end_row with a hint and an empty hint land on the same y", function()
+  local function run(hint)
+    gui.ctx.x, gui.ctx.y, gui.ctx.row_x0, gui.ctx.content_w = 12, 100, 12, 596
+    gui.row_label("BPM:", 90)
+    gui.same_line(10); gui.inline_text(hint); gui.end_row()
+    return gui.ctx.y
+  end
+  assert(run("") == run("(0 = auto)"), "row height depends on the hint text")
+end)
+
 if failures > 0 then
   print(failures .. " failure(s)")
   os.exit(1)
