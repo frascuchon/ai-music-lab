@@ -37,7 +37,7 @@ That's it. Select an item in REAPER, pick the tab and model, press the action bu
 
 ## Models
 
-Reliability notes come from the author's own testing. Weights are downloaded the first time a model runs (cloud models cache them in a Modal Volume; local ones in your Hugging Face cache), so the first run is slower.
+Reliability notes come from the author's own testing. Weights are downloaded the first time a model runs (cloud models cache them in a Modal Volume; local ones in your Hugging Face cache), so the first run is slower. Use Setup → *Prepare models* to do that ahead of time.
 
 ### Stems Separator
 
@@ -65,12 +65,12 @@ Reliability notes come from the author's own testing. Weights are downloaded the
 
 | Mode | Model | Runs | Links | Notes |
 |---|---|---|---|---|
-| Generate | **ACE-Step 1.5** | Cloud | [GitHub](https://github.com/ace-step/ACE-Step-1.5) | Full songs, up to ~3 min. Apache 2.0. |
+| Generate | **ACE-Step 1.5** | Cloud (A10G default; A100-80GB option) | [GitHub](https://github.com/ace-step/ACE-Step-1.5) | Full songs, up to ~3 min. Song controls: lyrics with `[verse]`/`[chorus]` tags, language, BPM, key, time signature, Instrumental. Checkpoints SFT, Turbo, Base and XL (XL SFT default); planner 0.6B/1.7B/4B. XL or 4B need a bigger GPU than a T4 (the panel warns). Apache 2.0. |
 | Generate | **Stable Audio Open 1.0** | Cloud or local (slow) | [HF](https://huggingface.co/stabilityai/stable-audio-open-1.0) · [GitHub](https://github.com/Stability-AI/stable-audio-tools) | 44.1 kHz stereo, up to 47 s. Good for textures and loops. Gated: accept the license on HF. |
 | Generate | **MusicGen-medium** | Cloud or local (slow) | [GitHub](https://github.com/facebookresearch/audiocraft) · [HF](https://huggingface.co/facebook/musicgen-medium) | 32 kHz, up to 30 s. **CC-BY-NC** weights. |
 | Generate | **AudioGen-medium** | Cloud or local | [GitHub](https://github.com/facebookresearch/audiocraft) · [HF](https://huggingface.co/facebook/audiogen-medium) | Sound effects and ambiences, 16 kHz. |
 | Edit | **SAO style transfer** | Cloud or local (slow) | [HF](https://huggingface.co/stabilityai/stable-audio-open-1.0) | Re-styles a clip (SDEdit-style). Fun for textures; it does not reliably keep a melody while changing timbre. |
-| Edit | **ACE-Step 1.5** (cover / re-style) | Cloud | [GitHub](https://github.com/ace-step/ACE-Step-1.5) | Same caveat on melody preservation. |
+| Edit | **ACE-Step 1.5** (Cover / Repaint / Add layer) | Cloud | [GitHub](https://github.com/ace-step/ACE-Step-1.5) | Cover re-styles with a fidelity slider, Repaint regenerates a region, Add layer returns only a new instrument. Cover has the same caveat on melody preservation. |
 
 Models evaluated and removed from the UI (text2midi, MuseCoco, MIDI-LLM, ChatMusician, MIROS, MusicGen-melody, MelodyFlow, Mustango, MAGNeT, InspireMusic…) keep their scripts and notes in each plugin's `research/` and `RESEARCH.md`.
 
@@ -100,6 +100,7 @@ The wizard checks and configures everything in one place:
 |---|---|
 | **Common environment** | REAPER's Python path · uv · Modal CLI · Modal authentication |
 | **Stems Separator** | demucs (local pip) · Hugging Face secret for SAM Audio |
+| **Prepare models** | Per-model warm-up (*Prepare*, or *Prepare all Modal models*): builds the Modal image and downloads the weights now, or sets up the local environment. Heavy models are grouped and run a limited number at a time; state is saved in `~/.ai-musiclab/prepared.txt` |
 | **Audio2Midi**, **MidiGenerator**, **AudioGenerator** | Nothing extra for cloud models; local models install their own dependencies with uv on first use. MIDI-GPT also needs the Hugging Face secret |
 
 Work through the sections top to bottom:
@@ -109,7 +110,7 @@ Work through the sections top to bottom:
 3. **Modal CLI** — click **Install deps** once uv is installed.
 4. **Modal authenticated** — click **Login** to open the browser auth flow. The token is saved automatically to `~/.modal.toml`.
 5. *(StemsSeparator only)* **demucs** — click **Install** to install it locally. **HF Token** — paste a Hugging Face token (starting with `hf_`) and click **Save** to create the Modal secret used by SAM Audio.
-6. The first run of each model is slower because Modal downloads its weights into a Volume. Later runs reuse them.
+6. **Prepare models** — the first run of each model is slow (Modal builds its image and downloads the weights into a Volume; locally, the environment and weights). Press *Prepare* on the models you use so your first generation is fast. Until then each tab shows a *First run is slow* notice.
 
 Click **Re-check all** at any time to refresh the status of every check.
 
@@ -175,13 +176,15 @@ All cloud inference costs are billed to your Modal account. Typical costs:
 ```
 .
 ├── index.xml                     ReaPack package index
-└── plugins-and-extensions/
-    ├── ai-music-lab.lua          Unified window (entry point)
-    ├── Audio2Midi/               panel.lua, transcribe.py, research/ (Modal + local scripts)
-    ├── MidiGenerator/            panel.lua, midigen.py, accompaniment.py, harmony.py, smf_writer.lua, research/
-    ├── Text2Audio/               panel.lua, text2audio.py, text2audio_local.py, research/
-    ├── StemsSeparator/           panel.lua, separate_demucs.py, separate_sam.py, separate_sam_local.py, modal_sam_audio.py
-    └── shared/                   Setup panel, uv project (modal), model_execution registry, lib/ (gui, theme, midi_import…)
+├── plugins-and-extensions/
+│   ├── ai-music-lab.lua          Unified window (entry point)
+│   ├── Audio2Midi/               panel.lua, transcribe.py, research/ (Modal + local scripts)
+│   ├── MidiGenerator/            panel.lua, midigen.py, accompaniment.py, harmony.py, smf_writer.lua, research/
+│   ├── Text2Audio/               panel.lua, text2audio.py, text2audio_local.py, research/
+│   ├── StemsSeparator/           panel.lua, separate_demucs.py, separate_sam.py, separate_sam_local.py, modal_sam_audio.py
+│   └── shared/                   Setup panel, uv project (modal), model_execution registry, prepare.py (model warm-up), lib/ (gui, theme, midi_import, prepared…)
+├── tools/                        Modal constraints builder (build_modal_constraints.py, modal_freeze.py)
+└── tests/                        pytest suite
 ```
 
 Per-tool details, evaluations and model comparisons are in each folder's `README.md` and `RESEARCH.md`; `docs/research/` holds the cross-model surveys.
