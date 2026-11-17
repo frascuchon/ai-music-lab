@@ -4,12 +4,12 @@
 -- and calls M.init() once, M.poll() every frame, M.draw() when active.
 -- Manages the common environment (uv, Modal) and plugin-specific extras
 -- (StemsSeparator: demucs, HF secret).
--- Note: this used to also offer "pre-load weights" buttons per model
--- (StemsSeparator/SAM, Audio2Midi/YourMT3+, MidiGenerator models).
--- Removed — every model's real generate/transcribe/separate Modal function
--- now downloads+caches its own weights lazily on first real use, so a
--- separate manual pre-warm step is pure redundancy; the first real
--- generation simply absorbs the download time instead.
+-- "Prepare models": the first inference with a model is slow (Modal image
+-- build + weights download, or local environment + weights). Each target
+-- (model x execution) can be warmed up here with the smallest real job via
+-- `setup_helpers.py prepare`; the result is recorded in
+-- ~/.ai-musiclab/prepared.txt (lib/prepared.lua), which every plugin panel reads
+-- to warn about a first slow run.
 
 -- ── PATHS + LIB ──────────────────────────────────────────────────
 local _info      = debug.getinfo(1, "S")
@@ -24,6 +24,8 @@ local common  = require("common")
 local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
+local prepared = require("prepared")
+local pq       = require("prepare_queue")
 
 local TMPDIR  = common.TMPDIR
 local HELPER  = SCRIPT_DIR .. "setup_helpers.py"
@@ -47,8 +49,6 @@ local function plugin_exists(name)
 end
 
 local HAS_STEMS = plugin_exists("StemsSeparator")
-local HAS_A2M   = plugin_exists("Audio2Midi")
-local HAS_MG    = plugin_exists("MidiGenerator")
 
 local PF = {
   check        = TMPDIR .. "reaperai_setup_check.txt",
@@ -109,7 +109,18 @@ end
 
 init_checks()
 
+local dismiss_failures  -- defined with the prepare scheduler below
+local PREPS = {}  -- filled from PREP| lines: { domain, model, execution, label, status, hint }
+local PREP_DOMAINS = {
+  { "text2audio",    "Text2Audio" },
+  { "midigen",       "MidiGenerator" },
+  { "audio2midi",    "Audio2Midi" },
+  { "stemseparator", "StemsSeparator (SAM Audio)" },
+}
+
 local ST = {
+  prep_queue = {},   -- targets waiting for a free slot (see lib/prepare_queue.lua)
+  prep_jobs  = {},   -- { target, pf, state, msg, report } in flight or failed
   check_state     = "idle", check_msg     = "",
   uv_state        = "idle", uv_msg        = "",
   sync_state      = "idle", sync_msg      = "",
@@ -126,7 +137,15 @@ local function poll_check()
   if not r then return end
   if r.state == "done" then
     ST.check_state = "done"
+    PREPS = {}
+    prepared.invalidate()
     for _, line in ipairs(r.extra) do
+      local pd, pm, pe, pl, ps, pw, pg, ph = line:match("^PREP|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|(.-)$")
+      if pd then
+        if ps == "ready" then dismiss_failures(pd .. ":" .. pm .. ":" .. pe) end
+        PREPS[#PREPS + 1] = { domain = pd, model = pm, execution = pe,
+                              label = pl, status = ps, heavy = pw == "heavy", group = pg, hint = ph }
+      end
       local name, status, detail = line:match("^CHECK|([^|]+)|([^|]+)|(.-)$")
       if name and CHECK_IDX[name] then
         local c = CHECKS[CHECK_IDX[name]]
@@ -154,6 +173,111 @@ local function poll_simple(state_key, msg_key, pf_key)
   end
 end
 
+local pending_recheck = false
+local prep_seq = 0
+
+local function prep_key(p) return pq.key(p) end
+
+-- Job of a target; failed ones are only returned with include_failed (a failed
+-- target must stay retryable, so it does not count as "in progress").
+local function prep_job(p, include_failed)
+  for _, j in ipairs(ST.prep_jobs) do
+    if prep_key(j.target) == prep_key(p) and (include_failed or j.state == "running") then
+      return j
+    end
+  end
+end
+
+dismiss_failures = function(only_key)
+  for i = #ST.prep_jobs, 1, -1 do
+    local j = ST.prep_jobs[i]
+    if j.state == "error" and (not only_key or prep_key(j.target) == only_key) then
+      table.remove(ST.prep_jobs, i)
+    end
+  end
+end
+
+local function prep_queued(p)
+  for _, q_ in ipairs(ST.prep_queue) do
+    if prep_key(q_) == prep_key(p) then return true end
+  end
+  return false
+end
+
+-- Queue targets (skipping ones already queued/running); the scheduler in
+-- M.poll starts them as slots free up.
+local function enqueue_prepare(list)
+  -- A new batch replaces previous failures on screen.
+  dismiss_failures()
+  for _, p in ipairs(list) do
+    if not prep_job(p) and not prep_queued(p) then
+      table.insert(ST.prep_queue, p)
+    end
+  end
+end
+
+local function start_job(p)
+  prep_seq = prep_seq + 1
+  local job = { target = p, state = "running", msg = "",
+                pf = TMPDIR .. "reaperai_setup_prepare_" .. prep_seq .. ".txt" }
+  table.insert(ST.prep_jobs, job)
+  local f = io.open(job.pf, "w")
+  if f then f:write("running|0.00|Starting..."); f:close() end
+  os.execute(build_cmd("prepare --target " .. q(prep_key(p)), job.pf))
+end
+
+local function running_targets()
+  local list = {}
+  for _, j in ipairs(ST.prep_jobs) do
+    if j.state == "running" then list[#list + 1] = j.target end
+  end
+  return list
+end
+
+local function prep_active(execution)
+  for _, j in ipairs(ST.prep_jobs) do
+    if j.state == "running" and j.target.execution == execution then return true end
+  end
+  for _, p in ipairs(ST.prep_queue) do
+    if p.execution == execution then return true end
+  end
+  return false
+end
+
+local function poll_prepare()
+  local finished = false
+  for i = #ST.prep_jobs, 1, -1 do
+    local j = ST.prep_jobs[i]
+    if j.state == "running" then
+      local r = common.read_progress_file(j.pf)
+      if r then
+        j.msg = r.msg or ""
+        if r.state == "done" then
+          table.remove(ST.prep_jobs, i); finished = true
+        elseif r.state == "error" then
+          j.state = "error"; finished = true
+          for _, line in ipairs(r.extra) do
+            local path = line:match("^REPORT|(.+)$")
+            if path then j.report = path end
+          end
+          ST.prep_queue = {}  -- likely network/auth: do not start more
+        end
+      end
+    end
+  end
+  if finished then prepared.invalidate() end
+
+  local picked = pq.pick(ST.prep_queue, running_targets())
+  local starting = {}
+  for _, idx in ipairs(picked) do starting[#starting + 1] = ST.prep_queue[idx] end
+  for n = #picked, 1, -1 do table.remove(ST.prep_queue, picked[n]) end
+  for _, p in ipairs(starting) do start_job(p) end
+
+  if finished and #ST.prep_queue == 0 and #running_targets() == 0 then
+    pending_recheck = true
+  end
+end
+
 local function run_check()
   ST.check_state = "running"
   for _, c in ipairs(CHECKS) do c.status = "?"; c.detail = "" end
@@ -176,7 +300,6 @@ local function status_icon(s)
   else                    return "..." end
 end
 
-local pending_recheck = false
 
 -- Error line + path of the diagnostic report written by setup_helpers.py,
 -- with a button to open it (so the user can debug it or paste it to an assistant).
@@ -206,6 +329,7 @@ function M.poll()
   poll_simple("login_state",  "login_msg",  "login")
   poll_simple("demucs_state", "demucs_msg", "demucs")
   poll_simple("hf_state",     "hf_msg",     "hfsecret")
+  poll_prepare()
 
   -- Recheck after action finishes
   local function maybe_recheck(key)
@@ -326,6 +450,123 @@ function M.draw()
     end
   end
 
+  -- ── SECTION: PREPARE MODELS ─────────────────────────────────────
+  if #PREPS > 0 then
+    g.spacing(); g.separator(); g.spacing()
+    g.push_font(t.F.H1)
+    g.text("Prepare models")
+    g.pop_font()
+    g.text_wrapped("The first run of each model is slow: Modal builds its container "
+      .. "image and downloads the weights (or, locally, the environment and weights "
+      .. "are downloaded). Prepare the ones you plan to use now, so your first "
+      .. "generation is fast.")
+    g.spacing()
+
+    local modal_ok = CHECKS[CHECK_IDX["modal-auth"]]
+      and CHECKS[CHECK_IDX["modal-auth"]].status == "ok"
+    -- Targets still to prepare for one execution. Ready ones are skipped;
+    -- heavy ones (tens of GB, e.g. local SAM) only get their own button.
+    local function pending_for(execution)
+      local list = {}
+      for _, p in ipairs(PREPS) do
+        if p.execution == execution and p.status ~= "ready" and not p.heavy
+            and not prep_job(p) and not prep_queued(p) then
+          list[#list + 1] = p
+        end
+      end
+      return list
+    end
+    local function prepare_all_button(execution, label, enabled)
+      local pending = pending_for(execution)
+      g.begin_disabled(checking or not enabled or #pending == 0)
+      g.next_width(-1)
+      if g.button(string.format("%s  (%s)", label,
+          #pending == 0 and (prep_active(execution) and "in progress" or "all prepared")
+            or (#pending .. " pending"))) then
+        enqueue_prepare(pending)
+      end
+      g.end_disabled()
+    end
+    prepare_all_button("remote", "Prepare all Modal models", modal_ok)
+    if not modal_ok then g.text_disabled("Log in to Modal first (Common environment).") end
+    prepare_all_button("local", "Prepare all local models", true)
+    g.text_disabled(string.format("Up to %d Modal models are prepared at once (one local at a time). "
+      .. "Already prepared models are skipped; large local models (SAM Audio, tens of GB) "
+      .. "are only prepared with their own button.", pq.MAX.remote))
+
+    for _, j in ipairs(ST.prep_jobs) do
+      local name = prep_key(j.target)
+      if j.state == "running" then
+        g.text_colored("Preparing " .. name, "YELLOW")
+        g.same_line(8)
+        g.text_disabled((j.msg ~= "" and j.msg or "Starting... a first image build can take 5-15 minutes."):sub(1, 70))
+      else
+        g.text_colored("Failed: " .. name, "RED")
+        g.same_line(8)
+        if g.button("Dismiss##dis_" .. name, t.sc(70), t.ITEM_H) then
+          dismiss_failures(name)
+        end
+        g.text_wrapped(j.msg ~= "" and j.msg or "Failed — see reaperai_setup.log")
+        if j.report then
+          g.text_disabled("Full report: " .. j.report)
+          if g.button("Open report##" .. name, t.sc(110), t.ITEM_H) then
+            os.execute('open ' .. q(j.report) .. ' &')
+          end
+        end
+      end
+    end
+    if #ST.prep_queue > 0 then
+      g.text_disabled(#ST.prep_queue .. " queued")
+    end
+    g.spacing()
+
+    for _, dom in ipairs(PREP_DOMAINS) do
+      local first = true
+      for _, p in ipairs(PREPS) do
+        if p.domain == dom[1] then
+          if first then
+            g.text_disabled(dom[2]); first = false
+          end
+          local ready = p.status == "ready"
+          local ctx = g.ctx
+          local row_y = ctx.y
+          -- The action column is right-aligned so every Prepare button lines up
+          -- whatever the label length.
+          local btn_w = t.sc(80)
+          local btn_x = ctx.row_x0 + ctx.content_w - btn_w
+          g.text_colored(ready and "[OK ]" or "[ ! ]", ready and "GREEN" or "YELLOW")
+          g.same_line(6)
+          g.text(p.label .. "  ·  " .. (p.execution == "local" and "local" or "Modal"))
+          if not ready and p.hint ~= "" then
+            -- Only when it still fits left of the button column.
+            local next_x = ctx.last_x + ctx.last_w + t.sc(10)
+            if next_x + gfx.measurestr(p.hint) + t.sc(10) <= btn_x then
+              g.same_line(10); g.text_disabled(p.hint)
+            end
+          end
+          if not ready then
+            local job = prep_job(p)
+            ctx.x, ctx.y = btn_x, row_y
+            if job and job.state == "running" then
+              g.text_colored("preparing...", "YELLOW")
+            elseif prep_queued(p) then
+              g.text_disabled("queued")
+            else
+              local can = not checking and (p.execution == "local" or modal_ok)
+              g.begin_disabled(not can)
+              if g.button("Prepare##prep_" .. p.domain .. p.model .. p.execution,
+                          btn_w, t.ITEM_H) then
+                enqueue_prepare({ p })
+              end
+              g.end_disabled()
+            end
+          end
+          g.end_row()
+        end
+      end
+    end
+  end
+
   -- ── SECTION: STEMS SEPARATOR ────────────────────────────────────
   if HAS_STEMS then
     g.spacing(); g.separator(); g.spacing()
@@ -405,30 +646,6 @@ function M.draw()
     elseif ST.hf_state == "error" then
       g.text_colored("Error: " .. ST.hf_msg:sub(1,55), "RED")
     end
-  end
-
-  -- ── SECTION: AUDIO2MIDI ─────────────────────────────────────────
-  if HAS_A2M then
-    g.spacing(); g.separator(); g.spacing()
-    g.push_font(t.F.H1)
-    g.text("Audio2Midi")
-    g.pop_font()
-    g.spacing()
-    g.text_colored("[OK]", "GREEN")
-    g.same_line(6)
-    g.text("No local dependencies — weights downloaded automatically on first use")
-  end
-
-  -- ── SECTION: MIDI GENERATOR ─────────────────────────────────────
-  if HAS_MG then
-    g.spacing(); g.separator(); g.spacing()
-    g.push_font(t.F.H1)
-    g.text("MidiGenerator")
-    g.pop_font()
-    g.spacing()
-    g.text_colored("[OK]", "GREEN")
-    g.same_line(6)
-    g.text("No local dependencies — weights downloaded automatically on first use")
   end
 
   g.spacing(); g.separator(); g.spacing()

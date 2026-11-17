@@ -15,6 +15,7 @@ local common  = require("common")
 local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
+local prepared = require("prepared")
 local track_placement = require("track_placement")
 local midi_import = require("midi_import")
 
@@ -123,6 +124,7 @@ local function read_progress()
   end
 
   if r.state == "done" and not S.done then
+    if S.prep then prepared.mark(S.prep[1], S.prep[2], S.prep[3]) end
     S.running   = false
     S.pid       = nil
     S.done      = true
@@ -388,6 +390,7 @@ local function launch_transcribe()
 
   add_log(local_run and "Launching local process..." or "Launching Modal process...")
   S.pid = common.launch_tracked(cmd)
+  S.prep = { "audio2midi", model_key, local_run and "local" or "remote" }
 end
 
 -- ── MODULE ───────────────────────────────────────────────────────
@@ -432,6 +435,8 @@ function M.draw()
     S.remote = widgets.combo("##a2m_exec", S.remote and 2 or 1, EXEC_LABELS) == 2
     g.spacing()
   end
+  prepared.notice(g, "audio2midi", A2M_MODELS[S.model_idx],
+    runs_locally(A2M_MODELS[S.model_idx]) and "local" or "remote")
 
   -- ── SOURCE (fixed, directly below Model — same position across every
   -- tab that has a source file to pick) ────────────────────────────

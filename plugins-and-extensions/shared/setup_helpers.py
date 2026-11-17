@@ -33,14 +33,17 @@ Subcommands:
   modal-login                            Open browser for Modal token new.
   modal-secret-list                      Report whether huggingface-secret exists.
   modal-secret-create --token <tok>      Create/update huggingface-secret.
+  prepare --target <domain:model:exec>   Warm a model up: run the smallest real
+                                         job so Modal builds the image / the
+                                         weights are downloaded now instead of
+                                         during the user's first inference.
+                                         Records it in ~/.ai-musiclab/prepared.txt
+                                         (see prepare.py).
 
-Note: there used to be prewarm-sam / prewarm-yourmt3 /
-prewarm-midigen-* subcommands here that manually pre-downloaded each model's
-weights into its Modal Volume before first real use. Removed — every real
-generate/transcribe/separate Modal function now downloads+caches its own
-weights lazily on first call (see each research_*_modal.py's _ensure_weights()
-or equivalent), so the first real run simply absorbs the download time
-instead of requiring a separate manual pre-warm step.
+The 'check' output also carries PREP| lines, one per installed
+(domain, model, execution) target:
+
+    PREP|<domain>|<model>|<execution>|<label>|<ready|missing>|<heavy|normal>|<group>|<hint>
 """
 
 from __future__ import annotations
@@ -58,6 +61,7 @@ import time
 import urllib.request
 from collections import deque
 from pathlib import Path
+
 
 SCRIPT_DIR = Path(__file__).parent          # shared/
 PLUGINS_DIR = SCRIPT_DIR.parent             # plugins-and-extensions/
@@ -449,6 +453,18 @@ def cmd_check(args) -> None:
     #     pass  # modal volumes used; no local install needed
 
     extra = [f"CHECK|{n}|{s}|{d}" for n, (s, d) in checks]
+    try:
+        import prepare
+    except ImportError:  # helper copied without its siblings (tests, partial install)
+        prepare = None
+    done = prepare.load() if prepare else set()
+    for t in prepare.available_targets() if prepare else []:
+        status = "ready" if prepare.key(t["domain"], t["model"], t["execution"]) in done \
+            else "missing"
+        hint = prepare.HINTS.get((t["model"], t["execution"]), "")
+        extra.append(f"PREP|{t['domain']}|{t['model']}|{t['execution']}|{t['label']}|"
+                     f"{status}|{'heavy' if prepare.is_heavy(t) else 'normal'}|"
+                     f"{prepare.group_of(t)}|{hint}")
     write(pf, "done", 1.0, "done", extra)
 
 
@@ -640,6 +656,93 @@ def cmd_modal_secret_create(args) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: prepare  (warm a model up before its first real use)
+# ---------------------------------------------------------------------------
+
+def _backend_state(path: Path) -> tuple[str, str]:
+    try:
+        head = path.read_text().splitlines()[0].split("|", 2)
+        return head[0], (head[2] if len(head) > 2 else "")
+    except (OSError, IndexError):
+        return "", ""
+
+
+def cmd_prepare(args) -> None:
+    """Run the plugin backend on the smallest possible job.
+
+    The backend's own progress file is relayed to --progress; "done" is only
+    written after the marker is saved, so the panel's re-check already sees
+    the model as prepared."""
+    pf = Path(args.progress) if args.progress else None
+    sys.path.insert(0, str(SCRIPT_DIR))
+    import prepare
+    try:
+        domain, model, execution = args.target.split(":")
+    except ValueError:
+        write(pf, "error", 0, f"Bad --target {args.target!r} (domain:model:execution)")
+        return
+    target = prepare.find_target(domain, model, execution)
+    if target is None:
+        write(pf, "error", 0, f"Unknown target {args.target!r}")
+        return
+    if not Path(target["script"]).is_file():
+        write(pf, "error", 0, f"Model script not found: {target['script']}")
+        return
+    if prepare.is_prepared(domain, model, execution) and not getattr(args, "force", False):
+        write(pf, "done", 1.0, f"{target['label']} already prepared — skipped")
+        return
+    if execution == "remote" and _chk_modal_auth()[0] != "ok":
+        write(pf, "error", 0, "Modal is not authenticated — log in under "
+              "Common environment first")
+        return
+
+    work = Path(tempfile.mkdtemp(prefix="reaperai_prepare_"))
+    backend_pf = work / "progress.txt"
+    cmd = prepare.build_command(target, sys.executable, work, backend_pf)
+    write(pf, "running", 0.02, f"Preparing {target['label']} ({execution}) — "
+          "this can take several minutes the first time...")
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, env=_tool_env())
+    except OSError as exc:
+        write(pf, "error", 0, f"Failed to launch {Path(cmd[0]).name}: {exc}")
+        return
+    import threading
+    tail: deque[str] = deque(maxlen=500)
+
+    def drain():
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                tail.append(line)
+    reader = threading.Thread(target=drain, daemon=True)
+    reader.start()
+    pct = 0.05
+    while proc.poll() is None:
+        state, msg = _backend_state(backend_pf)
+        if msg and state == "running":
+            write(pf, "running", min(pct, 0.95), msg[:120])
+            pct = min(pct + 0.01, 0.95)
+        time.sleep(1.0)
+    reader.join(timeout=5)
+    proc.stdout.close()
+    output = list(tail)
+    state, msg = _backend_state(backend_pf)
+    if state == "done" or (state == "error" and prepare.is_benign_error(target, msg)):
+        prepare.mark_with_siblings(domain, model, execution)
+        write(pf, "done", 1.0, f"{target['label']} ready")
+    else:
+        report = _save_report(pf, cmd, proc.returncode or 1, output)
+        last = msg or next((ln for ln in reversed(output) if ln.strip()), "")
+        extra = ["--- last output lines ---"] + output[-20:] if output else []
+        if report:
+            extra.append(f"REPORT|{report}")
+        write(pf, "error", pct, (last or f"Preparation failed (code {proc.returncode})")[:160],
+              extra or None)
+    shutil.rmtree(work, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -668,8 +771,15 @@ def main() -> None:
     p_scr.add_argument("--token", required=True)
     p_scr.add_argument("--progress", default="")
 
+    p_prep = sub.add_parser("prepare")
+    p_prep.add_argument("--target", required=True)
+    p_prep.add_argument("--force", action="store_true",
+                        help="Warm up even if the model is already marked prepared")
+    p_prep.add_argument("--progress", default="")
+
     args = p.parse_args()
     dispatch = {
+        "prepare":              cmd_prepare,
         "check":                cmd_check,
         "install-uv":           cmd_install_uv,
         "sync-deps":            cmd_sync_deps,

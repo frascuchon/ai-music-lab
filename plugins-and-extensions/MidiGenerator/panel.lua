@@ -13,6 +13,7 @@ local common  = require("common")
 local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
+local prepared = require("prepared")
 local track_placement = require("track_placement")
 local midi_import = require("midi_import")
 local model_switch = require("model_switch")
@@ -175,6 +176,7 @@ local function read_progress()
   end
 
   if r.state == "done" and not S.done then
+    if S.prep then prepared.mark(S.prep[1], S.prep[2], S.prep[3]) end
     S.running = false; S.pid = nil; S.done = true
     S.out_files = {}; S.n_instruments = -1
     for _, line in ipairs(r.extra) do
@@ -479,6 +481,7 @@ local function launch_generate()
   local cmd = base .. extra .. " >>" .. q(LOG_F) .. " 2>&1 &"
   add_log("Launching Modal...")
   S.pid = common.launch_tracked(cmd)
+  S.prep = { "midigen", mk, S.execution }
 end
 
 -- ── MODULE ───────────────────────────────────────────────────────
@@ -542,6 +545,7 @@ function M.draw()
   end
 
   g.spacing()
+  prepared.notice(g, "midigen", mk, S.execution)
   g.separator(); g.spacing()
 
   -- ── SCROLL REGION: rest of the page (prompt/params/button/log) ───

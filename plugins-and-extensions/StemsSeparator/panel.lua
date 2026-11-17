@@ -15,6 +15,7 @@ local common  = require("common")
 local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
+local prepared = require("prepared")
 local track_placement = require("track_placement")
 local model_execution = require("model_execution")
 
@@ -128,6 +129,7 @@ local function read_progress()
   end
 
   if r.state == "done" and not S.done then
+    if S.prep then prepared.mark(S.prep[1], S.prep[2], S.prep[3]) end
     S.running   = false
     S.pid       = nil
     S.done      = true
@@ -361,6 +363,7 @@ local function launch_demucs()
     q(S.outdir), q(PYTHON), section_args, q(PROGRESS_F), q(LOG_F))
   add_log("Launching process...")
   S.pid = common.launch_tracked(cmd)
+  S.prep = nil  -- demucs has no first-run preparation
 end
 
 local function launch_sam()
@@ -416,6 +419,7 @@ local function launch_sam()
     section_args, q(S.outdir), q(S.execution), q(PROGRESS_F), q(LOG_F))
   add_log("Launching " .. (is_local and "local" or "Modal") .. " process...")
   S.pid = common.launch_tracked(cmd)
+  S.prep = { "stemseparator", SS_MODELS[S.model_idx], S.execution }
 end
 
 -- ── DEMUCS PARAMETERS (shown when a local Demucs model is selected) ──
@@ -564,6 +568,7 @@ function M.draw()
       g.text_disabled("Local unavailable: " .. exec_reason)
     end
     g.spacing()
+    prepared.notice(g, "stemseparator", sam_key, S.execution)
   end
 
   -- ── SOURCE (fixed, directly below Model — same position across every

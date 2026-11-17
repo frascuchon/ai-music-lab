@@ -14,6 +14,7 @@ local common  = require("common")
 local theme   = require("theme")
 local gui     = require("gui")
 local widgets = require("widgets_extra")
+local prepared = require("prepared")
 local track_placement = require("track_placement")
 local model_switch = require("model_switch")
 local model_execution = require("model_execution")
@@ -361,6 +362,7 @@ local function read_progress()
   end
 
   if r.state == "done" and not S.done then
+    if S.prep then prepared.mark(S.prep[1], S.prep[2], S.prep[3]) end
     S.running   = false
     S.pid       = nil
     S.done      = true
@@ -691,6 +693,7 @@ local function launch_t2a()
 
     add_log("Launching " .. (S.execution == "local" and "local" or "Modal") .. " process...")
     S.pid = common.launch_tracked(cmd)
+    S.prep = { "text2audio", model_key, S.execution }
 
   -- ── EDIT mode ──
   else
@@ -776,6 +779,7 @@ local function launch_t2a()
 
     add_log("Launching " .. (S.execution == "local" and "local" or "Modal") .. " process...")
     S.pid = common.launch_tracked(cmd)
+    S.prep = { "text2audio", model_key, S.execution }
   end
 end
 
@@ -867,6 +871,7 @@ function M.draw()
     g.text_disabled("Local unavailable: " .. local_reason)
   end
   g.spacing()
+  prepared.notice(g, "text2audio", cur_model_key, S.execution)
 
   -- ── SOURCE (fixed, directly below Model — same position across every
   -- tab that has a source file to pick). Edit mode only. ────────────

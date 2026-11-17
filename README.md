@@ -27,6 +27,7 @@ You need **REAPER 6.x+** ([reaper.fm](https://www.reaper.fm)) and a free **[Moda
 4. **Point REAPER at Python 3.11+**: *Preferences → Plug-ins → ReaScript → Python library path* (the `lib/` folder itself; see [Configuring Python](#configuring-python-in-reaper)). Restart REAPER.
 5. **Open it**: *Actions → Show action list*, search `AI Music Lab`, run it. Assign a shortcut if you like.
 6. **Run Setup** (the *Setup* button in the panel) and go top to bottom: *uv* → *Modal CLI* → *Login* (opens the browser) → Hugging Face token if you use SAM Audio or MIDI-GPT. Everything should read `[OK]`.
+7. **Prepare models** (Setup → *Prepare models*): the first run of every model is slow because Modal builds its container image and downloads the weights (locally: the environment and weights). Press *Prepare* on the models you plan to use — or *Prepare all Modal models* — so your first generation is fast. Until a model is prepared, its tab shows a *First run is slow* notice pointing back here.
 
 That's it. Select an item in REAPER, pick the tab and model, press the action button; the result appears as new tracks/clips below the source. Press the same button again to stop a run.
 
