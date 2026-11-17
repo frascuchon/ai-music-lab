@@ -248,6 +248,14 @@ def test_acestep_scripts_share_pins():
     assert _pins(CONSTRAINTS / "research_acestep_gen_modal.txt")["torch"] == "2.10.0"
 
 
+def test_acestep_gen_and_edit_share_one_modal_image():
+    """Modal keys an image layer on its content: the constraints file is the
+    first layer, so any difference (even a comment) makes the user build and
+    cache a second, identical ~10 GB image on their first run."""
+    assert (CONSTRAINTS / "research_acestep_gen_modal.txt").read_bytes() == \
+        (CONSTRAINTS / "research_acestep_edit_modal.txt").read_bytes()
+
+
 # --- tooling -----------------------------------------------------------------
 
 def test_constraint_builder_normalises_a_freeze(tmp_path, monkeypatch):
