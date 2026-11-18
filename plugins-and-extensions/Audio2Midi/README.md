@@ -6,13 +6,13 @@ Plugin REAPER para transcribir audio a MIDI: en local para un instrumento solo, 
 
 | Modelo | Descripción | GPU | Licencia |
 |--------|-------------|-----|---------|
-| **Basic Pitch** (por defecto) | Un solo instrumento (guitarra, voz, piano). Se ejecuta en local (CPU), sin Modal. Devuelve una pista. | ninguna | Apache 2.0 |
+| **Basic Pitch** (por defecto) | Un solo instrumento (guitarra, voz, piano). Se ejecuta en local (CPU) por defecto, o en un contenedor CPU de Modal con el selector Local/Remote. Devuelve una pista. | ninguna | Apache 2.0 |
 | **MIROS** | Un solo instrumento, en Modal. El panel avisa de que no es para mezclas: con varios instrumentos usa YourMT3+. | A10G+ (no T4) | uso interno |
 | **YourMT3+** | Multi-instrumento. Robusto, F1 77.5% Slakh. | T4+ | Apache 2.0 |
 
 **Qué modelo elegir:** para un instrumento solo, Basic Pitch (local) o MIROS (Modal); para una mezcla con varios instrumentos, YourMT3+. En una guitarra distorsionada solista, Basic Pitch coincidió con una referencia pYIN en ~66 % de los fotogramas frente a ~35 % de YourMT3+, que además repartía la guitarra en varias pistas.
 
-> MIROS se retiró de la interfaz: en esa misma guitarra apenas detectaba notas (~19 %). Su script y las notas de evaluación siguen en `research/` y `RESEARCH.md`.
+> MIROS sigue disponible en la interfaz. En esa misma guitarra solista detectaba pocas notas (~19 %), así que para un instrumento solo suele rendir mejor Basic Pitch; MIROS añade estimación de tempo (beat tracking) en Modal. Las notas de evaluación están en `RESEARCH.md`.
 
 **Pistas vacías:** tras transcribir, `transcribe.py` descarta del MIDI las pistas de instrumento que no contienen ninguna nota (no se importan como clips vacíos) y lo indica en el estado ("N empty discarded"). Si no queda ninguna nota, se informa de error.
 

@@ -51,7 +51,7 @@ Reliability notes come from the author's own testing. Weights are downloaded the
 | Model | Use it for | Runs | Links | Notes |
 |---|---|---|---|---|
 | **Basic Pitch** | One instrument or voice (guitar, piano, vocals) | Local (CPU), or Modal CPU container | [GitHub](https://github.com/spotify/basic-pitch) | Default. Ghost-note and tail-noise cleanup, adjustable *Threshold* (default 0.7). Apache 2.0. |
-| **MIROS** | One instrument (not for mixes) | Cloud (A10G or better, no T4) | [GitHub](https://github.com/amt-os/ai4m-miros) | Includes beat tracking for tempo. On a solo distorted guitar it detected few notes (~19 %) next to Basic Pitch. Internal-use license: check it before commercial use. |
+| **MIROS** | One instrument (not for mixes) | Cloud (A10G or better, no T4) | [GitHub](https://github.com/amt-os/ai4m-miros) | Adds beat tracking for tempo. On a solo distorted guitar it detected few notes (~19 %), where Basic Pitch did better. Internal-use license: check it before commercial use. |
 | **YourMT3+** | Multi-instrument mixes | Cloud (T4+) | [GitHub](https://github.com/mimbres/YourMT3) · [HF Space](https://huggingface.co/spaces/mimbres/YourMT3) | Good on mixes; on a solo distorted guitar Basic Pitch was clearly better. Apache 2.0. |
 
 ### MidiGenerator
