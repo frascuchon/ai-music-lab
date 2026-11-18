@@ -7,7 +7,7 @@ A single REAPER panel with AI tools for your composition workflow: separate stem
 | Tab | What it does | Models |
 |---|---|---|
 | **Stems Separator** | Split a mix into stems (vocals, drums, bass…) or extract a sound by text prompt | Demucs, SAM Audio |
-| **Audio2Midi** | Transcribe audio to MIDI | Basic Pitch, YourMT3+ |
+| **Audio2Midi** | Transcribe audio to MIDI | Basic Pitch, MIROS, YourMT3+ |
 | **MidiGenerator** | Generate MIDI from text, or accompany a melody | Amadeus, Anticipatory Music Transformer, MIDI-GPT |
 | **AudioGenerator** (Text2Audio) | Generate audio from text, or transform an existing clip | ACE-Step 1.5, Stable Audio Open, MusicGen, AudioGen; edit: SAO style transfer, ACE-Step |
 | **Setup** | One-click environment check and configuration | — |
@@ -50,7 +50,8 @@ Reliability notes come from the author's own testing. Weights are downloaded the
 
 | Model | Use it for | Runs | Links | Notes |
 |---|---|---|---|---|
-| **Basic Pitch** | One instrument or voice (guitar, piano, vocals) | Local (CPU), no Modal | [GitHub](https://github.com/spotify/basic-pitch) | Default. Ghost-note and tail-noise cleanup, adjustable *Threshold* (default 0.7). Apache 2.0. |
+| **Basic Pitch** | One instrument or voice (guitar, piano, vocals) | Local (CPU), or Modal CPU container | [GitHub](https://github.com/spotify/basic-pitch) | Default. Ghost-note and tail-noise cleanup, adjustable *Threshold* (default 0.7). Apache 2.0. |
+| **MIROS** | One instrument (not for mixes) | Cloud (A10G or better, no T4) | [GitHub](https://github.com/amt-os/ai4m-miros) | Includes beat tracking for tempo. On a solo distorted guitar it detected few notes (~19 %) next to Basic Pitch. Internal-use license: check it before commercial use. |
 | **YourMT3+** | Multi-instrument mixes | Cloud (T4+) | [GitHub](https://github.com/mimbres/YourMT3) · [HF Space](https://huggingface.co/spaces/mimbres/YourMT3) | Good on mixes; on a solo distorted guitar Basic Pitch was clearly better. Apache 2.0. |
 
 ### MidiGenerator
@@ -72,7 +73,7 @@ Reliability notes come from the author's own testing. Weights are downloaded the
 | Edit | **SAO style transfer** | Cloud or local (slow) | [HF](https://huggingface.co/stabilityai/stable-audio-open-1.0) | Re-styles a clip (SDEdit-style). Fun for textures; it does not reliably keep a melody while changing timbre. |
 | Edit | **ACE-Step 1.5** (Cover / Repaint / Add layer) | Cloud | [GitHub](https://github.com/ace-step/ACE-Step-1.5) | Cover re-styles with a fidelity slider, Repaint regenerates a region, Add layer returns only a new instrument. Cover has the same caveat on melody preservation. |
 
-Models evaluated and removed from the UI (text2midi, MuseCoco, MIDI-LLM, ChatMusician, MIROS, MusicGen-melody, MelodyFlow, Mustango, MAGNeT, InspireMusic…) keep their scripts and notes in each plugin's `research/` and `RESEARCH.md`.
+Models evaluated and removed from the UI (text2midi, MuseCoco, MIDI-LLM, ChatMusician, MusicGen-melody, MelodyFlow, Mustango, MAGNeT, InspireMusic…) keep their scripts and notes in each plugin's `research/` and `RESEARCH.md`.
 
 ---
 
@@ -88,7 +89,7 @@ Models that can run on your machine show an **Execution: Local / Remote** switch
 | Privacy | Audio is sent to Modal for the run | Nothing leaves your machine |
 | Offline | No | Yes, once weights are downloaded |
 
-Supported locally: Demucs (always local), Basic Pitch (always local), Anticipatory, Stable Audio Open (+ edit), MusicGen, AudioGen, SAM Audio. Cloud only: ACE-Step, MIDI-GPT, Amadeus, YourMT3+. When a model can't run locally, the *Local* option is disabled and the panel shows why. Local SAM Audio and Stable Audio paths are newer and less battle-tested than the cloud ones.
+Supported locally: Demucs (always local), Basic Pitch (local by default; can run on a Modal CPU container), Anticipatory, Stable Audio Open (+ edit), MusicGen, AudioGen, SAM Audio. Cloud only: ACE-Step, MIDI-GPT, Amadeus, MIROS, YourMT3+. When a model can't run locally, the *Local* option is disabled and the panel shows why. Local SAM Audio and Stable Audio paths are newer and less battle-tested than the cloud ones.
 
 ---
 
